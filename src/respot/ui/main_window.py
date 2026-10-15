@@ -2,28 +2,36 @@
 
 from __future__ import annotations
 
+import traceback
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QAction, QActionGroup, QFont
 from PySide6.QtWidgets import (
+    QApplication,
     QDialog,
     QDialogButtonBox,
     QDockWidget,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QInputDialog,
     QMainWindow,
     QMenu,
     QMessageBox,
+    QPlainTextEdit,
     QSpinBox,
     QTabWidget,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
+from respot.core.code_export import project_to_script
 from respot.core.commands import (
+    AddAnnotationCommand,
     AddColumnCommand,
     AddGraphCommand,
     AddPlotCommand,
@@ -31,13 +39,21 @@ from respot.core.commands import (
     AddWorksheetCommand,
     CommandStack,
     MacroCommand,
+    RenameCommand,
+    RenameWorkbookCommand,
+    RenameWorksheetCommand,
+    SetAttributesCommand,
 )
 from respot.core.io import export_delimited, import_file, supported_extensions
 from respot.core.io.export import export_graph
-from respot.core.model import Column, ColumnType, Graph, PlotSpec, Project, Workbook, Worksheet
-from respot.core.plotting import make_default_graph
+from respot.core.journals import journal_names, preset as journal_preset_settings
+from respot.core.model import Annotation, Column, ColumnType, Graph, PlotSpec, Project, Workbook, Worksheet
+from respot.core.plotting import make_default_graph, make_plot_for_column
+from respot.core.provenance import ProvenanceLog
+from respot.core.report import export_analysis_bundle
 from respot.core.scripting.record import MacroRecorder
 from respot.core.templates import apply_template, load_template, save_template
+from respot.ui.theme import apply_theme, current_preset, load_saved_preset, presets, save_preset
 from respot.ui.actions import ActionRegistry, ActionSpec
 from respot.ui.analysis_dialogs import (
     AnalysisResultDialog,
@@ -47,9 +63,12 @@ from respot.ui.analysis_dialogs import (
     PeaksDialog,
     RegressionDialog,
     SignalDialog,
+    SlopeDialog,
     StatisticsDialog,
 )
+from respot.ui.command_palette import CommandPalette
 from respot.ui.console import ConsoleView
+from respot.ui.digitize_dialog import DigitizeDialog
 from respot.ui.graph_view import GraphView
 from respot.ui.project_panel import ProjectPanel
 from respot.ui.properties_panel import PropertiesPanel
@@ -61,6 +80,27 @@ PROJECT_FILTER = "Respot Project (*.rsproj);;All Files (*)"
 GRAPH_FILTER = "PDF (*.pdf);;SVG (*.svg);;EPS (*.eps);;PNG (*.png);;TIFF (*.tif);;All Files (*)"
 
 _DATA_FILTER = "Data files (" + " ".join(f"*{e}" for e in supported_extensions()) + ");;All Files (*)"
+
+_EXPORT_SUFFIXES = {".pdf", ".svg", ".eps", ".png", ".tif", ".tiff", ".jpg", ".jpeg"}
+
+
+def _slug(text: str) -> str:
+    """A stable action-id fragment for free-form labels (journal preset names)."""
+    return "".join(c.lower() if c.isalnum() else "_" for c in text).strip("_")
+
+
+def _normalized_export_path(path: str) -> str:
+    """Give ``path`` a supported export extension, defaulting to ``.pdf``.
+
+    Guards against a stray extension typed under the "All Files" filter (e.g.
+    ``figure.bmp``), which would otherwise make matplotlib raise.
+    """
+    suffix = Path(path).suffix.lower()
+    if suffix in _EXPORT_SUFFIXES:
+        return path
+    if suffix:
+        return str(Path(path).with_suffix(".pdf"))
+    return path + ".pdf"
 
 
 class ExportGraphDialog(QDialog):
@@ -86,13 +126,20 @@ class MainWindow(QMainWindow):
     def __init__(self, project: Project | None = None) -> None:
         super().__init__()
         self.setWindowTitle(APP_TITLE)
-        self.resize(1360, 860)
+        self.resize(1440, 900)
+        self.setMinimumSize(1024, 640)
         self.setAcceptDrops(True)
+
+        app = QApplication.instance()
+        if app is not None and not app.styleSheet():
+            apply_theme(app, preset=load_saved_preset())
 
         self.project: Project = project or Project()
         self.commands = CommandStack()
         self.registry = ActionRegistry(self)
         self.recorder = MacroRecorder(self.commands)
+        self.provenance = ProvenanceLog()
+        self.provenance.attach(self.commands)
         self._path: Path | None = None
         self._dirty = False
         self.confirm_on_close = True
@@ -104,8 +151,20 @@ class MainWindow(QMainWindow):
         self._build_central()
         self._register_actions()
         menus = self.registry.build_menus(
-            self.menuBar(), order=["File", "Edit", "Data", "Graph", "Analyze", "Export", "Tools", "Help"]
+            self.menuBar(),
+            order=["File", "Edit", "Data", "Graph", "Analyze", "Export", "View", "Tools", "Help"],
         )
+        view_menu = menus.get("View")
+        if view_menu is not None:
+            view_menu.addSeparator()
+            for dock, label in (
+                (self.dock_project, "Project Explorer"),
+                (self.dock_properties, "Properties"),
+                (self.dock_console, "Python Console"),
+            ):
+                action = dock.toggleViewAction()
+                action.setText(label)
+                view_menu.addAction(action)
         self.plugins_menu = QMenu("Plugins", self)
         help_menu = menus.get("Help")
         if help_menu is not None:
@@ -123,6 +182,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ build
     def _build_docks(self) -> None:
         self.properties_panel = PropertiesPanel()
+        self.properties_panel.rename_requested.connect(self._apply_rename)
         dock_props = QDockWidget("Properties", self)
         dock_props.setObjectName("dock.properties")
         dock_props.setWidget(self.properties_panel)
@@ -132,6 +192,7 @@ class MainWindow(QMainWindow):
         self.project_panel = ProjectPanel()
         self.project_panel.object_activated.connect(self._on_object_activated)
         self.project_panel.selection_changed.connect(self.properties_panel.show_object)
+        self.project_panel.rename_requested.connect(self._action_rename_for)
         dock_project = QDockWidget("Project Explorer", self)
         dock_project.setObjectName("dock.project")
         dock_project.setWidget(self.project_panel)
@@ -160,14 +221,27 @@ class MainWindow(QMainWindow):
         toolbar = QToolBar("Main", self)
         toolbar.setObjectName("toolbar.main")
         toolbar.setMovable(False)
+        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        toolbar.setIconSize(QSize(18, 18))
         self.addToolBar(toolbar)
-        for action_id in (
-            "file.new", "file.open", "file.save", "file.import",
-            "edit.undo", "edit.redo",
-            "data.add_workbook", "data.add_worksheet", "data.add_graph", "data.sample",
-            "analyze.fit",
-        ):
-            toolbar.addAction(self.registry.action(action_id))
+        groups = (
+            ("file.new", "file.open", "file.save", "file.import"),
+            ("edit.undo", "edit.redo"),
+            ("data.add_workbook", "data.add_worksheet", "data.add_graph", "data.sample"),
+            ("analyze.fit",),
+        )
+        for index, group in enumerate(groups):
+            if index:
+                toolbar.addSeparator()
+            for action_id in group:
+                toolbar.addAction(self.registry.action(action_id))
+        toolbar.addSeparator()
+        theme_button = QToolButton()
+        theme_button.setText("Theme")
+        theme_button.setToolTip("Switch the colour scheme")
+        theme_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        theme_button.setMenu(self._theme_menu)
+        toolbar.addWidget(theme_button)
         self.toolbar = toolbar
 
     def _register_actions(self) -> None:
@@ -185,6 +259,27 @@ class MainWindow(QMainWindow):
 
         r.register(ActionSpec("edit.undo", "Undo", "Ctrl+Z", menu="Edit"), self._action_undo, enabled=False)
         r.register(ActionSpec("edit.redo", "Redo", "Ctrl+Shift+Z", menu="Edit"), self._action_redo, enabled=False)
+        r.register(ActionSpec("edit.rename", "Rename…", "F2", menu="Edit", separator_before=True),
+                   self._action_rename)
+
+        # Theme presets: one checkable action each, grouped into a View submenu
+        # that the toolbar also exposes as a dropdown.
+        self._theme_menu = QMenu("Theme", self)
+        self._theme_group = QActionGroup(self)
+        self._theme_group.setExclusive(True)
+        self._theme_actions: dict[str, QAction] = {}
+        for theme_preset in presets():
+            action = r.register(
+                ActionSpec(f"view.theme.{theme_preset.id}", theme_preset.label, None,
+                           checkable=True, tooltip=theme_preset.description),
+                lambda _checked=False, pid=theme_preset.id: self._action_set_theme(pid),
+            )
+            action.setActionGroup(self._theme_group)
+            action.setChecked(theme_preset.id == current_preset())
+            self._theme_actions[theme_preset.id] = action
+            self._theme_menu.addAction(action)
+        theme_menu_action = r.register(ActionSpec("view.theme", "Theme", menu="View"), None)
+        theme_menu_action.setMenu(self._theme_menu)
 
         for action_id, text, slot, sep in (
             ("data.add_workbook", "Add Workbook", self._action_add_workbook, False),
@@ -194,33 +289,63 @@ class MainWindow(QMainWindow):
         ):
             r.register(ActionSpec(action_id, text, None, menu="Data", separator_before=sep), slot)
 
+        # Journal presets: checkable actions mirroring the theme submenu.
+        self._journal_menu = QMenu("Journal Preset", self)
+        self._journal_group = QActionGroup(self)
+        self._journal_group.setExclusive(True)
+        self._journal_actions: dict[str, QAction] = {}
+        for preset_name in journal_names():
+            action = r.register(
+                ActionSpec(f"graph.journal.{_slug(preset_name)}", preset_name, None, checkable=True,
+                           tooltip=f"Restyle plots and export typography for {preset_name}"),
+                lambda _checked=False, name=preset_name: self._action_apply_journal(name),
+            )
+            action.setActionGroup(self._journal_group)
+            self._journal_actions[preset_name] = action
+            self._journal_menu.addAction(action)
+        journal_menu_action = r.register(ActionSpec("graph.journal", "Journal Preset", None, menu="Graph"), None)
+        journal_menu_action.setMenu(self._journal_menu)
+
         for action_id, text, slot, sep in (
             ("graph.add_plot", "Add Plot to Active Graph", self._action_add_plot, False),
             ("graph.add_layer", "Add Layer", self._action_add_layer, False),
             ("graph.new_from_data", "New Graph From Data", self._action_add_graph, False),
+            ("graph.add_ref_line", "Add Reference Line…", self._action_add_reference_line, True),
+            ("graph.hover", "Data Readout (Hover)", self._action_toggle_hover, False),
             ("graph.add_annotation", "Add Annotation...", self._action_add_annotation, True),
             ("graph.save_template", "Save Style Template...", self._action_save_template, True),
             ("graph.apply_template", "Apply Style Template...", self._action_apply_template, False),
             ("graph.export", "Export Active Graph...", self._action_export_graph, True),
         ):
             r.register(ActionSpec(action_id, text, None, menu="Graph", separator_before=sep), slot)
+        self.registry.action("graph.hover").setCheckable(True)
 
         for action_id, text, slot, sep in (
             ("analyze.descriptive", "Descriptive Statistics...", self._action_descriptive, False),
             ("analyze.regression", "Regression...", self._action_regression, False),
             ("analyze.fit", "Nonlinear Fit...", self._action_fit, False),
+            ("analyze.slope", "Slope / Range Fit...", self._action_slope, False),
             ("analyze.peaks", "Peak Analysis...", self._action_peaks, True),
             ("analyze.deconvolution", "Peak Deconvolution...", self._action_deconvolution, False),
             ("analyze.signal", "Signal Processing...", self._action_signal, False),
             ("analyze.statistics", "Statistics / t-test / ANOVA...", self._action_statistics, False),
+            ("analyze.digitize", "Digitize Curve from Image...", self._action_digitize, True),
         ):
             r.register(ActionSpec(action_id, text, None, menu="Analyze", separator_before=sep), slot)
 
         r.register(ActionSpec("export.graph", "Export Active Graph...", None, menu="Export"), self._action_export_graph)
         r.register(ActionSpec("export.all_graphs", "Export All Graphs...", None, menu="Export"), self._action_export_all_graphs)
         r.register(ActionSpec("export.sheet", "Export Worksheet as CSV...", None, menu="Export"), self._action_export_sheet)
+        r.register(ActionSpec("export.script", "Export Project as Python Script...", None, menu="Export", separator_before=True),
+                   self._action_export_script)
+        r.register(ActionSpec("export.bundle", "Export Analysis Bundle...", None, menu="Export"),
+                   self._action_export_bundle)
 
-        r.register(ActionSpec("tools.console", "Python Console", None, menu="Tools", checkable=True), self._toggle_console)
+        r.register(ActionSpec("tools.palette", "Command Palette...", "Ctrl+Shift+P", menu="Tools"),
+                   self._action_command_palette)
+        r.register(ActionSpec("tools.methods", "Analysis Methods...", None, menu="Tools"),
+                   self._action_show_methods)
+        r.register(ActionSpec("tools.console", "Python Console", None, menu="Tools", checkable=True, separator_before=True), self._toggle_console)
         r.register(ActionSpec("tools.record", "Record Macro", None, menu="Tools", checkable=True, separator_before=True), self._toggle_record)
         r.register(ActionSpec("tools.save_macro", "Save Recorded Macro...", None, menu="Tools"), self._action_save_macro)
         r.register(ActionSpec("tools.run_macro", "Run Script...", None, menu="Tools"), self._action_run_macro)
@@ -234,6 +359,7 @@ class MainWindow(QMainWindow):
         self.project = project
         self._path = path
         self.commands.clear()
+        self.provenance.clear()
         self._close_all_tabs()
         self._refresh()
         self.console.set_project(project)
@@ -340,6 +466,7 @@ class MainWindow(QMainWindow):
                 continue
             book.name = self.project.unique_name(book.name)
             commands.append(AddWorkbookCommand(self.project, book))
+            self.provenance.record_import(path, book.name)
             if first_book is None:
                 first_book = book
         if not commands:
@@ -405,16 +532,125 @@ class MainWindow(QMainWindow):
     def _action_redo(self) -> None:
         self.commands.redo()
 
+    # ------------------------------------------------------------------ rename
+    def _action_rename(self) -> None:
+        self._action_rename_for(self.project_panel.current_object())
+
+    def _action_rename_for(self, obj) -> None:
+        if obj is None:
+            self.statusBar().showMessage("Select a project, workbook, worksheet, or graph to rename", 3000)
+            return
+        old = getattr(obj, "name", "") or ""
+        new_name, ok = QInputDialog.getText(self, "Rename", "Name:", text=old)
+        if not ok:
+            self.properties_panel.show_object(obj)
+            return
+        self._apply_rename(obj, new_name)
+
+    def _apply_rename(self, obj, new_name: str | None = None) -> None:
+        """Apply a rename (with validation and source-rewriting) as one undo step."""
+        if obj is None:
+            return
+        if new_name is None:
+            self._action_rename_for(obj)
+            return
+        old = getattr(obj, "name", "") or ""
+        new_name = (new_name or "").strip()
+        if not new_name or new_name == old:
+            self._resync_after_rename(obj)
+            return
+        if not self._rename_available(obj, new_name):
+            QMessageBox.warning(self, "Name in use", f"\u201c{new_name}\u201d is already used.")
+            self._resync_after_rename(obj)
+            return
+        command = self._rename_command(obj, new_name)
+        if command is None:
+            self._resync_after_rename(obj)
+            return
+        self.commands.push(command)
+        self._resync_after_rename(obj)
+        self._sync_tab_titles()
+        self.statusBar().showMessage(f"Renamed to \u201c{new_name}\u201d", 3000)
+
+    def _rename_available(self, obj, name: str) -> bool:
+        if isinstance(obj, Project):
+            return True
+        if isinstance(obj, Workbook):
+            return all(b is obj or b.name != name for b in self.project.workbooks)
+        if isinstance(obj, Worksheet):
+            book = self._workbook_for(obj)
+            return book is None or all(s is obj or s.name != name for s in book.sheets)
+        if isinstance(obj, Graph):
+            return all(g is obj or g.name != name for g in self.project.graphs)
+        if isinstance(obj, Column):
+            sheet = self._sheet_for_column(obj)
+            return sheet is None or all(c is obj or c.name != name for c in sheet.columns)
+        return True
+
+    def _rename_command(self, obj, name: str):
+        if isinstance(obj, Workbook):
+            return RenameWorkbookCommand(self.project, obj, name)
+        if isinstance(obj, Worksheet):
+            book = self._workbook_for(obj)
+            return RenameWorksheetCommand(self.project, book, obj, name) if book else None
+        if isinstance(obj, (Project, Graph, Column)):
+            return RenameCommand(obj, name)
+        return None
+
+    def _workbook_for(self, sheet: Worksheet) -> Workbook | None:
+        for book in self.project.workbooks:
+            if sheet in book.sheets:
+                return book
+        return None
+
+    def _sheet_for_column(self, column: Column) -> Worksheet | None:
+        for book in self.project.workbooks:
+            for sheet in book.sheets:
+                if column in sheet.columns:
+                    return sheet
+        return None
+
+    def _resync_after_rename(self, obj) -> None:
+        self.project_panel.set_project(self.project)
+        self._update_title()
+        self.properties_panel.show_object(obj)
+
+    def _sync_tab_titles(self) -> None:
+        for index in range(self.tabs.count()):
+            widget = self.tabs.widget(index)
+            if isinstance(widget, WorksheetView):
+                self.tabs.setTabText(index, widget.sheet.name)
+            elif isinstance(widget, GraphView):
+                self.tabs.setTabText(index, widget.graph.name)
+
+    def _action_set_theme(self, preset_id: str) -> None:
+        app = QApplication.instance()
+        if app is None:
+            return
+        applied = apply_theme(app, preset=preset_id)
+        save_preset(applied)
+        action = self._theme_actions.get(applied)
+        if action is not None and not action.isChecked():
+            action.setChecked(True)
+        for view in self._views.values():
+            if hasattr(view, "on_theme_changed"):
+                view.on_theme_changed()
+        label = next((p.label for p in presets() if p.id == applied), applied)
+        self.statusBar().showMessage(f"{label} theme applied", 2500)
+
     def _on_stack_changed(self) -> None:
         undo = self.registry.action("edit.undo")
         redo = self.registry.action("edit.redo")
         undo.setEnabled(self.commands.can_undo)
         redo.setEnabled(self.commands.can_redo)
-        undo.setText(f"Undo {self.commands.undo_label}".strip())
-        redo.setText(f"Redo {self.commands.redo_label}".strip())
+        undo.setText("Undo")
+        redo.setText("Redo")
+        undo.setToolTip(f"Undo {self.commands.undo_label}".strip())
+        redo.setToolTip(f"Redo {self.commands.redo_label}".strip())
         if self.project is not None:
             self.project_panel.set_project(self.project)
             self._refresh_open_views()
+            self._sync_journal_actions(self._active_graph())
         self._set_dirty(True)
 
     # ---------------------------------------------------------------- data ops
@@ -441,6 +677,24 @@ class MainWindow(QMainWindow):
             return
         self._active_graph_view.add_plot()
 
+    def _plot_column(self, source: str, column_name: str) -> None:
+        """Plot one column against its partner X/Y (worksheet context menu)."""
+        if make_plot_for_column(self.project, source, column_name) is None:
+            QMessageBox.information(
+                self, "Cannot plot",
+                f"\u201c{column_name}\u201d needs a matching X and Y column to plot against.")
+            return
+        view = self._active_graph_view
+        if view is None:
+            graph = Graph(self.project.unique_name("Graph"))
+            self.commands.push(AddGraphCommand(self.project, graph))
+            self._open_graph_tab(graph)
+            view = self._active_graph_view
+        if view is None:
+            return
+        view.add_column_plot(source, column_name)
+        self.statusBar().showMessage(f"Plotted \u201c{column_name}\u201d", 3000)
+
     def _action_add_layer(self) -> None:
         if self._active_graph_view is not None:
             self._active_graph_view.add_layer()
@@ -450,6 +704,29 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "No graph", "Open or create a graph first.")
             return
         self._active_graph_view.add_annotation()
+
+    def _action_add_reference_line(self) -> None:
+        if self._active_graph_view is None:
+            QMessageBox.information(self, "No graph", "Open or create a graph first.")
+            return
+        self._active_graph_view.add_reference_line()
+
+    def _action_toggle_hover(self) -> None:
+        action = self.registry.action("graph.hover")
+        if self._active_graph_view is None:
+            action.setChecked(False)
+            QMessageBox.information(self, "No graph", "Open or create a graph first.")
+            return
+        self._active_graph_view.set_hover(action.isChecked())
+
+    def _add_annotation_to_active_graph(self, text: str) -> None:
+        graph = self._active_graph()
+        if graph is None:
+            QMessageBox.information(self, "No graph", "Create or open a graph tab first.")
+            return
+        self.commands.push(AddAnnotationCommand(graph, Annotation(text=text)))
+        if self._active_graph_view is not None:
+            self._active_graph_view.refresh()
 
     def _action_save_template(self) -> None:
         graph = self._active_graph()
@@ -481,6 +758,27 @@ class MainWindow(QMainWindow):
         self._mark_dirty()
         self.statusBar().showMessage(f"Applied template {path}", 4000)
 
+    def _action_apply_journal(self, name: str) -> None:
+        graph = self._active_graph()
+        if graph is None:
+            QMessageBox.information(self, "No graph", "Open a graph first.")
+            return
+        settings = journal_preset_settings(name)
+        target_preset = name if name in journal_names() else ""
+        commands: list = [SetAttributesCommand(graph, "Journal Preset", journal_preset=target_preset)]
+        for layer in graph.layers:
+            for spec in layer.plots:
+                commands.append(SetAttributesCommand(
+                    spec, "Journal Preset",
+                    line_width=float(settings["line_width"]),
+                    symbol_size=float(settings["symbol_size"]),
+                ))
+        self.commands.push(MacroCommand(commands, f"Apply Journal Preset: {name}"))
+        if self._active_graph_view is not None:
+            self._active_graph_view.refresh()
+        self._mark_dirty()
+        self.statusBar().showMessage(f"Applied journal preset: {name}", 4000)
+
     def _action_sample_data(self) -> None:
         sheet = self._current_sheet()
         if sheet is None:
@@ -501,9 +799,13 @@ class MainWindow(QMainWindow):
     def _run_dialog(self, dialog) -> None:
         if dialog.exec():
             result = dialog.run()
+            sheet = dialog.sheet()
+            source = sheet_label(self.project, sheet) if sheet is not None else ""
+            self.provenance.record_analysis(result, source=source)
             AnalysisResultDialog(
                 result, project=self.project, commands=self.commands,
-                default_sheet=dialog.sheet(), add_to_graph=self._add_curve_to_active_graph, parent=self,
+                default_sheet=dialog.sheet(), add_to_graph=self._add_curve_to_active_graph,
+                add_annotation=self._add_annotation_to_active_graph, parent=self,
             ).exec()
 
     def _action_descriptive(self) -> None:
@@ -530,9 +832,31 @@ class MainWindow(QMainWindow):
         if self.project.workbooks:
             self._run_dialog(SignalDialog(self.project, self))
 
+    def _action_slope(self) -> None:
+        if self.project.workbooks:
+            self._run_dialog(SlopeDialog(self.project, self))
+
     def _action_statistics(self) -> None:
         if self.project.workbooks:
             self._run_dialog(StatisticsDialog(self.project, self))
+
+    def _action_digitize(self) -> None:
+        dialog = DigitizeDialog(self)
+        if not dialog.exec():
+            return
+        try:
+            result = dialog.run()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Digitizing failed", f"{type(exc).__name__}: {exc}")
+            return
+        sheet = self._current_sheet()
+        source = sheet_label(self.project, sheet) if sheet is not None else ""
+        self.provenance.record_analysis(result, source=source)
+        AnalysisResultDialog(
+            result, project=self.project, commands=self.commands,
+            default_sheet=sheet, add_to_graph=self._add_curve_to_active_graph,
+            add_annotation=self._add_annotation_to_active_graph, parent=self,
+        ).exec()
 
     def _add_curve_to_active_graph(self, sheet, name, x, y) -> None:
         graph = self._active_graph()
@@ -562,6 +886,7 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(self, "Export Graph As", f"{graph.name}.pdf", GRAPH_FILTER)
         if not path:
             return
+        path = _normalized_export_path(path)
         options = ExportGraphDialog(self)
         if not options.exec():
             return
@@ -569,7 +894,8 @@ class MainWindow(QMainWindow):
             export_graph(graph, self.project, path, width_mm=options.width.value(),
                          height_mm=options.height.value(), dpi=options.dpi.value())
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Export failed", str(exc))
+            traceback.print_exc()
+            QMessageBox.critical(self, "Export failed", f"{type(exc).__name__}: {exc}")
             return
         self.statusBar().showMessage(f"Exported {path}", 4000)
 
@@ -605,6 +931,29 @@ class MainWindow(QMainWindow):
         export_delimited(sheet, path)
         self.statusBar().showMessage(f"Exported {path}", 4000)
 
+    def _action_export_script(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "Export Project as Python Script",
+                                              f"{self.project.name}.py", "Python (*.py)")
+        if not path:
+            return
+        Path(path).write_text(project_to_script(self.project), encoding="utf-8")
+        self.statusBar().showMessage(f"Exported script {path}", 4000)
+
+    def _action_export_bundle(self) -> None:
+        directory = QFileDialog.getExistingDirectory(self, "Export Analysis Bundle To Folder")
+        if not directory:
+            return
+        try:
+            bundle = export_analysis_bundle(self.project, self.provenance, directory)
+        except Exception as exc:  # noqa: BLE001
+            traceback.print_exc()
+            QMessageBox.critical(self, "Bundle failed", f"{type(exc).__name__}: {exc}")
+            return
+        counts = ", ".join(f"{len(v)} {k}" for k, v in bundle.files.items() if v)
+        QMessageBox.information(self, "Analysis bundle",
+                                f"Wrote a reproducible bundle to:\n{bundle.root}\n\n{counts}")
+        self.statusBar().showMessage(f"Exported bundle to {bundle.root}", 6000)
+
     # --------------------------------------------------------------- tool ops
     def _toggle_console(self, *_args) -> None:
         self.dock_console.setVisible(self.registry.action("tools.console").isChecked())
@@ -636,6 +985,28 @@ class MainWindow(QMainWindow):
         self.registry.action("tools.console").setChecked(True)
         self.console.run_script(Path(path).read_text(encoding="utf-8"))
         self.console.set_project(self.project)
+
+    def _action_command_palette(self) -> None:
+        palette = CommandPalette(self.registry, self)
+        if palette.exec() and palette.selected_action:
+            action = self.registry.action(palette.selected_action)
+            if action.isEnabled():
+                action.trigger()
+
+    def _action_show_methods(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Analysis Methods")
+        dialog.resize(640, 560)
+        layout = QVBoxLayout(dialog)
+        view = QPlainTextEdit(self.provenance.methods_markdown(self.project))
+        view.setReadOnly(True)
+        view.setFont(QFont("monospace"))
+        layout.addWidget(view)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject)
+        buttons.accepted.connect(dialog.accept)
+        layout.addWidget(buttons)
+        dialog.exec()
 
     def _action_about(self) -> None:
         from respot import __version__
@@ -678,6 +1049,25 @@ class MainWindow(QMainWindow):
         widget = self.tabs.widget(index)
         if isinstance(widget, GraphView):
             self._active_graph_view = widget
+            action = self.registry.action("graph.hover")
+            action.blockSignals(True)
+            action.setChecked(widget.hover_enabled)
+            action.blockSignals(False)
+            self._sync_journal_actions(widget.graph)
+
+    def _sync_journal_actions(self, graph: Graph | None) -> None:
+        current = getattr(graph, "journal_preset", "") if graph is not None else ""
+        for name, action in self._journal_actions.items():
+            action.blockSignals(True)
+            action.setChecked(name == current)
+            action.blockSignals(False)
+
+    def _on_graph_hover_changed(self, enabled: bool) -> None:
+        action = self.registry.action("graph.hover")
+        if action.isChecked() != enabled:
+            action.blockSignals(True)
+            action.setChecked(enabled)
+            action.blockSignals(False)
 
     def _on_object_activated(self, obj) -> None:
         if isinstance(obj, Worksheet):
@@ -693,6 +1083,8 @@ class MainWindow(QMainWindow):
             self.tabs.setCurrentWidget(view)
             return
         view = WorksheetView(sheet, self.commands, sheet_label(self.project, sheet))
+        view.plot_column_requested.connect(
+            lambda name, s=sheet: self._plot_column(sheet_label(self.project, s), name))
         self._views[id(sheet)] = view
         self.tabs.addTab(view, sheet.name)
         self.tabs.setCurrentWidget(view)
@@ -704,10 +1096,12 @@ class MainWindow(QMainWindow):
             self._active_graph_view = view
             return
         view = GraphView(graph, self.project, self.commands, on_change=self._mark_dirty)
+        view.hover_changed.connect(self._on_graph_hover_changed)
         self._views[id(graph)] = view
         self.tabs.addTab(view, graph.name)
         self.tabs.setCurrentWidget(view)
         self._active_graph_view = view
+        self._sync_journal_actions(graph)
 
     def _refresh_open_views(self) -> None:
         for view in self._views.values():

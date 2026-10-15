@@ -7,12 +7,23 @@ from respot.core.commands import (
     AddWorkbookCommand,
     CommandStack,
     MacroCommand,
+    RenameCommand,
+    RenameWorkbookCommand,
+    RenameWorksheetCommand,
     ReorderColumnsCommand,
     RemoveWorkbookCommand,
     SetCellValueCommand,
     SetCellsCommand,
 )
-from respot.core.model import Column, ColumnType, Project, Workbook, Worksheet
+from respot.core.model import (
+    Column,
+    ColumnType,
+    Graph,
+    PlotSpec,
+    Project,
+    Workbook,
+    Worksheet,
+)
 
 
 def test_add_workbook_undo_redo():
@@ -137,3 +148,67 @@ def test_reorder_columns_undo_redo():
 
     stack.redo()
     assert sheet.column_names == ["Y2", "X1", "Y1"]
+
+
+def _project_with_graph():
+    project = Project("P")
+    book = project.add_workbook(Workbook("Book1"))
+    sheet = book.add_sheet(Worksheet("Sheet1"))
+    sheet.add_column("X1", ColumnType.X, [0.0, 1.0])
+    sheet.add_column("Y1", ColumnType.Y, [0.0, 1.0])
+    graph = project.add_graph(Graph("G"))
+    graph.first_layer.add_plot(PlotSpec("Book1/Sheet1", "X1", "Y1"))
+    return project, book, sheet, graph
+
+
+def test_rename_workbook_rewrites_plot_sources_and_undoes():
+    project, book, sheet, graph = _project_with_graph()
+    stack = CommandStack()
+
+    stack.push(RenameWorkbookCommand(project, book, "Data"))
+    assert book.name == "Data"
+    assert graph.first_layer.plots[0].source == "Data/Sheet1"
+
+    stack.undo()
+    assert book.name == "Book1"
+    assert graph.first_layer.plots[0].source == "Book1/Sheet1"
+
+    stack.redo()
+    assert book.name == "Data"
+    assert graph.first_layer.plots[0].source == "Data/Sheet1"
+
+
+def test_rename_worksheet_rewrites_plot_sources_and_undoes():
+    project, book, sheet, graph = _project_with_graph()
+    stack = CommandStack()
+
+    stack.push(RenameWorksheetCommand(project, book, sheet, "Measurements"))
+    assert sheet.name == "Measurements"
+    assert graph.first_layer.plots[0].source == "Book1/Measurements"
+
+    stack.undo()
+    assert sheet.name == "Sheet1"
+    assert graph.first_layer.plots[0].source == "Book1/Sheet1"
+
+
+def test_rename_does_not_touch_unrelated_sources():
+    project, book, sheet, graph = _project_with_graph()
+    other = project.add_workbook(Workbook("Book10"))
+    other.add_sheet(Worksheet("Sheet1"))
+    graph.first_layer.add_plot(PlotSpec("Book10/Sheet1", "X1", "Y1"))
+
+    stack = CommandStack()
+    stack.push(RenameWorkbookCommand(project, book, "Renamed"))
+    sources = [p.source for layer in graph.layers for p in layer.plots]
+    # Only "Book1/Sheet1" changed; "Book10/Sheet1" (a different workbook) did not.
+    assert sorted(sources) == ["Book10/Sheet1", "Renamed/Sheet1"]
+
+
+def test_generic_rename_is_undoable():
+    project = Project("Old")
+    stack = CommandStack()
+    stack.push(RenameCommand(project, "New"))
+    assert project.name == "New"
+    stack.undo()
+    assert project.name == "Old"
+

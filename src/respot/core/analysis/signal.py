@@ -150,21 +150,179 @@ def interpolate(x: Sequence[float], y: Sequence[float], *, num: int = 200, kind:
 
 def baseline_polynomial(x: Sequence[float], y: Sequence[float], *, degree: int = 3) -> AnalysisResult:
     x, y = _clean(x, y)
-    result = AnalysisResult(kind="baseline", title=f"Polynomial Baseline (deg {degree})")
     if x.size <= degree:
+        result = AnalysisResult(kind="baseline", title=f"Polynomial Baseline (deg {degree})")
         result.notes = "Not enough points."
         return result
     coeffs = np.polyfit(x, y, degree)
     baseline = np.polyval(coeffs, x)
+    return _baseline_result(x, y, baseline, f"Polynomial Baseline (deg {degree})",
+                            Degree=float(degree))
+
+
+def _baseline_result(
+    x: np.ndarray, y: np.ndarray, baseline: np.ndarray, title: str, **summary: float
+) -> AnalysisResult:
+    """Package a fitted baseline + the corrected signal into an AnalysisResult."""
+    result = AnalysisResult(kind="baseline", title=title)
+    corrected = y - baseline
     result.curves["Baseline"] = (x, baseline)
-    result.curves["Corrected"] = (x, y - baseline)
-    result.summary = {"Degree": float(degree), "N": float(y.size)}
+    result.curves["Corrected"] = (x, corrected)
+    result.summary = {
+        **summary,
+        "N": float(y.size),
+        "Raw std": float(np.nanstd(y)),
+        "Corrected std": float(np.nanstd(corrected)),
+    }
     return result
 
+
+def baseline_linear(x: Sequence[float], y: Sequence[float]) -> AnalysisResult:
+    """Straight-line baseline (degree-1 polynomial, named for what it is)."""
+    x, y = _clean(x, y)
+    if x.size < 2:
+        result = AnalysisResult(kind="baseline", title="Linear Baseline")
+        result.notes = "Not enough points."
+        return result
+    coeffs = np.polyfit(x, y, 1)
+    return _baseline_result(x, y, np.polyval(coeffs, x), "Linear Baseline")
+
+
+def baseline_als(
+    x: Sequence[float], y: Sequence[float], *, lam: float = 1e5, p: float = 0.01, niter: int = 10
+) -> AnalysisResult:
+    """Asymmetric least squares baseline (Eilers & Boelens, 2005).
+
+    ``lam`` sets smoothness (bigger = flatter), ``p`` the asymmetry (small = the
+    baseline hugs the underside of the peaks). It is iterative, so keep ``niter``
+    modest for interactive use.
+    """
+    from scipy import sparse
+    from scipy.sparse.linalg import spsolve
+
+    x, y = _clean(x, y)
+    if x.size < 3:
+        result = AnalysisResult(kind="baseline", title="Baseline (ALS)")
+        result.notes = "Not enough points."
+        return result
+
+    n = y.size
+    diff = sparse.diags([1.0, -2.0, 1.0], [0, -1, -2], shape=(n, n - 2))
+    penalty = lam * diff.dot(diff.transpose())
+    weights = np.ones(n)
+    baseline = y.copy()
+    for _ in range(max(1, niter)):
+        weight_matrix = sparse.spdiags(weights, 0, n, n)
+        baseline = spsolve((weight_matrix + penalty).tocsc(), weights * y)
+        weights = p * (y > baseline) + (1.0 - p) * (y < baseline)
+    return _baseline_result(x, y, np.asarray(baseline), "Baseline (ALS)",
+                            Lambda=float(lam), p=float(p), Iterations=float(niter))
+
+
+def baseline_rolling_ball(x: Sequence[float], y: Sequence[float], *, radius: int = 50) -> AnalysisResult:
+    """Morphological (grey-scale opening) baseline — a rolling ball under the signal."""
+    from scipy import ndimage
+
+    x, y = _clean(x, y)
+    if x.size < 3:
+        result = AnalysisResult(kind="baseline", title="Baseline (rolling ball)")
+        result.notes = "Not enough points."
+        return result
+    size = max(3, int(2 * max(1, radius) + 1))
+    if size % 2 == 0:
+        size += 1
+    baseline = ndimage.grey_opening(y, size=size)
+    return _baseline_result(x, y, baseline, "Baseline (rolling ball)", Radius=float(radius))
+
+
+def baseline_rubber_band(x: Sequence[float], y: Sequence[float]) -> AnalysisResult:
+    """Lower convex hull through the points (the "rubber band" baseline)."""
+    x, y = _clean(x, y)
+    if x.size < 3:
+        result = AnalysisResult(kind="baseline", title="Baseline (rubber band)")
+        result.notes = "Not enough points."
+        return result
+    order = np.argsort(x)
+    xs, ys = x[order], y[order]
+    hull_x, hull_y = _lower_hull(xs, ys)
+    baseline = np.interp(xs, hull_x, hull_y)
+    return _baseline_result(x, y, baseline, "Baseline (rubber band)")
+
+
+def _lower_hull(xs: np.ndarray, ys: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Lower convex hull of a point set (Andrew's monotone chain)."""
+    points = sorted(zip(xs.tolist(), ys.tolist()))
+    lower: list[tuple[float, float]] = []
+    for point in points:
+        while len(lower) >= 2 and _cross(lower[-2], lower[-1], point) <= 0:
+            lower.pop()
+        lower.append(point)
+    hull_x = np.array([p[0] for p in lower], dtype=float)
+    hull_y = np.array([p[1] for p in lower], dtype=float)
+    return hull_x, hull_y
+
+
+def _cross(o: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:
+    return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+
+def baseline_median(x: Sequence[float], y: Sequence[float], *, window: int = 51) -> AnalysisResult:
+    """Median-filter baseline; robust to narrow peaks, so good for a first pass."""
+    from scipy import signal as _signal
+
+    x, y = _clean(x, y)
+    if x.size < 3:
+        result = AnalysisResult(kind="baseline", title="Baseline (median)")
+        result.notes = "Not enough points."
+        return result
+    size = max(3, int(window))
+    if size % 2 == 0:
+        size += 1
+    size = min(size, x.size if x.size % 2 == 1 else x.size - 1)
+    baseline = _signal.medfilt(y, kernel_size=size)
+    return _baseline_result(x, y, baseline, "Baseline (median)", Window=float(size))
+
+
+#: Baseline methods accepted by :func:`baseline_correction`, in menu order.
+BASELINE_METHODS = (
+    "Polynomial", "Linear", "ALS", "Rolling ball", "Rubber band", "Median",
+)
+
+
+def baseline_correction(
+    x: Sequence[float], y: Sequence[float], *, method: str = "Polynomial",
+    degree: int = 3, lam: float = 1e5, p: float = 0.01, radius: int = 50, window: int = 51,
+) -> AnalysisResult:
+    """Dispatch to a named baseline method (shared by the dialog and recipes)."""
+    key = (method or "Polynomial").strip().lower()
+    if key in ("linear", "line"):
+        return baseline_linear(x, y)
+    if key in ("als", "asymmetric"):
+        return baseline_als(x, y, lam=lam, p=p)
+    if key in ("rolling ball", "rolling-ball", "rollingball", "morphological"):
+        return baseline_rolling_ball(x, y, radius=radius)
+    if key in ("rubber band", "rubber-band", "rubberband", "hull"):
+        return baseline_rubber_band(x, y)
+    if key in ("median", "median filter"):
+        return baseline_median(x, y, window=window)
+    return baseline_polynomial(x, y, degree=degree)
+
+
+#: Maps the Signal dialog's operation names to baseline dispatcher methods.
+_BASELINE_BY_OPERATION = {
+    "Baseline (polynomial)": "Polynomial",
+    "Baseline (linear)": "Linear",
+    "Baseline (ALS)": "ALS",
+    "Baseline (rolling ball)": "Rolling ball",
+    "Baseline (rubber band)": "Rubber band",
+    "Baseline (median)": "Median",
+}
 
 _OPERATIONS = (
     "Smooth (Savitzky-Golay)", "Moving Average", "Low-pass Filter", "High-pass Filter",
     "FFT Spectrum", "Derivative", "Integrate", "Interpolate", "Baseline (polynomial)",
+    "Baseline (linear)", "Baseline (ALS)", "Baseline (rolling ball)",
+    "Baseline (rubber band)", "Baseline (median)",
 )
 
 
@@ -181,6 +339,8 @@ def run_operation(
     order: int = 3,
     cutoff: float = 1.0,
     points: int = 200,
+    lam: float = 1e5,
+    baseline_method: str | None = None,
 ) -> AnalysisResult:
     """Dispatch a named signal operation (shared by the dialog and recipes)."""
     if name in ("Smooth (Savitzky-Golay)", "savgol"):
@@ -199,11 +359,18 @@ def run_operation(
         return integrate_curve(x, y)
     if name in ("Interpolate", "interpolate"):
         return interpolate(x, y, num=points)
+    if name in _BASELINE_BY_OPERATION or baseline_method is not None:
+        method = baseline_method or _BASELINE_BY_OPERATION.get(name, name)
+        return baseline_correction(
+            x, y, method=method, degree=order, lam=lam, radius=window, window=window,
+        )
     return baseline_polynomial(x, y, degree=order)
 
 
 __all__ = [
     "fft_spectrum", "smooth_savgol", "smooth_moving_average", "butter_filter",
     "differentiate", "integrate_curve", "interpolate", "baseline_polynomial",
-    "run_operation", "operations",
+    "baseline_linear", "baseline_als", "baseline_rolling_ball",
+    "baseline_rubber_band", "baseline_median", "baseline_correction",
+    "BASELINE_METHODS", "run_operation", "operations",
 ]

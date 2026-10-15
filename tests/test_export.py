@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from respot.core.io.export import export_graph
 from respot.core.model import (
@@ -62,3 +63,16 @@ def test_export_dual_axis_and_annotation(tmp_path):
 
     out = export_graph(graph, project, tmp_path / "dual.pdf")
     assert out.exists() and out.stat().st_size > 0
+
+
+def test_unsupported_format_raises_a_clear_error(tmp_path):
+    project, graph = _project_with_graph()
+    with pytest.raises(ValueError, match="Unsupported export format"):
+        export_graph(graph, project, tmp_path / "fig.bmp")
+
+
+def test_jpeg_suffix_maps_to_jpg(tmp_path):
+    project, graph = _project_with_graph()
+    out = export_graph(graph, project, tmp_path / "fig.jpeg")
+    assert out.exists() and out.stat().st_size > 0
+

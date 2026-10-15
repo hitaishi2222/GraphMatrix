@@ -32,6 +32,13 @@ class AxisScale(str, Enum):
         return self.value
 
 
+#: Line-dash presets accepted by every backend (canvas + matplotlib export).
+LINE_STYLES = ("solid", "dash", "dot", "dashdot", "longdash")
+
+#: Orientation tokens for :class:`ReferenceLine`.
+REFERENCE_ORIENTATIONS = ("h", "v")
+
+
 _PALETTE = (
     "#1f77b4", "#d62728", "#2ca02c", "#9467bd",
     "#ff7f0e", "#17becf", "#8c564b", "#e377c2",
@@ -54,6 +61,7 @@ class PlotSpec:
     symbol_size: float = 7.0
     legend: str = ""
     y_axis: str = "left"  # "left" | "right" (secondary Y axis)
+    line_style: str = "solid"  # one of LINE_STYLES
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -62,7 +70,7 @@ class PlotSpec:
             "style": PlotStyle(self.style).value, "color": self.color,
             "line_width": self.line_width, "symbol": self.symbol,
             "symbol_size": self.symbol_size, "legend": self.legend,
-            "y_axis": self.y_axis,
+            "y_axis": self.y_axis, "line_style": self.line_style,
         }
 
     @classmethod
@@ -75,6 +83,7 @@ class PlotSpec:
             symbol=payload.get("symbol", "o"), symbol_size=payload.get("symbol_size", 7.0),
             legend=payload.get("legend", ""),
             y_axis=payload.get("y_axis", "left"),
+            line_style=payload.get("line_style", "solid"),
         )
 
 
@@ -100,11 +109,47 @@ class Annotation:
 
 
 @dataclass
+class ReferenceLine:
+    """A horizontal or vertical guide line drawn across a layer's axes.
+
+    ``orientation`` is ``"h"`` for a line at ``y = position`` or ``"v"`` for a line
+    at ``x = position``. Reference lines are *not* data: they are never downsampled,
+    never appear in the legend, and carry no worksheet source.
+    """
+
+    orientation: str = "h"
+    position: float = 0.0
+    color: str = "#888888"
+    width: float = 1.5
+    line_style: str = "dash"
+    label: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "orientation": self.orientation, "position": self.position,
+            "color": self.color, "width": self.width,
+            "line_style": self.line_style, "label": self.label,
+        }
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "ReferenceLine":
+        return cls(
+            orientation=payload.get("orientation", "h"),
+            position=payload.get("position", 0.0),
+            color=payload.get("color", "#888888"),
+            width=payload.get("width", 1.5),
+            line_style=payload.get("line_style", "dash"),
+            label=payload.get("label", ""),
+        )
+
+
+@dataclass
 class Layer:
     """A plotting layer with its own axes configuration."""
 
     name: str = "Layer 1"
     plots: list[PlotSpec] = field(default_factory=list)
+    ref_lines: list[ReferenceLine] = field(default_factory=list)
     x_scale: AxisScale = AxisScale.LINEAR
     y_scale: AxisScale = AxisScale.LINEAR
     x_label: str = ""
@@ -125,10 +170,20 @@ class Layer:
         del self.plots[index]
         return index
 
+    def add_ref_line(self, line: ReferenceLine) -> ReferenceLine:
+        self.ref_lines.append(line)
+        return line
+
+    def remove_ref_line(self, line: ReferenceLine) -> int:
+        index = self.ref_lines.index(line)
+        del self.ref_lines[index]
+        return index
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
             "plots": [p.to_dict() for p in self.plots],
+            "ref_lines": [r.to_dict() for r in self.ref_lines],
             "x_scale": AxisScale(self.x_scale).value,
             "y_scale": AxisScale(self.y_scale).value,
             "x_label": self.x_label, "y_label": self.y_label, "y2_label": self.y2_label,
@@ -141,6 +196,7 @@ class Layer:
     def from_dict(cls, payload: dict[str, Any]) -> "Layer":
         layer = cls(payload.get("name", "Layer 1"))
         layer.plots = [PlotSpec.from_dict(p) for p in payload.get("plots", [])]
+        layer.ref_lines = [ReferenceLine.from_dict(r) for r in payload.get("ref_lines", [])]
         layer.x_scale = AxisScale(payload.get("x_scale", "linear"))
         layer.y_scale = AxisScale(payload.get("y_scale", "linear"))
         layer.x_label = payload.get("x_label", "")
@@ -165,6 +221,7 @@ class Graph:
         self.title = title
         self.layers: list[Layer] = [Layer()]
         self.annotations: list[Annotation] = []
+        self.journal_preset: str = ""
 
     def add_layer(self, layer: Layer | None = None) -> Layer:
         layer = layer or Layer(f"Layer {len(self.layers) + 1}")
@@ -191,6 +248,7 @@ class Graph:
             "name": self.name, "title": self.title,
             "layers": [l.to_dict() for l in self.layers],
             "annotations": [a.to_dict() for a in self.annotations],
+            "journal_preset": self.journal_preset,
         }
 
     @classmethod
@@ -200,6 +258,7 @@ class Graph:
         if layers:
             graph.layers = layers
         graph.annotations = [Annotation.from_dict(a) for a in payload.get("annotations", [])]
+        graph.journal_preset = payload.get("journal_preset", "")
         return graph
 
     def __repr__(self) -> str:  # pragma: no cover - cosmetic

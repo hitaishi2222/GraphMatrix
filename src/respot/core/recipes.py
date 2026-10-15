@@ -12,14 +12,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
 
-from .analysis import deconvolution, descriptive, fitting, peaks, regression, signal
+from .analysis import deconvolution, descriptive, fitting, peaks, ranged, regression, signal
 from .analysis.result import AnalysisResult
 
 RECIPE_FORMAT = "respot-recipe"
 RECIPE_VERSION = 1
 
 # Operations that only need a single series (y) use x = None.
-OPERATIONS = ("descriptive", "regression", "fit", "peaks", "deconvolution", "signal")
+OPERATIONS = ("descriptive", "regression", "fit", "peaks", "deconvolution", "signal", "slope")
 
 
 @dataclass
@@ -72,7 +72,11 @@ def run_recipe(recipe: Recipe, x: Sequence[float] | None, y: Sequence[float]) ->
             p.get("operation", "FFT Spectrum"), x, y,
             window=int(p.get("window", 11)), order=int(p.get("order", 3)),
             cutoff=float(p.get("cutoff", 1.0)), points=int(p.get("points", 200)),
+            lam=float(p.get("lam", 1e5)),
+            baseline_method=p.get("baseline_method"),
         )
+    if op == "slope":
+        return ranged.slope_between(x, y, p.get("x0"), p.get("x1"))
     raise ValueError(f"unknown recipe operation {op!r}")
 
 

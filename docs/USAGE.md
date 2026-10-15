@@ -9,6 +9,12 @@ PYTHONPATH=src python -m respot
 The window has a **Project Explorer** (left), a **Properties** inspector (right),
 a tabbed workspace (center), and a **Python Console** (bottom, hidden by default).
 
+To **rename** the project, a workbook, a worksheet, or a graph, right-click it in the
+Project Explorer → **Rename…**, or select it and press **F2** (the Properties
+inspector's **Name** field is editable too). Renaming a workbook or worksheet
+rewrites the data references used by any graph built on it, so existing plots keep
+working; every rename is a single undoable step.
+
 ## The workflow
 
 ### 1. Get data in
@@ -36,12 +42,26 @@ Formulas reference columns by name and use numpy functions, e.g. `sin(X1) + 2`,
 - **Graph → Add Plot to Active Graph…** chooses source sheet, X, Y, Y error, style.
 - **Drag a column** from the Project Explorer onto a graph to plot it (an X column
   pairs with the sheet's first Y; a Y column with the first X).
-- The graph sidebar edits plot style/color/symbol/**Y axis (left/right)** and axis
-  scale/labels/limits/**Y2 label**/legend.
+- **Right-click a column header**, or select a whole column in the grid and
+  right-click it → **Plot “Column”**, to graph it against its partner X/Y. If no
+  graph is open, one is created for you.
+- The graph sidebar edits plot style/**line style (solid/dash/dot/dashdot/longdash)**/
+  color/symbol/**Y axis (left/right)** and axis scale/labels/limits/**Y2 label**/legend.
 - **Graph → Add Annotation…** places a text label; **Graph → Save/Apply Style
   Template…** copies a graph's whole look onto another graph.
+- **Reference lines** — **Graph → Add Reference Line…** (or the sidebar's **Add H-line**
+  / **Add V-line**) draws a horizontal or vertical guide at a chosen value with its own
+  color, width, dash style, and optional label. Lines belong to a layer and are
+  undoable; they appear in exports too.
+- **Data readout** — **Graph → Data Readout (Hover)** (or the sidebar toggle) shows a
+  crosshair plus the nearest data point's series, `x`, and `y` under the mouse. It is an
+  interaction only, so it never appears in exported figures.
 - Styles: line, scatter, line+symbol, bar, area, step, error bar. Multi-layer and
   **dual Y axis** supported. Large series are downsampled automatically while panning.
+- **Journal presets** — **Graph → Journal Preset** applies a publisher's figure size
+  and typography (Nature, Science, APS, IEEE — single & double column) to the active
+  graph: it restyles the plots' line widths and marker sizes and records the preset so
+  the exporter uses the matching font sizes and default dimensions. Undoable.
 
 ### 4. Analyze
 Everything is under **Analyze**:
@@ -53,12 +73,33 @@ Everything is under **Analyze**:
 - **Peak Analysis** — peak positions, heights, prominence, FWHM.
 - **Peak Deconvolution** — fit a sum of overlapping Gaussian or Lorentzian peaks
   (give approximate centres, or leave blank to auto-detect) with a constant baseline.
+- **Slope / Range Fit** — linear fit of a series between two X values, reporting slope,
+  intercept, R², the slope's standard error, and Δy/Δx over the window. The report can
+  **Annotate on graph**, writing `slope = … (R² = …)` as an undoable text label.
 - **Signal Processing** — FFT, Savitzky–Golay / moving-average smoothing, Butterworth
-  filters, derivative, integration, interpolation, polynomial baseline.
+  filters, derivative, integration, interpolation, and **baseline correction**
+  (polynomial, linear, ALS, rolling-ball, rubber-band, median). Baseline results return
+  both the fitted `Baseline` and the `Corrected` signal.
 - **Statistics** — t-tests, one-way ANOVA, Pearson/Spearman correlation, histogram.
+- **Digitize Curve from Image** — recover `(x, y)` points from a picture of a plot.
+  Load a PNG/JPEG/TIFF, click the four calibration anchors in order (X1, X2, Y1, Y2 —
+  two points per axis, each mapping a pixel coordinate to a data value; the pixel
+  spinboxes let you nudge them), then **Extract**. Choose a darkness threshold, flip it
+  for light-on-dark traces, restrict the X range, or tick **Isolate colour** and give a
+  hex colour + tolerance to pull one trace out of a busy figure. The result adds to the
+  project like any other analysis curve.
 
 Every report can push its **curves back into the project**: "Add as columns" (undoable)
 or "Plot on active graph" (adds the curve as columns and a plot).
+
+### 4b. Reproducibility
+- **Tools → Analysis Methods…** shows a plain-language methods write-up: data imports,
+  analysis runs (with their summaries), and notable operations, in order.
+- **Export → Export Project as Python Script…** writes a script that rebuilds every
+  workbook and graph through the console API.
+- **Export → Export Analysis Bundle…** writes a folder containing the project,
+  `data/*.csv`, `figures/*`, `reproduce.py`, `methods.md`, and `provenance.json` — the
+  whole piece of work, reproducible and documented.
 
 ### 5. Export
 - **Export → Export Active Graph…** — PDF/SVG/EPS (vector, font-embedded) or
@@ -67,6 +108,7 @@ or "Plot on active graph" (adds the curve as columns and a plot).
 - **Export → Export Worksheet as CSV…**
 
 ### 6. Automate
+- **Tools → Command Palette…** (`Ctrl+Shift+P`) — fuzzy-search every action and run it.
 - **Tools → Python Console**: a live Python REPL scoped to your project.
 - **Tools → Record Macro** → make edits → **Save Recorded Macro…** writes a runnable
   script. **Tools → Run Script…** replays it.
@@ -85,7 +127,10 @@ r = run_recipe(recipe, x, y)          # x, y from anywhere
 save_recipe(recipe, "exp.json")       # batch it via Tools → Batch Analysis
 ```
 
-Supported operations: `descriptive`, `regression`, `fit`, `peaks`, `deconvolution`, `signal`.
+Supported operations: `descriptive`, `regression`, `fit`, `peaks`, `deconvolution`,
+`signal`, `slope`. A `signal` recipe can name a baseline, e.g.
+`Recipe("signal", {"operation": "Baseline (ALS)", "lam": 1e6})`, and a `slope` recipe
+takes optional `x0`/`x1` bounds.
 
 ## Scripting examples
 
@@ -115,6 +160,45 @@ api.add_column("Demo/Sheet1", "Fit_Y", "Y", data=fity)
 api.save("demo.rsproj")
 ```
 
+Figure-as-code and reproducible bundles are one call each:
+
+```python
+from respot.core.code_export import project_to_script
+from respot.core.report import export_analysis_bundle
+
+print(project_to_script(project))          # a script that rebuilds the project
+export_analysis_bundle(project, None, "bundle")   # data/ + figures/ + reproduce.py + methods.md
+```
+
+The digitizer is also importable (pixel anchors → data values):
+
+```python
+from respot.core.analysis.digitize import digitize_curve
+
+result = digitize_curve(
+    "scan.png",
+    x_anchors=((60, 0.0), (740, 10.0)),   # (pixel, value) × 2 for the x axis
+    y_anchors=((560, 0.0), (60, 5.0)),    # (pixel, value) × 2 for the y axis
+)
+x, y = result.curves["Digitized"]
+```
+
+## Appearance / themes
+
+**View → Theme** (or the **Theme** dropdown on the toolbar) switches between four
+presets. The choice is remembered between runs.
+
+| Preset | Colour scheme | Design |
+|--------|---------------|--------|
+| **Classic Dark** (default) | dark | neutral, square-ish |
+| **Classic Light** | light | neutral, square-ish |
+| **Modern Dark** | dark | deeper surfaces, indigo accent, rounded and compact |
+| **Modern Light** | light | airy surfaces, indigo accent, rounded and compact |
+
+The design language ("classic" vs "modern") and the colour scheme are independent,
+so the plot canvas, axes, legends, and annotations are recoloured to match whichever
+preset is active.
+
 ## Keyboard shortcuts
 
 | Action | Shortcut |
@@ -125,6 +209,8 @@ api.save("demo.rsproj")
 | Import data | Ctrl+I |
 | Copy / Cut / Paste (cells) | Ctrl+C / Ctrl+X / Ctrl+V |
 | Undo / Redo | Ctrl+Z / Ctrl+Shift+Z |
+| Rename selected item | F2 |
+| Command palette | Ctrl+Shift+P |
 | Quit | Ctrl+Q |
 
 ## Project files

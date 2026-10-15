@@ -22,7 +22,21 @@ from ..commands import (
     CommandStack,
 )
 from ..io.importer import import_file, import_sheet
-from ..model import Column, ColumnType, Graph, PlotSpec, PlotStyle, Project, Workbook, Worksheet
+from ..model import (
+    LINE_STYLES,
+    Annotation,
+    AxisScale,
+    Column,
+    ColumnType,
+    Graph,
+    Layer,
+    PlotSpec,
+    PlotStyle,
+    Project,
+    ReferenceLine,
+    Workbook,
+    Worksheet,
+)
 
 
 class RespotAPI:
@@ -78,9 +92,10 @@ class RespotAPI:
     def add_column(
         self, source: str, name: str, col_type: str = "Y",
         data: Sequence[Any] | None = None, *, units: str = "", comment: str = "",
+        mask: Sequence[bool] | None = None,
     ) -> Column:
         sheet = self.sheet(source)
-        column = Column(name, ColumnType(col_type), data, units=units, comment=comment)
+        column = Column(name, ColumnType(col_type), data, units=units, comment=comment, mask=mask)
         self._push(AddColumnCommand(sheet, column, source=source))
         return column
 
@@ -175,6 +190,11 @@ def make_namespace(api: RespotAPI) -> dict[str, Any]:
         "Graph": Graph,
         "PlotSpec": PlotSpec,
         "PlotStyle": PlotStyle,
+        "Layer": Layer,
+        "AxisScale": AxisScale,
+        "ReferenceLine": ReferenceLine,
+        "Annotation": Annotation,
+        "LINE_STYLES": LINE_STYLES,
     }
 
 

@@ -40,11 +40,25 @@ class PlotCanvas(ABC):
         yerr: Sequence[float] | None = None,
         xerr: Sequence[float] | None = None,
         y_axis: str = "left",
+        line_style: str = "solid",
     ) -> Any:
         """Plot a series and return the backend's plot item.
 
         ``y_axis`` selects the primary ("left") or secondary ("right") Y axis.
+        ``line_style`` is one of :data:`respot.core.model.graph.LINE_STYLES`.
         """
+
+    @abstractmethod
+    def add_reference_line(
+        self, orientation: str, position: float, *,
+        color: str = "#888888", width: float = 1.5,
+        line_style: str = "dash", label: str = "",
+    ) -> None:
+        """Draw a horizontal (``"h"``) or vertical (``"v"``) guide line."""
+
+    @abstractmethod
+    def set_hover(self, enabled: bool) -> None:
+        """Turn the hover crosshair + nearest-point readout on or off."""
 
     @abstractmethod
     def add_annotation(self, text: str, x: float, y: float, *, color: str = "#000000",
@@ -70,6 +84,10 @@ class PlotCanvas(ABC):
 
     @abstractmethod
     def set_downsampling(self, flag: bool) -> None: ...
+
+    @abstractmethod
+    def set_theme(self, preset: str) -> None:
+        """Match the canvas background/axes to a named theme preset."""
 
 
 def create_canvas(backend: str = DEFAULT_BACKEND) -> PlotCanvas:

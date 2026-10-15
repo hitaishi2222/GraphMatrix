@@ -146,3 +146,241 @@ def test_graph_and_sheet_extras(app, tmp_path):
         assert sum(len(layer.plots) for layer in graph.layers) == before + 1
     finally:
         window.close()
+
+
+def test_theme_preset_switching(app):
+    from respot.ui import theme
+    from respot.ui.main_window import MainWindow
+
+    window = MainWindow()
+    window.confirm_on_close = False
+    original = theme.current_preset()
+    try:
+        window._action_sample_data()
+        window._action_add_graph()
+
+        for preset in theme.presets():
+            window._action_set_theme(preset.id)
+            assert theme.current_preset() == preset.id
+            assert theme.is_dark() is preset.dark
+            assert window._theme_actions[preset.id].isChecked()
+
+        # The action group stays exclusive: exactly one preset is checked.
+        checked = [pid for pid, action in window._theme_actions.items() if action.isChecked()]
+        assert checked == [theme.current_preset()]
+    finally:
+        theme.set_preset(original)
+        window.close()
+
+
+def test_rename_project_workbook_and_worksheet(app):
+    from respot.core.model import Graph, PlotSpec
+    from respot.ui.main_window import MainWindow
+
+    window = MainWindow()
+    window.confirm_on_close = False
+    try:
+        window._action_sample_data()
+        sheet = window.project.workbooks[0].sheets[0]
+        book = window.project.workbooks[0]
+
+        # A graph sourced from the workbook, to prove renames cascade.
+        graph = Graph("G")
+        graph.first_layer.add_plot(PlotSpec("Book1/Sheet1", "X1", "Y1"))
+        window.project.add_graph(graph)
+
+        # Rename the project (no cascade), and check the window title updates.
+        window._apply_rename(window.project, "My Experiment")
+        assert window.project.name == "My Experiment"
+        assert "My Experiment" in window.windowTitle()
+
+        # Rename the workbook: the graph's source must follow.
+        window._apply_rename(book, "Measure")
+        assert book.name == "Measure"
+        assert graph.first_layer.plots[0].source == "Measure/Sheet1"
+
+        # Rename the worksheet: the graph's source must follow too.
+        window._apply_rename(sheet, "Run1")
+        assert sheet.name == "Run1"
+        assert graph.first_layer.plots[0].source == "Measure/Run1"
+
+        # Undo unwinds the cascade (one step at a time).
+        window.commands.undo()
+        assert sheet.name == "Sheet1"
+        assert graph.first_layer.plots[0].source == "Measure/Sheet1"
+        window.commands.undo()
+        assert book.name == "Book1"
+        assert graph.first_layer.plots[0].source == "Book1/Sheet1"
+
+        # Validation rejects duplicate names without touching the model.
+        from respot.core.model import Workbook
+
+        window.project.add_workbook(Workbook("Measure"))
+        assert window._rename_available(window.project.workbooks[0], "Measure") is False
+        assert window._rename_available(window.project.workbooks[0], "Fresh") is True
+    finally:
+        window.close()
+
+
+def test_plot_column_from_worksheet(app):
+    from respot.ui.main_window import MainWindow
+
+    window = MainWindow()
+    window.confirm_on_close = False
+    try:
+        window._action_sample_data()
+        sheet = window.project.workbooks[0].sheets[0]
+        window._open_sheet_tab(sheet)
+        view = window._views[id(sheet)]
+
+        # Selecting the whole column (as the user described) surfaces that column.
+        from PySide6.QtWidgets import QTableWidgetSelectionRange
+
+        view.table.setRangeSelected(
+            QTableWidgetSelectionRange(0, 1, max(sheet.num_rows - 1, 0), 1), True)
+        assert view._selected_column_indices() == [1]
+
+        # What the worksheet context menu emits: plot the selected column.
+        view.plot_column_requested.emit("Y1")
+        assert window.project.graphs, "a graph should be created on demand"
+        graph = window.project.graphs[-1]
+        plots = [p for layer in graph.layers for p in layer.plots]
+        assert any(p.x == "X1" and p.y == "Y1" for p in plots)
+
+        # A second request adds to the now-active graph rather than replacing it.
+        before = sum(len(layer.plots) for layer in graph.layers)
+        view.plot_column_requested.emit("X1")
+        after = sum(len(layer.plots) for layer in graph.layers)
+        assert after == before + 1
+    finally:
+        window.close()
+
+
+def test_reference_lines_hover_and_slope(app):
+    from respot.core.model import ReferenceLine
+    from respot.ui.main_window import MainWindow
+
+    window = MainWindow()
+    window.confirm_on_close = False
+    try:
+        window._action_sample_data()
+        window._action_add_graph()
+        view = window._active_graph_view
+        graph = view.graph
+
+        # Add an H-line and a V-line (bypassing the modal dialog), both undoable.
+        view.add_reference_line("h", ReferenceLine("h", 0.5, label="zero"))
+        view.add_reference_line("v", ReferenceLine("v", 3.0))
+        assert len(graph.first_layer.ref_lines) == 2
+
+        assert view.canvas is not None
+        # Removing a line is one undo step.
+        view.ref_list.setCurrentRow(0)
+        view.remove_reference_line()
+        assert len(graph.first_layer.ref_lines) == 1
+        window.commands.undo()
+        assert len(graph.first_layer.ref_lines) == 2
+
+        # Hover readout toggles through the menu action and the sidebar button.
+        window.registry.action("graph.hover").setChecked(True)
+        window._action_toggle_hover()
+        assert view.hover_enabled is True
+        view.set_hover(False)
+        assert window.registry.action("graph.hover").isChecked() is False
+
+        # Slope dialog runs against the sample data.
+        from respot.ui.analysis_dialogs import SlopeDialog
+
+        dialog = SlopeDialog(window.project)
+        dialog.x0_edit.setText("0.5")
+        dialog.x1_edit.setText("1.5")
+        result = dialog.run()
+        assert result.kind == "slope"
+        assert "Slope" in result.summary
+
+        # The slope result can annotate the active graph.
+        from respot.ui.analysis_dialogs import AnalysisResultDialog
+
+        before_ann = len(graph.annotations)
+        result_dialog = AnalysisResultDialog(
+            result, project=window.project, commands=window.commands,
+            add_annotation=window._add_annotation_to_active_graph)
+        result_dialog._annotate_on_graph()
+        assert len(graph.annotations) == before_ann + 1
+        assert "slope" in graph.annotations[-1].text
+    finally:
+        window.close()
+
+
+def test_provenance_journal_and_palette(app, tmp_path):
+    from PySide6.QtCore import Qt
+
+    from respot.core.code_export import project_to_script
+    from respot.core.report import export_analysis_bundle
+    from respot.ui.command_palette import CommandPalette
+    from respot.ui.main_window import MainWindow
+
+    window = MainWindow()
+    window.confirm_on_close = False
+    try:
+        window._action_sample_data()
+        window._action_add_graph()
+        graph = window._active_graph_view.graph
+
+        # Journal preset restyles the active graph, is recorded, and undoes.
+        window._action_apply_journal("Nature (single column)")
+        assert graph.journal_preset == "Nature (single column)"
+        assert graph.first_layer.plots[0].line_width == 1.0
+        assert window._journal_actions["Nature (single column)"].isChecked()
+        window.commands.undo()
+        assert graph.journal_preset == ""
+
+        # Provenance renders a methods write-up.
+        window.provenance.record_import("run.csv", "Book1")
+        assert "Imported run.csv" in window.provenance.methods_markdown(window.project)
+
+        # The palette filters the action registry.
+        palette = CommandPalette(window.registry)
+        palette.search.setText("export active graph")
+        assert palette.list.count() >= 1
+        assert palette.list.item(0).data(Qt.ItemDataRole.UserRole) == "export.graph"
+
+        # Figure-as-code and bundles write real files.
+        assert "api.add_graph" in project_to_script(window.project)
+        bundle = export_analysis_bundle(window.project, window.provenance, tmp_path / "bundle",
+                                        figure_formats=())
+        assert (bundle.root / "reproduce.py").exists()
+        assert (bundle.root / "methods.md").exists()
+    finally:
+        window.close()
+
+
+def test_digitize_dialog_extracts(app, tmp_path):
+    import numpy as np
+
+    from PIL import Image
+
+    from respot.ui.digitize_dialog import DigitizeDialog
+
+    image = np.full((120, 160, 3), 255, dtype=np.uint8)
+    for col in range(20, 140):
+        row = int(round(100 - 0.5 * (col - 20)))
+        image[row, col] = 0
+    path = tmp_path / "plot.png"
+    Image.fromarray(image).save(path)
+
+    dialog = DigitizeDialog()
+    try:
+        dialog._image_path = path
+        dialog._pixel_spins[0].setValue(20); dialog._value_spins[0].setValue(0.0)
+        dialog._pixel_spins[1].setValue(140); dialog._value_spins[1].setValue(12.0)
+        dialog._pixel_spins[2].setValue(100); dialog._value_spins[2].setValue(0.0)
+        dialog._pixel_spins[3].setValue(40); dialog._value_spins[3].setValue(6.0)
+        result = dialog.run()
+        assert result.kind == "digitize"
+        x, _y = result.curves["Digitized"]
+        assert x.size == 120
+    finally:
+        dialog.close()
+
+

@@ -21,6 +21,7 @@ from .model import (
     PlotSpec,
     PlotStyle,
     Project,
+    ReferenceLine,
     Workbook,
     Worksheet,
 )
@@ -41,6 +42,14 @@ class Command(ABC):
 
     def to_script(self) -> str | None:
         """Return an API call that reproduces this command, or None."""
+        return None
+
+    def describe(self) -> str | None:
+        """Return a plain-language sentence for the provenance log, or None.
+
+        Commands that only implement bookkeeping (adding a column, editing a cell)
+        stay silent so the methods report highlights meaningful operations.
+        """
         return None
 
 
@@ -346,6 +355,9 @@ class SetColumnDataCommand(Command):
     def undo(self) -> None:
         self._column.data = self._old
 
+    def describe(self) -> str | None:
+        return f"Set values of column '{self._column.name}'"
+
 
 class RenameCommand(Command):
     label = "Rename"
@@ -359,6 +371,56 @@ class RenameCommand(Command):
 
     def undo(self) -> None:
         self._target.name = self._old
+
+
+class RenameWorkbookCommand(Command):
+    """Rename a workbook and repoint every graph that sourced from it."""
+
+    label = "Rename Workbook"
+
+    def __init__(self, project: Project, workbook: Workbook, new_name: str) -> None:
+        self._project = project
+        self._workbook = workbook
+        self._old = workbook.name
+        self._new = new_name
+
+    def execute(self) -> None:
+        self._workbook.name = self._new
+        self._project.remap_sources(self._old, self._new)
+
+    def undo(self) -> None:
+        self._project.remap_sources(self._new, self._old)
+        self._workbook.name = self._old
+
+    def describe(self) -> str | None:
+        return f"Renamed workbook '{self._old}' to '{self._new}'"
+
+
+class RenameWorksheetCommand(Command):
+    """Rename a worksheet and repoint every graph that sourced from it."""
+
+    label = "Rename Worksheet"
+
+    def __init__(self, project: Project, workbook: Workbook, sheet: Worksheet,
+                 new_name: str) -> None:
+        self._project = project
+        self._workbook = workbook
+        self._sheet = sheet
+        self._old = sheet.name
+        self._new = new_name
+        self._old_source = f"{workbook.name}/{self._old}"
+        self._new_source = f"{workbook.name}/{self._new}"
+
+    def execute(self) -> None:
+        self._sheet.name = self._new
+        self._project.remap_sources(self._old_source, self._new_source)
+
+    def undo(self) -> None:
+        self._project.remap_sources(self._new_source, self._old_source)
+        self._sheet.name = self._old
+
+    def describe(self) -> str | None:
+        return f"Renamed worksheet '{self._old}' to '{self._new}'"
 
 
 class InsertRowsCommand(Command):
@@ -458,6 +520,10 @@ class AddPlotCommand(Command):
             f"style={PlotStyle(s.style).value!r}, legend={s.legend!r})"
         )
 
+    def describe(self) -> str | None:
+        s = self._spec
+        return f"Plotted '{s.y}' versus '{s.x}' from '{s.source}' on '{self._graph.name}'"
+
 
 class RemovePlotCommand(Command):
     label = "Remove Plot"
@@ -485,6 +551,9 @@ class AddAnnotationCommand(Command):
     def undo(self) -> None:
         self._graph.annotations.remove(self._annotation)
 
+    def describe(self) -> str | None:
+        return f"Annotated '{self._graph.name}': {self._annotation.text!r}"
+
 
 class RemoveAnnotationCommand(Command):
     label = "Remove Annotation"
@@ -499,6 +568,38 @@ class RemoveAnnotationCommand(Command):
 
     def undo(self) -> None:
         self._graph.annotations.insert(self._index or 0, self._annotation)
+
+
+class AddReferenceLineCommand(Command):
+    label = "Add Reference Line"
+
+    def __init__(self, layer: Layer, line: ReferenceLine) -> None:
+        self._layer, self._line = layer, line
+
+    def execute(self) -> None:
+        self._layer.add_ref_line(self._line)
+
+    def undo(self) -> None:
+        self._layer.remove_ref_line(self._line)
+
+    def describe(self) -> str | None:
+        orientation = "vertical" if self._line.orientation == "v" else "horizontal"
+        return f"Added {orientation} reference line at {self._line.position:g}"
+
+
+class RemoveReferenceLineCommand(Command):
+    label = "Remove Reference Line"
+
+    def __init__(self, layer: Layer, line: ReferenceLine) -> None:
+        self._layer, self._line = layer, line
+        self._index: int | None = None
+
+    def execute(self) -> None:
+        self._index = self._layer.remove_ref_line(self._line)
+
+    def undo(self) -> None:
+        self._layer.ref_lines.insert(self._index if self._index is not None else len(self._layer.ref_lines),
+                                     self._line)
 
 
 class MacroCommand(Command):
@@ -521,6 +622,13 @@ class MacroCommand(Command):
         if any(p is None for p in parts):
             return None
         return "\n".join(p for p in parts if p)
+
+    def describe(self) -> str | None:
+        described = [c.describe() for c in self._commands]
+        described = [d for d in described if d]
+        if not described:
+            return None
+        return f"{self.label}: " + "; ".join(described)
 
 
 def _column_script(source: str, sheet_name: str, column: Column) -> str:

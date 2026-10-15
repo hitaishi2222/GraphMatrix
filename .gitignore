@@ -23,3 +23,4 @@ htmlcov/
 
 # Respot artifacts
 *.rsproj.tmp
+/Graph.png

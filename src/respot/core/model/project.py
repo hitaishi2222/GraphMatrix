@@ -131,6 +131,23 @@ class Project:
             i += 1
         return f"{prefix}{i}"
 
+    def remap_sources(self, old: str, new: str) -> None:
+        """Rewrite plot references so ``old``/``old/...`` becomes ``new``.
+
+        ``old`` is a source prefix: a workbook name ("Book1") or a qualified
+        sheet ("Book1/Sheet1"). Used when renaming a workbook or worksheet so
+        existing graphs keep pointing at their data.
+        """
+        if old == new:
+            return
+        for graph in self.graphs:
+            for layer in graph.layers:
+                for spec in layer.plots:
+                    if spec.source == old:
+                        spec.source = new
+                    elif spec.source.startswith(old + "/"):
+                        spec.source = new + spec.source[len(old):]
+
     # -- serialization -------------------------------------------------------
     def to_dict(self) -> dict[str, Any]:
         return {

@@ -17,7 +17,7 @@ from .model import AxisScale, Graph, PlotStyle
 TEMPLATE_FORMAT = "respot-graph-template"
 TEMPLATE_VERSION = 1
 
-_PLOT_FIELDS = ("style", "color", "line_width", "symbol", "symbol_size", "y_axis")
+_PLOT_FIELDS = ("style", "color", "line_width", "symbol", "symbol_size", "y_axis", "line_style")
 _LAYER_FIELDS = ("x_scale", "y_scale", "x_label", "y_label", "y2_label", "show_legend")
 _SEGMENT_FIELDS = ("x_min", "x_max", "y_min", "y_max")
 

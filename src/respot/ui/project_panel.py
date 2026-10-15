@@ -11,6 +11,7 @@ import json
 from PySide6.QtCore import QByteArray, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QMenu,
     QStyle,
     QTreeWidget,
     QTreeWidgetItem,
@@ -46,6 +47,7 @@ class ProjectPanel(QWidget):
 
     object_activated = Signal(object)  # double-clicked
     selection_changed = Signal(object)  # current selection (may be None)
+    rename_requested = Signal(object)  # "Rename…" chosen for an object
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -58,6 +60,8 @@ class ProjectPanel(QWidget):
         self.tree.setUniformRowHeights(True)
         self.tree.setDragEnabled(True)
         self.tree.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._on_context_menu)
         self.tree.itemDoubleClicked.connect(self._on_double_click)
         self.tree.itemSelectionChanged.connect(self._on_selection_changed)
         layout.addWidget(self.tree)
@@ -112,6 +116,18 @@ class ProjectPanel(QWidget):
                 child.child(j).setExpanded(True)
 
     # -- internals -----------------------------------------------------------
+    def _on_context_menu(self, pos) -> None:
+        item = self.tree.itemAt(pos)
+        if item is None:
+            return
+        self.tree.setCurrentItem(item)
+        obj = item.data(0, _ROLE_OBJ)
+        if obj is None:
+            return
+        menu = QMenu(self.tree)
+        menu.addAction("Rename…", lambda: self.rename_requested.emit(obj))
+        menu.exec(self.tree.viewport().mapToGlobal(pos))
+
     def _on_double_click(self, item: QTreeWidgetItem, _column: int) -> None:
         obj = item.data(0, _ROLE_OBJ)
         if obj is not None:

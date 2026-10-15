@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QColorDialog,
@@ -31,20 +31,35 @@ from respot.core.commands import (
     AddAnnotationCommand,
     AddLayerCommand,
     AddPlotCommand,
+    AddReferenceLineCommand,
     CommandStack,
     RemovePlotCommand,
+    RemoveReferenceLineCommand,
     SetAttributesCommand,
 )
-from respot.core.model import Annotation, AxisScale, Graph, Layer, PlotSpec, PlotStyle, Project
-from respot.core.plotting import auto_axis_labels, make_plot_for_column, resolve_layer, resolve_plot
+from respot.core.model import (
+    LINE_STYLES,
+    Annotation,
+    AxisScale,
+    Graph,
+    Layer,
+    PlotSpec,
+    PlotStyle,
+    Project,
+    ReferenceLine,
+)
+from respot.core.plotting import auto_axis_labels, make_plot_for_column, resolve_plot
+from respot.ui import theme
 from respot.ui.canvas import create_canvas
-from respot.ui.plot_dialogs import AddPlotDialog
+from respot.ui.plot_dialogs import AddPlotDialog, ReferenceLineDialog
 from respot.ui.widgets import COLUMN_MIME
 
 _SYMBOLS = ["o", "s", "^", "v", "d", "+", "x", "*", ""]
 
 
 class GraphView(QWidget):
+    hover_changed = Signal(bool)
+
     def __init__(self, graph: Graph, project: Project, commands: CommandStack,
                  on_change=None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -58,6 +73,7 @@ class GraphView(QWidget):
         self.canvas = create_canvas()
         self.plot_list = QListWidget()
         self.plot_list.currentRowChanged.connect(self._on_plot_selected)
+        self.hover_enabled = False
 
         sidebar = QWidget()
         side = QVBoxLayout(sidebar)
@@ -73,6 +89,7 @@ class GraphView(QWidget):
 
         side.addWidget(self._build_plot_group())
         side.addWidget(self._build_axis_group())
+        side.addWidget(self._build_ref_group())
         side.addStretch(1)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -103,6 +120,9 @@ class GraphView(QWidget):
         self.style_combo = QComboBox()
         for style in PlotStyle:
             self.style_combo.addItem(style.value, style)
+        self.linestyle_combo = QComboBox()
+        for line_style in LINE_STYLES:
+            self.linestyle_combo.addItem(line_style, line_style)
         self.color_button = QPushButton("color")
         self.color_button.clicked.connect(self._pick_color)
         self.width_spin = QDoubleSpinBox()
@@ -117,6 +137,7 @@ class GraphView(QWidget):
         self.yaxis_combo.addItem("Left", "left")
         self.yaxis_combo.addItem("Right", "right")
         form.addRow("Style:", self.style_combo)
+        form.addRow("Line style:", self.linestyle_combo)
         form.addRow("Color:", self.color_button)
         form.addRow("Line width:", self.width_spin)
         form.addRow("Symbol:", self.symbol_combo)
@@ -125,6 +146,7 @@ class GraphView(QWidget):
         form.addRow("Y axis:", self.yaxis_combo)
 
         self.style_combo.currentIndexChanged.connect(self._apply_plot_props)
+        self.linestyle_combo.currentIndexChanged.connect(self._apply_plot_props)
         self.width_spin.valueChanged.connect(self._apply_plot_props)
         self.symbol_combo.currentIndexChanged.connect(self._apply_plot_props)
         self.symbol_size_spin.valueChanged.connect(self._apply_plot_props)
@@ -167,6 +189,36 @@ class GraphView(QWidget):
         for widget in (self.xlabel_edit, self.ylabel_edit, self.y2label_edit, self.xmin_edit, self.xmax_edit, self.ymin_edit, self.ymax_edit):
             widget.editingFinished.connect(self._apply_axis_props)
         return self.group_axis
+
+    def _build_ref_group(self) -> QGroupBox:
+        self.group_ref = QGroupBox("Reference Lines")
+        layout = QVBoxLayout(self.group_ref)
+        self.ref_list = QListWidget()
+        self.ref_list.currentRowChanged.connect(lambda _row: self._update_ref_buttons())
+        layout.addWidget(self.ref_list)
+
+        buttons = QHBoxLayout()
+        self.add_h_button = QPushButton("Add H-line")
+        self.add_h_button.setToolTip("Horizontal guide at y = value")
+        self.add_h_button.clicked.connect(lambda: self.add_reference_line("h"))
+        self.add_v_button = QPushButton("Add V-line")
+        self.add_v_button.setToolTip("Vertical guide at x = value")
+        self.add_v_button.clicked.connect(lambda: self.add_reference_line("v"))
+        self.remove_ref_button = QPushButton("Remove")
+        self.remove_ref_button.clicked.connect(self.remove_reference_line)
+        for button in (self.add_h_button, self.add_v_button, self.remove_ref_button):
+            buttons.addWidget(button)
+        layout.addLayout(buttons)
+
+        self.hover_check = QPushButton("Data readout: off")
+        self.hover_check.setCheckable(True)
+        self.hover_check.setToolTip("Show a crosshair and the nearest data point under the mouse")
+        self.hover_check.toggled.connect(self.set_hover)
+        layout.addWidget(self.hover_check)
+        return self.group_ref
+
+    def _update_ref_buttons(self) -> None:
+        self.remove_ref_button.setEnabled(self._selected_ref_line() is not None)
 
     # -- state ---------------------------------------------------------------
     def _selected_spec(self) -> PlotSpec | None:
@@ -212,6 +264,43 @@ class GraphView(QWidget):
         self.commands.push(AddAnnotationCommand(self.graph, Annotation(text=text)))
         self.refresh()
 
+    # -- reference lines -----------------------------------------------------
+    def _selected_ref_line(self) -> ReferenceLine | None:
+        item = self.ref_list.currentItem()
+        return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+
+    def _layer_for_ref_line(self, line: ReferenceLine) -> Layer:
+        for layer in self.graph.layers:
+            if line in layer.ref_lines:
+                return layer
+        return self.graph.first_layer
+
+    def add_reference_line(self, orientation: str = "h", line: ReferenceLine | None = None) -> None:
+        if line is None:
+            dialog = ReferenceLineDialog(self, orientation=orientation)
+            if not dialog.exec():
+                return
+            line = dialog.reference_line()
+        self.commands.push(AddReferenceLineCommand(self._active_layer(), line))
+        self.refresh()
+
+    def remove_reference_line(self) -> None:
+        line = self._selected_ref_line()
+        if line is None:
+            return
+        self.commands.push(RemoveReferenceLineCommand(self._layer_for_ref_line(line), line))
+        self.refresh()
+
+    def set_hover(self, enabled: bool) -> None:
+        self.hover_enabled = bool(enabled)
+        if self.hover_check.isChecked() != self.hover_enabled:
+            self.hover_check.blockSignals(True)
+            self.hover_check.setChecked(self.hover_enabled)
+            self.hover_check.blockSignals(False)
+        self.hover_check.setText(f"Data readout: {'on' if self.hover_enabled else 'off'}")
+        self.canvas.set_hover(self.hover_enabled)
+        self.hover_changed.emit(self.hover_enabled)
+
     def add_column_plot(self, source: str, column_name: str) -> None:
         """Plot a single column (used by drag-and-drop from the Project Explorer)."""
         spec = make_plot_for_column(self.project, source, column_name)
@@ -256,6 +345,7 @@ class GraphView(QWidget):
         self.commands.push(SetAttributesCommand(
             spec, "Edit Plot",
             style=self.style_combo.currentData(),
+            line_style=self.linestyle_combo.currentData(),
             color=self._color,
             line_width=self.width_spin.value(),
             symbol=self.symbol_combo.currentText(),
@@ -296,6 +386,11 @@ class GraphView(QWidget):
         self._refresh_list(select)
         self.render()
 
+    def on_theme_changed(self) -> None:
+        """Re-apply the canvas colours after the app theme switched."""
+        self.canvas.set_theme(theme.current_preset())
+        self.refresh()
+
     def _refresh_list(self, select: PlotSpec | None) -> None:
         if select is None:
             select = self._selected_spec()
@@ -315,6 +410,29 @@ class GraphView(QWidget):
             self._on_plot_selected(target_row)
         else:
             self._clear_forms()
+        self._refresh_ref_list()
+
+    def _refresh_ref_list(self, select: ReferenceLine | None = None) -> None:
+        if select is None:
+            select = self._selected_ref_line()
+        self.ref_list.blockSignals(True)
+        self.ref_list.clear()
+        target_row = -1
+        for layer in self.graph.layers:
+            for line in layer.ref_lines:
+                axis = "y" if line.orientation == "h" else "x"
+                label = f"{layer.name} · {axis} = {line.position:g}"
+                if line.label:
+                    label += f"  ({line.label})"
+                item = QListWidgetItem(label)
+                item.setData(Qt.ItemDataRole.UserRole, line)
+                self.ref_list.addItem(item)
+                if line is select:
+                    target_row = self.ref_list.count() - 1
+        self.ref_list.blockSignals(False)
+        if target_row >= 0:
+            self.ref_list.setCurrentRow(target_row)
+        self._update_ref_buttons()
 
     def _refresh_list_labels(self) -> None:
         for row in range(self.plot_list.count()):
@@ -329,6 +447,7 @@ class GraphView(QWidget):
         try:
             if spec is not None:
                 self.style_combo.setCurrentText(PlotStyle(spec.style).value)
+                self.linestyle_combo.setCurrentText(spec.line_style)
                 self.width_spin.setValue(spec.line_width)
                 self.symbol_combo.setCurrentText(spec.symbol)
                 self.symbol_size_spin.setValue(spec.symbol_size)
@@ -374,7 +493,17 @@ class GraphView(QWidget):
                     width=spec.line_width, symbol=spec.symbol,
                     symbol_size=spec.symbol_size, name=data.legend,
                     yerr=data.yerr, xerr=data.xerr,
-                    y_axis=spec.y_axis,
+                    y_axis=spec.y_axis, line_style=spec.line_style,
+                )
+
+        for each in self.graph.layers:
+            for ref in each.ref_lines:
+                color = ref.color
+                if theme.is_dark() and color.strip().lower() in ("", "#888888", "gray", "grey"):
+                    color = theme.canvas_colors()[1]
+                self.canvas.add_reference_line(
+                    ref.orientation, ref.position, color=color, width=ref.width,
+                    line_style=ref.line_style, label=ref.label,
                 )
 
         x_label, y_label = auto_axis_labels(self.project, layer)
@@ -382,10 +511,14 @@ class GraphView(QWidget):
                                right=layer.y2_label or None)
         self.canvas.set_limits(x=(layer.x_min, layer.x_max), y=(layer.y_min, layer.y_max))
         self.canvas.set_title(self.graph.title or self.graph.name)
+        self.canvas.set_hover(self.hover_enabled)
 
         for annotation in self.graph.annotations:
+            color = annotation.color
+            if theme.is_dark() and color.strip().lower() in ("", "#000000", "black"):
+                color = theme.canvas_colors()[1]
             self.canvas.add_annotation(annotation.text, annotation.x, annotation.y,
-                                       color=annotation.color, size=annotation.size)
+                                       color=color, size=annotation.size)
 
 
 def _float_or_none(text: str) -> float | None:

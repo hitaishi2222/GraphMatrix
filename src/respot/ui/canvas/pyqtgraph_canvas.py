@@ -11,11 +11,25 @@ from typing import Any, Sequence
 
 import numpy as np
 import pyqtgraph as pg
+from PySide6.QtCore import Qt
 
 from .base import PlotCanvas
+from .. import theme
 
 PALETTE = ("#1f77b4", "#d62728", "#2ca02c", "#9467bd",
            "#ff7f0e", "#17becf", "#8c564b", "#e377c2")
+
+_PEN_STYLES = {
+    "solid": Qt.PenStyle.SolidLine,
+    "dash": Qt.PenStyle.DashLine,
+    "dot": Qt.PenStyle.DotLine,
+    "dashdot": Qt.PenStyle.DashDotLine,
+    "longdash": Qt.PenStyle.DashDotDotLine,
+}
+
+
+def _pen_style(name: str) -> Qt.PenStyle:
+    return _PEN_STYLES.get((name or "solid").lower(), Qt.PenStyle.SolidLine)
 
 
 class PyQtGraphCanvas(PlotCanvas):
@@ -24,8 +38,6 @@ class PyQtGraphCanvas(PlotCanvas):
     def __init__(self) -> None:
         pg.setConfigOptions(antialias=True)
         self._widget = pg.PlotWidget()
-        self._widget.setBackground("w")
-        self._widget.showGrid(x=True, y=True, alpha=0.25)
         self._plot_item = self._widget.getPlotItem()
         self._main_view = self._plot_item.getViewBox()
         self._legend = None
@@ -33,17 +45,32 @@ class PyQtGraphCanvas(PlotCanvas):
         self._legend_visible = True
         self._index = 0
         self._annotations: list[Any] = []
+        self._ref_lines: list[Any] = []
+        self._series: list[tuple[str, np.ndarray, np.ndarray, bool]] = []
         self._downsampling = True
+        self._title = ""
+        self._fg = "#202124"
 
-        # Secondary Y axis: a parallax ViewBox sharing the X range.
+        # Hover readout: created lazily so the cost is zero when it is off.
+        self._hover_enabled = False
+        self._crosshair_v: Any = None
+        self._crosshair_h: Any = None
+        self._hover_label: Any = None
+        self._hover_marker: Any = None
+        self._hover_proxy: Any = None
+
+        # Secondary Y axis: a parallax ViewBox sharing the X range. It is hidden
+        # until a plot (or a label) actually targets the right axis.
         self._view_right = pg.ViewBox()
         self._plot_item.showAxis("right")
+        self._plot_item.hideAxis("right")
         self._plot_item.scene().addItem(self._view_right)
         self._plot_item.getAxis("right").linkToView(self._view_right)
         self._view_right.setXLink(self._plot_item)
         self._main_view.sigResized.connect(self._sync_right_view)
         self._sync_right_view()
         self.set_downsampling(True)
+        self.set_theme(theme.current_preset())
 
     def _sync_right_view(self) -> None:
         self._view_right.setGeometry(self._main_view.sceneBoundingRect())
@@ -58,12 +85,21 @@ class PyQtGraphCanvas(PlotCanvas):
 
     def clear(self) -> None:
         self._plot_item.clear()
+        self._plot_item.hideAxis("right")
         for item in list(self._annotations):
             try:
                 self._main_view.removeItem(item)
             except Exception:  # noqa: BLE001
                 pass
         self._annotations.clear()
+        for item in list(self._ref_lines):
+            try:
+                self._main_view.removeItem(item)
+            except Exception:  # noqa: BLE001
+                pass
+        self._ref_lines.clear()
+        self._series.clear()
+        self._teardown_hover()
         for item in list(self._view_right.addedItems):
             if item is self._legend_right:
                 continue
@@ -93,16 +129,19 @@ class PyQtGraphCanvas(PlotCanvas):
         style: str = "line", color: str = "", width: float = 2.0,
         symbol: str = "o", symbol_size: float = 7.0, name: str | None = None,
         yerr: Sequence[float] | None = None, xerr: Sequence[float] | None = None,
-        y_axis: str = "left",
+        y_axis: str = "left", line_style: str = "solid",
     ) -> Any:
         xs = np.asarray(x, dtype=float)
         ys = np.asarray(y, dtype=float)
         n = min(xs.size, ys.size)
         xs, ys = xs[:n], ys[:n]
         right = y_axis == "right"
+        if right:
+            self._plot_item.showAxis("right")
         pen_color = color or PALETTE[self._index % len(PALETTE)]
-        pen = pg.mkPen(pen_color, width=width)
+        pen = pg.mkPen(pen_color, width=width, style=_pen_style(line_style))
         brush = pg.mkBrush(pen_color)
+        self._record_series(name, xs, ys, right)
 
         if name:
             self._ensure_legend(right)
@@ -164,8 +203,123 @@ class PyQtGraphCanvas(PlotCanvas):
         self._main_view.addItem(item, ignoreBounds=True)
         self._annotations.append(item)
 
+    def _record_series(self, name: str | None, xs: np.ndarray, ys: np.ndarray, right: bool) -> None:
+        """Keep an x-sorted copy of each series so hover search is O(log n)."""
+        if xs.size == 0:
+            return
+        finite = np.isfinite(xs) & np.isfinite(ys)
+        xs, ys = xs[finite], ys[finite]
+        if xs.size == 0:
+            return
+        order = np.argsort(xs, kind="stable")
+        self._series.append((name or "", xs[order], ys[order], right))
+
+    def add_reference_line(
+        self, orientation: str, position: float, *,
+        color: str = "#888888", width: float = 1.5,
+        line_style: str = "dash", label: str = "",
+    ) -> None:
+        angle = 90 if orientation == "v" else 0
+        pen = pg.mkPen(color, width=width, style=_pen_style(line_style))
+        kwargs: dict[str, Any] = {}
+        if label:
+            kwargs["label"] = label
+            kwargs["labelOpts"] = {"color": color, "position": 0.96}
+        item = pg.InfiniteLine(pos=float(position), angle=angle, movable=False, pen=pen, **kwargs)
+        self._main_view.addItem(item, ignoreBounds=True)
+        self._ref_lines.append(item)
+
+    # -- hover readout -------------------------------------------------------
+    def set_hover(self, enabled: bool) -> None:
+        self._hover_enabled = bool(enabled)
+        if self._hover_enabled:
+            self._ensure_hover()
+        else:
+            self._show_hover(None)
+
+    def _ensure_hover(self) -> None:
+        if self._crosshair_v is None:
+            pen = pg.mkPen(self._fg, width=1, style=Qt.PenStyle.DashLine)
+            self._crosshair_v = pg.InfiniteLine(angle=90, movable=False, pen=pen)
+            self._crosshair_h = pg.InfiniteLine(angle=0, movable=False, pen=pen)
+            self._hover_label = pg.TextItem("", color=self._fg, anchor=(0, 1))
+            self._hover_marker = pg.ScatterPlotItem(
+                size=9, symbol="o", pen=pg.mkPen(self._fg, width=1),
+                brush=pg.mkBrush(255, 196, 0, 220))
+            for item in (self._crosshair_v, self._crosshair_h, self._hover_label, self._hover_marker):
+                self._main_view.addItem(item, ignoreBounds=True)
+        if self._hover_proxy is None:
+            self._hover_proxy = pg.SignalProxy(
+                self._plot_item.scene().sigMouseMoved, rateLimit=60, slot=self._on_mouse_moved)
+        self._show_hover(None)
+
+    def _teardown_hover(self) -> None:
+        for item in (self._crosshair_v, self._crosshair_h, self._hover_label, self._hover_marker):
+            if item is None:
+                continue
+            try:
+                self._main_view.removeItem(item)
+            except Exception:  # noqa: BLE001
+                pass
+        self._crosshair_v = self._crosshair_h = self._hover_label = self._hover_marker = None
+
+    def _show_hover(self, point: tuple[float, float, str] | None) -> None:
+        if self._crosshair_v is None:
+            return
+        if point is None:
+            self._crosshair_v.setVisible(False)
+            self._crosshair_h.setVisible(False)
+            self._hover_label.setVisible(False)
+            self._hover_marker.setVisible(False)
+            return
+        x, y, name = point
+        self._crosshair_v.setPos(x)
+        self._crosshair_h.setPos(y)
+        self._hover_marker.setData([x], [y])
+        text = f"{x:.6g}, {y:.6g}"
+        if name:
+            text = f"{name}\n{text}"
+        self._hover_label.setText(text)
+        self._hover_label.setPos(x, y)
+        for item in (self._crosshair_v, self._crosshair_h, self._hover_label, self._hover_marker):
+            item.setVisible(True)
+
+    def _on_mouse_moved(self, event) -> None:
+        if not self._hover_enabled or self._crosshair_v is None:
+            return
+        try:
+            scene_pos = event[0]
+        except (TypeError, IndexError):
+            return
+        if not self._plot_item.sceneBoundingRect().contains(scene_pos):
+            self._show_hover(None)
+            return
+        view_pos = self._main_view.mapSceneToView(scene_pos)
+        best: tuple[float, float, float, str] | None = None
+        for name, xs, ys, right in self._series:
+            container = self._view_right if right else self._main_view
+            (x0, x1), (y0, y1) = container.viewRange()
+            span_x = (x1 - x0) or 1.0
+            span_y = (y1 - y0) or 1.0
+            idx = int(np.searchsorted(xs, view_pos.x()))
+            for j in (idx - 1, idx, idx + 1):
+                if j < 0 or j >= xs.size:
+                    continue
+                jx = xs[j]
+                if not np.isfinite(jx) or not np.isfinite(ys[j]):
+                    continue
+                distance = (((jx - view_pos.x()) / span_x) ** 2
+                            + ((ys[j] - view_pos.y()) / span_y) ** 2)
+                if best is None or distance < best[0]:
+                    best = (float(distance), float(jx), float(ys[j]), name)
+        if best is None:
+            self._show_hover(None)
+        else:
+            self._show_hover((best[1], best[2], best[3]))
+
     def set_title(self, text: str) -> None:
-        self._plot_item.setTitle(text)
+        self._title = text
+        self._plot_item.setTitle(text, color=self._fg)
 
     def set_labels(self, *, bottom: str | None = None, left: str | None = None,
                    right: str | None = None) -> None:
@@ -174,6 +328,7 @@ class PyQtGraphCanvas(PlotCanvas):
         if left:
             self._plot_item.setLabel("left", left)
         if right:
+            self._plot_item.showAxis("right")
             self._plot_item.setLabel("right", right)
 
     def set_scales(self, *, x: str = "linear", y: str = "linear") -> None:
@@ -202,3 +357,35 @@ class PyQtGraphCanvas(PlotCanvas):
             self._plot_item.setClipToView(flag)
         except Exception:  # noqa: BLE001 - optional optimisation, never fatal
             pass
+
+    def set_theme(self, preset: str) -> None:
+        bg, fg, grid_alpha = theme.canvas_colors(preset)
+        self._fg = fg
+        try:
+            pg.setConfigOptions(background=bg, foreground=fg)
+        except Exception:  # noqa: BLE001
+            pass
+        self._widget.setBackground(bg)
+        self._widget.showGrid(x=True, y=True, alpha=grid_alpha)
+        pen = pg.mkPen(fg, width=1)
+        text_pen = pg.mkPen(fg)
+        for name in ("left", "bottom", "right", "top"):
+            axis = self._plot_item.getAxis(name)
+            axis.setPen(pen)
+            axis.setTextPen(text_pen)
+        try:
+            self._plot_item.setTitle(self._title, color=fg)
+        except Exception:  # noqa: BLE001
+            pass
+        for legend in (self._legend, self._legend_right):
+            if legend is None:
+                continue
+            try:
+                legend.setLabelTextColor(fg)
+            except Exception:  # noqa: BLE001
+                pass
+        if self._crosshair_v is not None:
+            pen = pg.mkPen(fg, width=1, style=Qt.PenStyle.DashLine)
+            self._crosshair_v.setPen(pen)
+            self._crosshair_h.setPen(pen)
+            self._hover_label.setColor(fg)

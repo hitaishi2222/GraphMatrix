@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from respot.core.analysis import deconvolution, descriptive, fitting, peaks, regression, signal, statistics
+from respot.core.analysis import deconvolution, descriptive, fitting, peaks, ranged, regression, signal, statistics
 from respot.core.commands import AddColumnCommand, CommandStack, MacroCommand
 from respot.core.model import Column, ColumnType, Project, Worksheet
 from respot.ui.widgets import fill_column_combo, fill_sheet_combo, sheet_label
@@ -34,7 +34,8 @@ class AnalysisResultDialog(QDialog):
     """Renders an AnalysisResult and can push its curves back into the project."""
 
     def __init__(self, result, *, project: Project | None = None, commands: CommandStack | None = None,
-                 default_sheet: Worksheet | None = None, add_to_graph=None, parent=None) -> None:
+                 default_sheet: Worksheet | None = None, add_to_graph=None, add_annotation=None,
+                 parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle(result.title)
         self.resize(680, 560)
@@ -42,6 +43,7 @@ class AnalysisResultDialog(QDialog):
         self._project = project
         self._commands = commands
         self._add_to_graph = add_to_graph
+        self._add_annotation = add_annotation
 
         layout = QVBoxLayout(self)
         view = QPlainTextEdit(result.to_text())
@@ -49,8 +51,9 @@ class AnalysisResultDialog(QDialog):
         view.setFont(QFont("monospace"))
         layout.addWidget(view)
 
-        if result.curves and (project is not None and commands is not None):
-            row = QHBoxLayout()
+        row = QHBoxLayout()
+        has_curves = bool(result.curves) and project is not None and commands is not None
+        if has_curves:
             row.addWidget(QLabel("Curves:"))
             self.curve_combo = QComboBox()
             for name in result.curves:
@@ -71,11 +74,35 @@ class AnalysisResultDialog(QDialog):
                 plot_button = QPushButton("Plot on active graph")
                 plot_button.clicked.connect(self._plot_on_graph)
                 row.addWidget(plot_button)
+        if add_annotation is not None:
+            annotate_button = QPushButton("Annotate on graph")
+            annotate_button.clicked.connect(self._annotate_on_graph)
+            row.addWidget(annotate_button)
+        if row.count():
             layout.addLayout(row)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.accept)
         layout.addWidget(buttons)
+
+    def _annotation_text(self) -> str:
+        """A compact one-to-three line label derived from the result."""
+        result = self._result
+        summary = result.summary
+        if result.kind == "slope" and "Slope" in summary:
+            slope = summary["Slope"]
+            err = summary.get("Slope std err", float("nan"))
+            r2 = summary.get("R²", float("nan"))
+            text = f"slope = {slope:.4g}"
+            if err == err:  # not NaN
+                text += f" ± {err:.2g}"
+            return f"{text}\nR² = {r2:.4f}"
+        parts = [f"{key} = {value:.4g}" for key, value in list(summary.items())[:3]]
+        return "\n".join(parts) if parts else result.title
+
+    def _annotate_on_graph(self) -> None:
+        if self._add_annotation is not None:
+            self._add_annotation(self._annotation_text())
 
     def _selected_curves(self) -> list[tuple[str, object, object]]:
         name = self.curve_combo.currentData()
@@ -273,12 +300,15 @@ class DeconvolutionDialog(_TwoColumnDialog):
 class SignalDialog(_TwoColumnDialog):
     OPERATIONS = ["Smooth (Savitzky-Golay)", "Moving Average", "Low-pass Filter",
                   "High-pass Filter", "FFT Spectrum", "Derivative", "Integrate",
-                  "Interpolate", "Baseline (polynomial)"]
+                  "Interpolate", "Baseline (polynomial)", "Baseline (linear)",
+                  "Baseline (ALS)", "Baseline (rolling ball)", "Baseline (rubber band)",
+                  "Baseline (median)"]
 
     def __init__(self, project, parent=None):
         super().__init__(project, "Signal Processing", parent)
         self.operation = QComboBox()
         self.operation.addItems(self.OPERATIONS)
+        self.operation.currentIndexChanged.connect(self._sync_baseline_fields)
         self.x_combo = QComboBox()
         self.y_combo = QComboBox()
         self.window = QSpinBox()
@@ -293,6 +323,12 @@ class SignalDialog(_TwoColumnDialog):
         self.points = QSpinBox()
         self.points.setRange(2, 100000)
         self.points.setValue(200)
+        self.baseline_method = QComboBox()
+        self.baseline_method.addItems(signal.BASELINE_METHODS)
+        self.lam = QDoubleSpinBox()
+        self.lam.setRange(1.0, 1e12)
+        self.lam.setDecimals(0)
+        self.lam.setValue(1e5)
         self.form.addRow("Operation:", self.operation)
         self.form.addRow("X column:", self.x_combo)
         self.form.addRow("Y column:", self.y_combo)
@@ -300,11 +336,19 @@ class SignalDialog(_TwoColumnDialog):
         self.form.addRow("Order:", self.order)
         self.form.addRow("Cutoff:", self.cutoff)
         self.form.addRow("Points:", self.points)
+        self.form.addRow("Baseline method:", self.baseline_method)
+        self.form.addRow("Lambda (ALS):", self.lam)
         self._refresh_columns()
+        self._sync_baseline_fields()
 
     def _refresh_columns(self):
         fill_column_combo(self.x_combo, self.sheet(), types=(ColumnType.X,))
         fill_column_combo(self.y_combo, self.sheet(), types=(ColumnType.Y,))
+
+    def _sync_baseline_fields(self):
+        is_baseline = self.operation.currentText().startswith("Baseline")
+        self.baseline_method.setEnabled(is_baseline)
+        self.lam.setEnabled(is_baseline and self.baseline_method.currentText() == "ALS")
 
     def run(self):
         x = self._x_array(self.x_combo.currentData())
@@ -313,6 +357,43 @@ class SignalDialog(_TwoColumnDialog):
             self.operation.currentText(), x, y,
             window=self.window.value(), order=self.order.value(),
             cutoff=self.cutoff.value(), points=self.points.value(),
+            lam=self.lam.value(), baseline_method=self.baseline_method.currentText(),
+        )
+
+
+class SlopeDialog(_TwoColumnDialog):
+    """Linear fit of a series between two X values ("measure the slope here")."""
+
+    def __init__(self, project, parent=None):
+        super().__init__(project, "Slope over X Range", parent)
+        self.x_combo = QComboBox()
+        self.y_combo = QComboBox()
+        self.x0_edit = QLineEdit()
+        self.x0_edit.setPlaceholderText("blank = from first point")
+        self.x1_edit = QLineEdit()
+        self.x1_edit.setPlaceholderText("blank = to last point")
+        self.form.addRow("X column:", self.x_combo)
+        self.form.addRow("Y column:", self.y_combo)
+        self.form.addRow("X from:", self.x0_edit)
+        self.form.addRow("X to:", self.x1_edit)
+        self._refresh_columns()
+
+    def _refresh_columns(self):
+        fill_column_combo(self.x_combo, self.sheet(), types=(ColumnType.X,))
+        fill_column_combo(self.y_combo, self.sheet(), types=(ColumnType.Y,))
+
+    def run(self):
+        def number(text):
+            text = text.strip()
+            if not text:
+                return None
+            return float(text)
+
+        return ranged.slope_between(
+            self._x_array(self.x_combo.currentData()),
+            self._x_array(self.y_combo.currentData()),
+            number(self.x0_edit.text()),
+            number(self.x1_edit.text()),
         )
 
 

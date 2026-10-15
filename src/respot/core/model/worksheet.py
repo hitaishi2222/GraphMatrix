@@ -33,8 +33,10 @@ class Worksheet:
         dtype: Any = None,
         decimal: int | None = None,
         index: int | None = None,
+        mask: Sequence[bool] | None = None,
     ) -> Column:
-        column = Column(name, col_type, data, units=units, comment=comment, dtype=dtype, decimal=decimal)
+        column = Column(name, col_type, data, units=units, comment=comment, dtype=dtype,
+                        decimal=decimal, mask=mask)
         self.insert_column(column, index=index)
         return column
 

@@ -6,7 +6,7 @@ Cell edits and structural changes go through Commands, so every edit is undoable
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -50,6 +50,8 @@ def _fmt(value, column: Column | None = None) -> str:
 
 class WorksheetView(QWidget):
     """Displays and edits a worksheet."""
+
+    plot_column_requested = Signal(str)  # column name to plot against its partner
 
     def __init__(self, sheet: Worksheet, commands: CommandStack, source: str,
                  parent: QWidget | None = None) -> None:
@@ -130,6 +132,11 @@ class WorksheetView(QWidget):
     def _context_menu(self, pos) -> None:
         menu = QMenu(self)
         row = self.table.currentRow()
+        columns = self._selected_column_indices()
+        if len(columns) == 1:
+            column = self.sheet.columns[columns[0]]
+            menu.addAction(f"Plot \u201c{column.name}\u201d", lambda: self._plot_column(column))
+            menu.addSeparator()
         menu.addAction("Copy", self._copy)
         menu.addAction("Cut", self._cut)
         menu.addAction("Paste", self._paste)
@@ -150,6 +157,16 @@ class WorksheetView(QWidget):
         bottom = max(r.bottomRow() for r in ranges)
         right = max(r.rightColumn() for r in ranges)
         return top, left, bottom, right
+
+    def _selected_column_indices(self) -> list[int]:
+        bounds = self._selection_bounds()
+        if bounds is None:
+            return []
+        _, left, _, right = bounds
+        return [c for c in range(left, right + 1) if c < self.sheet.num_columns]
+
+    def _plot_column(self, column: Column) -> None:
+        self.plot_column_requested.emit(column.name)
 
     def _copy(self) -> None:
         bounds = self._selection_bounds()
@@ -222,6 +239,8 @@ class WorksheetView(QWidget):
             return
         column = self.sheet.columns[col]
         menu = QMenu(self)
+        menu.addAction(f"Plot \u201c{column.name}\u201d", lambda: self._plot_column(column))
+        menu.addSeparator()
         menu.addAction("Rename Column…", lambda: self._rename_column(column))
         menu.addAction("Set Units…", lambda: self._edit_field(column, "units", "Units"))
         menu.addAction("Set Comment…", lambda: self._edit_field(column, "comment", "Comment"))
