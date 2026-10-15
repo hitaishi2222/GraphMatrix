@@ -8,6 +8,34 @@ stack we did, and in what order**. It is updated as milestones close.
 
 ---
 
+## 0. Current status
+
+_Last updated: 2026-10-15 (after the M1–M6 implementation pass)._
+
+| Milestone | Status | Notes |
+|-----------|--------|-------|
+| M0 — Skeleton | ✅ Done | Model, commands, shell, panels, plugin loader, tests. |
+| M1 — Worksheet | 🟢 Functional | Editable grid, column properties/units/comments/types, formulas, masking, row insert/delete, CSV/TSV/Excel/Parquet/HDF5 import, binary `.rsproj` payloads. Deferred: copy/paste blocks, column drag-reorder UI, decimal editor wired end-to-end. |
+| M2 — 2D graph canvas | 🟢 Functional | Multi-layer graphs, line/scatter/line+symbol/bar/area/step/errorbar styles, axes scales/labels/limits, legend, live-linked data, editable via undoable commands. Deferred: Vispy/GPU backend, drag-column-to-layer, annotations/insets, templates. |
+| M3 — Analysis | 🟢 Functional | Descriptive stats; linear/polynomial/multiple regression; **nonlinear fitting (lmfit)** with parameter errors, R², χ², AIC/BIC, residuals; peak finding + FWHM; FFT, Savitzky–Golay/moving-average smoothing, Butterworth filters, derivative, integration, interpolation, polynomial baseline; t-tests, ANOVA, correlation, histogram. Deferred: image processing, peak deconvolution, analysis recipes. |
+| M4 — Publication export | 🟢 Functional | PDF/SVG/EPS/PNG/TIFF via matplotlib, size + DPI options, all plot styles. Deferred: CMYK, batch export over a template. |
+| M5 — Automation | 🟢 Functional | Embedded Python console, macro recording → runnable script, script runner, batch import. Deferred: full batch analysis/export recipes, third-party scripting package. |
+| M6 — Ship | 🟡 Scaffolded | PyInstaller spec, GitHub Actions CI matrix (Win/macOS/Linux), packaging docs. Deferred: installers, signing/notarization, auto-update. |
+| Deferred — 3D | ⚪ Not started | Still planned after M2, behind the `PlotCanvas` interface. |
+
+**Test status:** `python -m pytest -q` → **43 passed**, no display required
+(`QT_QPA_PLATFORM=offscreen`). Covers the model/formula layer, I/O round-trips,
+the full analysis toolkit, publication export, scripting/macro replay + batch,
+and a headless end-to-end UI smoke test (sample data → graph → plot edit →
+analysis dialog → console → export → macro → undo).
+
+**Honest caveats:** the milestone items marked "Deferred" are real gaps, not
+polish. The graph canvas is single-axis (dual-Y per layer is planned, not done),
+and performance for >1e5 points is untested (the Vispy escape hatch is not yet
+wired). Treat M1–M5 as "usably functional," not "finished."
+
+---
+
 ## 1. Vision and scope
 
 ### 1.1 What Respot is
@@ -318,3 +346,5 @@ Slots in **after M2**, reusing the canvas interface:
 | Date | Change |
 |------|--------|
 | 2026-10-15 | M0 skeleton landed: model, commands, shell, panels, canvas seam, plugin loader, tests, this plan. |
+| 2026-10-15 | M1–M6 implementation pass: worksheet editing + importers, multi-layer/2D graphing, analysis toolkit (lmfit), matplotlib export, Python console + macro recording + batch, PyInstaller/CI scaffolding. §0 added. |
+| 2026-10-15 | Test suite green: **43 passed** (model, I/O, analysis, export, scripting, headless UI). Fixed four bugs found by the tests: Graph-menu action tuple arity, `core/batch.py` relative imports, macro snapshots now taken at push time (so a workbook added empty is not re-expanded on replay), and the close-time "unsaved changes" prompt is suppressible for headless runs. |

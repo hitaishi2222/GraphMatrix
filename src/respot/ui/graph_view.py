@@ -1,0 +1,338 @@
+"""Graph editor: canvas + plot list + plot/axis properties.
+
+Edits go through Commands (add/remove plot, add layer, property changes) so the
+graph is fully part of the undo history.
+"""
+
+from __future__ import annotations
+
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (
+    QColorDialog,
+    QComboBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
+
+from respot.core.commands import AddLayerCommand, AddPlotCommand, CommandStack, RemovePlotCommand, SetAttributesCommand
+from respot.core.model import AxisScale, Graph, Layer, PlotSpec, PlotStyle, Project
+from respot.core.plotting import auto_axis_labels, resolve_layer, resolve_plot
+from respot.ui.canvas import create_canvas
+from respot.ui.plot_dialogs import AddPlotDialog
+
+_SYMBOLS = ["o", "s", "^", "v", "d", "+", "x", "*", ""]
+
+
+class GraphView(QWidget):
+    def __init__(self, graph: Graph, project: Project, commands: CommandStack,
+                 on_change=None, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.graph = graph
+        self.project = project
+        self.commands = commands
+        self._on_change = on_change
+        self._loading = False
+
+        self.canvas = create_canvas()
+        self.plot_list = QListWidget()
+        self.plot_list.currentRowChanged.connect(self._on_plot_selected)
+
+        sidebar = QWidget()
+        side = QVBoxLayout(sidebar)
+        side.addWidget(self._label("Plots"))
+        side.addWidget(self.plot_list)
+
+        buttons = QHBoxLayout()
+        for text, slot in (("Add Plot", self.add_plot), ("Remove", self.remove_plot), ("Add Layer", self.add_layer)):
+            button = QPushButton(text)
+            button.clicked.connect(slot)
+            buttons.addWidget(button)
+        side.addLayout(buttons)
+
+        side.addWidget(self._build_plot_group())
+        side.addWidget(self._build_axis_group())
+        side.addStretch(1)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(sidebar)
+        splitter.addWidget(self.canvas.widget())
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([320, 900])
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(splitter)
+
+        self.refresh()
+
+    # -- construction helpers ------------------------------------------------
+    @staticmethod
+    def _label(text: str) -> QWidget:
+        from PySide6.QtWidgets import QLabel
+
+        label = QLabel(text)
+        label.setStyleSheet("font-weight: bold;")
+        return label
+
+    def _build_plot_group(self) -> QGroupBox:
+        self.group_plot = QGroupBox("Plot Properties")
+        form = QFormLayout(self.group_plot)
+        self.style_combo = QComboBox()
+        for style in PlotStyle:
+            self.style_combo.addItem(style.value, style)
+        self.color_button = QPushButton("color")
+        self.color_button.clicked.connect(self._pick_color)
+        self.width_spin = QDoubleSpinBox()
+        self.width_spin.setRange(0.1, 20.0)
+        self.width_spin.setSingleStep(0.5)
+        self.symbol_combo = QComboBox()
+        self.symbol_combo.addItems(_SYMBOLS)
+        self.symbol_size_spin = QDoubleSpinBox()
+        self.symbol_size_spin.setRange(1.0, 40.0)
+        self.legend_edit = QLineEdit()
+        form.addRow("Style:", self.style_combo)
+        form.addRow("Color:", self.color_button)
+        form.addRow("Line width:", self.width_spin)
+        form.addRow("Symbol:", self.symbol_combo)
+        form.addRow("Symbol size:", self.symbol_size_spin)
+        form.addRow("Legend:", self.legend_edit)
+
+        self.style_combo.currentIndexChanged.connect(self._apply_plot_props)
+        self.width_spin.valueChanged.connect(self._apply_plot_props)
+        self.symbol_combo.currentIndexChanged.connect(self._apply_plot_props)
+        self.symbol_size_spin.valueChanged.connect(self._apply_plot_props)
+        self.legend_edit.editingFinished.connect(self._apply_plot_props)
+        self._color = ""
+        return self.group_plot
+
+    def _build_axis_group(self) -> QGroupBox:
+        self.group_axis = QGroupBox("Axes")
+        form = QFormLayout(self.group_axis)
+        self.xscale_combo = QComboBox()
+        self.yscale_combo = QComboBox()
+        for scale in AxisScale:
+            self.xscale_combo.addItem(scale.value, scale)
+            self.yscale_combo.addItem(scale.value, scale)
+        self.xlabel_edit = QLineEdit()
+        self.ylabel_edit = QLineEdit()
+        self.xmin_edit = QLineEdit()
+        self.xmax_edit = QLineEdit()
+        self.ymin_edit = QLineEdit()
+        self.ymax_edit = QLineEdit()
+        self.legend_check = QComboBox()
+        self.legend_check.addItem("Show", True)
+        self.legend_check.addItem("Hide", False)
+        form.addRow("X scale:", self.xscale_combo)
+        form.addRow("Y scale:", self.yscale_combo)
+        form.addRow("X label:", self.xlabel_edit)
+        form.addRow("Y label:", self.ylabel_edit)
+        form.addRow("X min:", self.xmin_edit)
+        form.addRow("X max:", self.xmax_edit)
+        form.addRow("Y min:", self.ymin_edit)
+        form.addRow("Y max:", self.ymax_edit)
+        form.addRow("Legend:", self.legend_check)
+
+        for widget in (self.xscale_combo, self.yscale_combo, self.legend_check):
+            widget.currentIndexChanged.connect(self._apply_axis_props)
+        for widget in (self.xlabel_edit, self.ylabel_edit, self.xmin_edit, self.xmax_edit, self.ymin_edit, self.ymax_edit):
+            widget.editingFinished.connect(self._apply_axis_props)
+        return self.group_axis
+
+    # -- state ---------------------------------------------------------------
+    def _selected_spec(self) -> PlotSpec | None:
+        item = self.plot_list.currentItem()
+        return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+
+    def _layer_for_spec(self, spec: PlotSpec) -> Layer:
+        for layer in self.graph.layers:
+            if spec in layer.plots:
+                return layer
+        return self.graph.first_layer
+
+    def _active_layer(self) -> Layer:
+        spec = self._selected_spec()
+        return self._layer_for_spec(spec) if spec is not None else self.graph.first_layer
+
+    # -- actions -------------------------------------------------------------
+    def add_plot(self) -> None:
+        if not self.project.workbooks:
+            return
+        dialog = AddPlotDialog(self.project, self)
+        if dialog.exec() and dialog.x_combo.currentData() and dialog.y_combo.currentData():
+            spec = dialog.spec()
+            self.commands.push(AddPlotCommand(self.graph, self.graph.first_layer, spec))
+            self.refresh(select=spec)
+
+    def remove_plot(self) -> None:
+        spec = self._selected_spec()
+        if spec is None:
+            return
+        self.commands.push(RemovePlotCommand(self.graph, self._layer_for_spec(spec), spec))
+        self.refresh()
+
+    def add_layer(self) -> None:
+        layer = Layer(f"Layer {self.graph.num_layers + 1}")
+        self.commands.push(AddLayerCommand(self.graph, layer))
+        self.refresh()
+
+    def _pick_color(self) -> None:
+        color = QColorDialog.getColor(QColor(self._color or "#1f77b4"), self, "Plot Color")
+        if color.isValid():
+            self._color = color.name()
+            self._update_color_button()
+            self._apply_plot_props()
+
+    def _update_color_button(self) -> None:
+        self.color_button.setStyleSheet(f"background-color: {self._color or '#ffffff'}")
+
+    # -- apply edits ---------------------------------------------------------
+    def _apply_plot_props(self) -> None:
+        if self._loading:
+            return
+        spec = self._selected_spec()
+        if spec is None:
+            return
+        self.commands.push(SetAttributesCommand(
+            spec, "Edit Plot",
+            style=self.style_combo.currentData(),
+            color=self._color,
+            line_width=self.width_spin.value(),
+            symbol=self.symbol_combo.currentText(),
+            symbol_size=self.symbol_size_spin.value(),
+            legend=self.legend_edit.text().strip(),
+        ))
+        self._refresh_list_labels()
+        self.render()
+        self._changed()
+
+    def _apply_axis_props(self) -> None:
+        if self._loading:
+            return
+        layer = self._active_layer()
+        self.commands.push(SetAttributesCommand(
+            layer, "Edit Axes",
+            x_scale=self.xscale_combo.currentData(),
+            y_scale=self.yscale_combo.currentData(),
+            x_label=self.xlabel_edit.text(),
+            y_label=self.ylabel_edit.text(),
+            x_min=_float_or_none(self.xmin_edit.text()),
+            x_max=_float_or_none(self.xmax_edit.text()),
+            y_min=_float_or_none(self.ymin_edit.text()),
+            y_max=_float_or_none(self.ymax_edit.text()),
+            show_legend=self.legend_check.currentData(),
+        ))
+        self.render()
+        self._changed()
+
+    def _changed(self) -> None:
+        if self._on_change:
+            self._on_change()
+
+    # -- rendering -----------------------------------------------------------
+    def refresh(self, select: PlotSpec | None = None) -> None:
+        self._refresh_list(select)
+        self.render()
+
+    def _refresh_list(self, select: PlotSpec | None) -> None:
+        if select is None:
+            select = self._selected_spec()
+        self.plot_list.blockSignals(True)
+        self.plot_list.clear()
+        target_row = 0
+        for layer in self.graph.layers:
+            for spec in layer.plots:
+                item = QListWidgetItem(f"{layer.name} · {spec.y} vs {spec.x}")
+                item.setData(Qt.ItemDataRole.UserRole, spec)
+                self.plot_list.addItem(item)
+                if spec is select:
+                    target_row = self.plot_list.count() - 1
+        self.plot_list.blockSignals(False)
+        if self.plot_list.count():
+            self.plot_list.setCurrentRow(target_row)
+            self._on_plot_selected(target_row)
+        else:
+            self._clear_forms()
+
+    def _refresh_list_labels(self) -> None:
+        for row in range(self.plot_list.count()):
+            item = self.plot_list.item(row)
+            spec = item.data(Qt.ItemDataRole.UserRole)
+            layer = self._layer_for_spec(spec)
+            item.setText(f"{layer.name} · {spec.legend or spec.y} vs {spec.x}")
+
+    def _on_plot_selected(self, row: int) -> None:
+        spec = self._selected_spec()
+        self._loading = True
+        try:
+            if spec is not None:
+                self.style_combo.setCurrentText(PlotStyle(spec.style).value)
+                self.width_spin.setValue(spec.line_width)
+                self.symbol_combo.setCurrentText(spec.symbol)
+                self.symbol_size_spin.setValue(spec.symbol_size)
+                self.legend_edit.setText(spec.legend)
+                self._color = spec.color
+            self._load_axis_fields(self._active_layer())
+        finally:
+            self._loading = False
+        self._update_color_button()
+
+    def _load_axis_fields(self, layer: Layer) -> None:
+        self.xscale_combo.setCurrentText(AxisScale(layer.x_scale).value)
+        self.yscale_combo.setCurrentText(AxisScale(layer.y_scale).value)
+        self.xlabel_edit.setText(layer.x_label)
+        self.ylabel_edit.setText(layer.y_label)
+        self.xmin_edit.setText("" if layer.x_min is None else str(layer.x_min))
+        self.xmax_edit.setText("" if layer.x_max is None else str(layer.x_max))
+        self.ymin_edit.setText("" if layer.y_min is None else str(layer.y_min))
+        self.ymax_edit.setText("" if layer.y_max is None else str(layer.y_max))
+        self.legend_check.setCurrentIndex(0 if layer.show_legend else 1)
+
+    def _clear_forms(self) -> None:
+        self._loading = True
+        self.legend_edit.clear()
+        self._loading = False
+
+    def render(self) -> None:
+        self.canvas.clear()
+        layer = self._active_layer()
+        self.canvas.set_scales(x=AxisScale(layer.x_scale).value, y=AxisScale(layer.y_scale).value)
+        self.canvas.show_legend(layer.show_legend)
+
+        for each in self.graph.layers:
+            for spec in each.plots:
+                data = resolve_plot(self.project, spec)
+                if data is None:
+                    continue
+                self.canvas.plot(
+                    data.x, data.y,
+                    style=PlotStyle(spec.style).value, color=spec.color,
+                    width=spec.line_width, symbol=spec.symbol,
+                    symbol_size=spec.symbol_size, name=data.legend,
+                    yerr=data.yerr, xerr=data.xerr,
+                )
+
+        x_label, y_label = auto_axis_labels(self.project, layer)
+        self.canvas.set_labels(bottom=x_label or None, left=y_label or None)
+        self.canvas.set_limits(x=(layer.x_min, layer.x_max), y=(layer.y_min, layer.y_max))
+        self.canvas.set_title(self.graph.title or self.graph.name)
+
+
+def _float_or_none(text: str) -> float | None:
+    text = text.strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None

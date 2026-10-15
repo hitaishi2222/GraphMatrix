@@ -1,5 +1,23 @@
-"""Import/export layer (populated from M1).
+"""Importers and exporters for Respot.
 
-Planned: CSV/TSV, Excel (openpyxl), Parquet (pyarrow), HDF5, NetCDF, and the
-publication-graphics exporters (PDF/SVG/EPS via matplotlib).
+``import_file`` dispatches on file extension. Register new handlers with
+``register_importer`` to extend without touching this module.
 """
+
+from .importer import (
+    ImportError_,
+    export_delimited,
+    import_file,
+    import_sheet,
+    register_importer,
+    supported_extensions,
+)
+
+__all__ = [
+    "import_file",
+    "import_sheet",
+    "export_delimited",
+    "register_importer",
+    "supported_extensions",
+    "ImportError_",
+]

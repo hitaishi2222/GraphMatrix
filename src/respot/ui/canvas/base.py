@@ -23,19 +23,40 @@ class PlotCanvas(ABC):
 
     @abstractmethod
     def clear(self) -> None:
-        """Remove all plotted data from the canvas."""
+        """Remove all plotted data."""
 
     @abstractmethod
-    def plot_xy(self, x: Sequence[float], y: Sequence[float], *, name: str | None = None) -> Any:
-        """Plot a data series and return the backend's plot item."""
+    def plot(
+        self,
+        x: Sequence[float],
+        y: Sequence[float],
+        *,
+        style: str = "line",
+        color: str = "",
+        width: float = 2.0,
+        symbol: str = "o",
+        symbol_size: float = 7.0,
+        name: str | None = None,
+        yerr: Sequence[float] | None = None,
+        xerr: Sequence[float] | None = None,
+    ) -> Any:
+        """Plot a series and return the backend's plot item."""
 
     @abstractmethod
-    def set_title(self, text: str) -> None:
-        ...
+    def set_title(self, text: str) -> None: ...
 
     @abstractmethod
-    def set_labels(self, *, bottom: str | None = None, left: str | None = None) -> None:
-        ...
+    def set_labels(self, *, bottom: str | None = None, left: str | None = None) -> None: ...
+
+    @abstractmethod
+    def set_scales(self, *, x: str = "linear", y: str = "linear") -> None: ...
+
+    @abstractmethod
+    def set_limits(self, *, x: tuple[float | None, float | None] | None = None,
+                   y: tuple[float | None, float | None] | None = None) -> None: ...
+
+    @abstractmethod
+    def show_legend(self, flag: bool) -> None: ...
 
 
 def create_canvas(backend: str = DEFAULT_BACKEND) -> PlotCanvas:

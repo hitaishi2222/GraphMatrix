@@ -1,7 +1,8 @@
 """The Respot data model (Qt-free)."""
 
 from .columns import Column, ColumnType
-from .graph import Graph, Layer
+from .formula import FormulaError, evaluate_column_formula
+from .graph import AxisScale, Graph, Layer, PlotSpec, PlotStyle
 from .project import FORMAT, FORMAT_VERSION, Project
 from .workbook import Workbook
 from .worksheet import Worksheet
@@ -13,7 +14,12 @@ __all__ = [
     "Workbook",
     "Graph",
     "Layer",
+    "PlotSpec",
+    "PlotStyle",
+    "AxisScale",
     "Project",
     "FORMAT",
     "FORMAT_VERSION",
+    "FormulaError",
+    "evaluate_column_formula",
 ]

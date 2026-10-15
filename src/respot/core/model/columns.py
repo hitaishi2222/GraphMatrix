@@ -31,7 +31,7 @@ class ColumnType(str, Enum):
 
     @property
     def is_numeric(self) -> bool:
-        return self not in (ColumnType.LABEL, ColumnType.TEXT)
+        return self not in (ColumnType.LABEL, ColumnType.TEXT, ColumnType.DATE)
 
 
 def _to_array(data: Any, dtype: Any = None) -> NDArray[Any]:
@@ -56,18 +56,28 @@ class Column:
         units: str = "",
         comment: str = "",
         dtype: Any = None,
+        decimal: int | None = None,
+        mask: Sequence[bool] | NDArray[Any] | None = None,
     ) -> None:
         self.name = name
         self.col_type = ColumnType(col_type)
         self.units = units
         self.comment = comment
+        self.decimal = decimal
         self._data: NDArray[Any] = _to_array(data, dtype)
+        self._mask: NDArray[np.bool_] | None = (
+            np.asarray(mask, dtype=bool) if mask is not None else None
+        )
 
     # -- access --------------------------------------------------------------
     @property
     def data(self) -> NDArray[Any]:
         """The underlying (mutable) array. Treat as a live reference."""
         return self._data
+
+    @data.setter
+    def data(self, values: Sequence[Any] | NDArray[Any]) -> None:
+        self._data = _to_array(values, self._data.dtype if len(self._data) else None)
 
     @property
     def values(self) -> list[Any]:
@@ -77,6 +87,21 @@ class Column:
     @property
     def dtype(self) -> np.dtype:
         return self._data.dtype
+
+    @property
+    def is_numeric(self) -> bool:
+        return self._data.dtype.kind in "fiub" or self.col_type.is_numeric
+
+    @property
+    def mask(self) -> NDArray[np.bool_] | None:
+        return self._mask
+
+    def float_data(self) -> NDArray[np.float64]:
+        """Data as float64 (masked values as NaN), for analysis/plotting."""
+        arr = np.asarray(self._data, dtype=float)
+        if self._mask is not None and self._mask.size == arr.size:
+            arr = np.where(self._mask, np.nan, arr)
+        return arr
 
     def __len__(self) -> int:
         return int(self._data.shape[0])
@@ -102,15 +127,21 @@ class Column:
         self._data = np.concatenate([self._data, _to_array(values, self._data.dtype)])
 
     # -- serialization -------------------------------------------------------
-    def to_dict(self) -> dict[str, Any]:
-        return {
+    def to_dict(self, *, include_data: bool = True) -> dict[str, Any]:
+        payload: dict[str, Any] = {
             "name": self.name,
             "col_type": self.col_type.value,
             "units": self.units,
             "comment": self.comment,
             "dtype": str(self._data.dtype),
-            "data": self._data.tolist(),
         }
+        if self.decimal is not None:
+            payload["decimal"] = self.decimal
+        if include_data:
+            payload["data"] = self._data.tolist()
+            if self._mask is not None:
+                payload["mask"] = self._mask.tolist()
+        return payload
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "Column":
@@ -121,6 +152,8 @@ class Column:
             units=payload.get("units", ""),
             comment=payload.get("comment", ""),
             dtype=payload.get("dtype"),
+            decimal=payload.get("decimal"),
+            mask=payload.get("mask"),
         )
 
     def __repr__(self) -> str:  # pragma: no cover - cosmetic

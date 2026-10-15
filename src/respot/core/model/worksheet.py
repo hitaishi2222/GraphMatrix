@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Iterator, Sequence
 
+import numpy as np
+
 from .columns import Column, ColumnType
+from .formula import evaluate_column_formula
 
 
 class Worksheet:
@@ -28,9 +31,10 @@ class Worksheet:
         units: str = "",
         comment: str = "",
         dtype: Any = None,
+        decimal: int | None = None,
         index: int | None = None,
     ) -> Column:
-        column = Column(name, col_type, data, units=units, comment=comment, dtype=dtype)
+        column = Column(name, col_type, data, units=units, comment=comment, dtype=dtype, decimal=decimal)
         self.insert_column(column, index=index)
         return column
 
@@ -53,6 +57,13 @@ class Worksheet:
                 return column
         return None
 
+    def column_index(self, column: Column) -> int:
+        return self.columns.index(column)
+
+    def move_column(self, from_index: int, to_index: int) -> None:
+        column = self.columns.pop(from_index)
+        self.columns.insert(to_index, column)
+
     @property
     def column_names(self) -> list[str]:
         return [c.name for c in self.columns]
@@ -64,6 +75,48 @@ class Worksheet:
         while f"{prefix}{i}" in existing:
             i += 1
         return f"{prefix}{i}"
+
+    def unique_column_name(self, base: str) -> str:
+        existing = set(self.column_names)
+        if base not in existing:
+            return base
+        i = 1
+        while f"{base}{i}" in existing:
+            i += 1
+        return f"{base}{i}"
+
+    def unique_sheet_name(self) -> str:  # convenience for callers
+        return self.name
+
+    # -- rows ----------------------------------------------------------------
+    def ensure_rows(self, count: int) -> None:
+        for column in self.columns:
+            if len(column) < count:
+                pad = np.full(count - len(column), np.nan, dtype=column.dtype)
+                column.data = np.concatenate([column.data, pad])
+
+    def insert_rows(self, index: int, count: int = 1) -> None:
+        for column in self.columns:
+            data = column.data
+            head, tail = data[:index], data[index:]
+            pad = np.full(count, np.nan, dtype=data.dtype if data.size else float)
+            column.data = np.concatenate([head, pad, tail])
+
+    def delete_rows(self, index: int, count: int = 1) -> None:
+        for column in self.columns:
+            data = column.data
+            column.data = np.concatenate([data[:index], data[index + count:]])
+
+    def set_value(self, row: int, column_index: int, value: Any) -> None:
+        column = self.columns[column_index]
+        if row >= len(column):
+            self.ensure_rows(row + 1)
+        column.set(row, value)
+
+    def apply_formula(self, column: Column, expression: str) -> None:
+        """Fill ``column`` from a formula referencing other columns by name."""
+        values = evaluate_column_formula(self, expression, len(column) or self.num_rows)
+        column.data = values
 
     # -- shape ---------------------------------------------------------------
     @property
@@ -81,8 +134,11 @@ class Worksheet:
         return iter(self.columns)
 
     # -- serialization -------------------------------------------------------
-    def to_dict(self) -> dict[str, Any]:
-        return {"name": self.name, "columns": [c.to_dict() for c in self.columns]}
+    def to_dict(self, *, include_data: bool = True) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "columns": [c.to_dict(include_data=include_data) for c in self.columns],
+        }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "Worksheet":
