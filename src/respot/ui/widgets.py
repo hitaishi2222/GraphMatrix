@@ -6,6 +6,9 @@ from PySide6.QtWidgets import QComboBox
 
 from respot.core.model import ColumnType, Project, Worksheet
 
+#: MIME type used when dragging a single column from the Project Explorer onto a graph.
+COLUMN_MIME = "application/x-respot-column"
+
 
 def sheet_label(project: Project, sheet: Worksheet) -> str:
     for book in project.workbooks:

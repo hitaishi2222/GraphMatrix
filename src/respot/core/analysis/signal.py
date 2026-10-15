@@ -162,7 +162,48 @@ def baseline_polynomial(x: Sequence[float], y: Sequence[float], *, degree: int =
     return result
 
 
+_OPERATIONS = (
+    "Smooth (Savitzky-Golay)", "Moving Average", "Low-pass Filter", "High-pass Filter",
+    "FFT Spectrum", "Derivative", "Integrate", "Interpolate", "Baseline (polynomial)",
+)
+
+
+def operations() -> list[str]:
+    return list(_OPERATIONS)
+
+
+def run_operation(
+    name: str,
+    x: Sequence[float],
+    y: Sequence[float],
+    *,
+    window: int = 11,
+    order: int = 3,
+    cutoff: float = 1.0,
+    points: int = 200,
+) -> AnalysisResult:
+    """Dispatch a named signal operation (shared by the dialog and recipes)."""
+    if name in ("Smooth (Savitzky-Golay)", "savgol"):
+        return smooth_savgol(x, y, window=window, order=order)
+    if name in ("Moving Average", "moving"):
+        return smooth_moving_average(x, y, window=window)
+    if name in ("Low-pass Filter", "low"):
+        return butter_filter(x, y, kind="low", cutoff=cutoff, order=order)
+    if name in ("High-pass Filter", "high"):
+        return butter_filter(x, y, kind="high", cutoff=cutoff, order=order)
+    if name in ("FFT Spectrum", "fft"):
+        return fft_spectrum(x, y)
+    if name in ("Derivative", "derivative"):
+        return differentiate(x, y, order=order)
+    if name in ("Integrate", "integrate"):
+        return integrate_curve(x, y)
+    if name in ("Interpolate", "interpolate"):
+        return interpolate(x, y, num=points)
+    return baseline_polynomial(x, y, degree=order)
+
+
 __all__ = [
     "fft_spectrum", "smooth_savgol", "smooth_moving_average", "butter_filter",
     "differentiate", "integrate_curve", "interpolate", "baseline_polynomial",
+    "run_operation", "operations",
 ]

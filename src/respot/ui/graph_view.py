@@ -6,6 +6,8 @@ graph is fully part of the undo history.
 
 from __future__ import annotations
 
+import json
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
@@ -15,6 +17,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
@@ -24,11 +27,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from respot.core.commands import AddLayerCommand, AddPlotCommand, CommandStack, RemovePlotCommand, SetAttributesCommand
-from respot.core.model import AxisScale, Graph, Layer, PlotSpec, PlotStyle, Project
-from respot.core.plotting import auto_axis_labels, resolve_layer, resolve_plot
+from respot.core.commands import (
+    AddAnnotationCommand,
+    AddLayerCommand,
+    AddPlotCommand,
+    CommandStack,
+    RemovePlotCommand,
+    SetAttributesCommand,
+)
+from respot.core.model import Annotation, AxisScale, Graph, Layer, PlotSpec, PlotStyle, Project
+from respot.core.plotting import auto_axis_labels, make_plot_for_column, resolve_layer, resolve_plot
 from respot.ui.canvas import create_canvas
 from respot.ui.plot_dialogs import AddPlotDialog
+from respot.ui.widgets import COLUMN_MIME
 
 _SYMBOLS = ["o", "s", "^", "v", "d", "+", "x", "*", ""]
 
@@ -42,6 +53,7 @@ class GraphView(QWidget):
         self.commands = commands
         self._on_change = on_change
         self._loading = False
+        self.setAcceptDrops(True)
 
         self.canvas = create_canvas()
         self.plot_list = QListWidget()
@@ -101,18 +113,23 @@ class GraphView(QWidget):
         self.symbol_size_spin = QDoubleSpinBox()
         self.symbol_size_spin.setRange(1.0, 40.0)
         self.legend_edit = QLineEdit()
+        self.yaxis_combo = QComboBox()
+        self.yaxis_combo.addItem("Left", "left")
+        self.yaxis_combo.addItem("Right", "right")
         form.addRow("Style:", self.style_combo)
         form.addRow("Color:", self.color_button)
         form.addRow("Line width:", self.width_spin)
         form.addRow("Symbol:", self.symbol_combo)
         form.addRow("Symbol size:", self.symbol_size_spin)
         form.addRow("Legend:", self.legend_edit)
+        form.addRow("Y axis:", self.yaxis_combo)
 
         self.style_combo.currentIndexChanged.connect(self._apply_plot_props)
         self.width_spin.valueChanged.connect(self._apply_plot_props)
         self.symbol_combo.currentIndexChanged.connect(self._apply_plot_props)
         self.symbol_size_spin.valueChanged.connect(self._apply_plot_props)
         self.legend_edit.editingFinished.connect(self._apply_plot_props)
+        self.yaxis_combo.currentIndexChanged.connect(self._apply_plot_props)
         self._color = ""
         return self.group_plot
 
@@ -126,6 +143,7 @@ class GraphView(QWidget):
             self.yscale_combo.addItem(scale.value, scale)
         self.xlabel_edit = QLineEdit()
         self.ylabel_edit = QLineEdit()
+        self.y2label_edit = QLineEdit()
         self.xmin_edit = QLineEdit()
         self.xmax_edit = QLineEdit()
         self.ymin_edit = QLineEdit()
@@ -137,6 +155,7 @@ class GraphView(QWidget):
         form.addRow("Y scale:", self.yscale_combo)
         form.addRow("X label:", self.xlabel_edit)
         form.addRow("Y label:", self.ylabel_edit)
+        form.addRow("Y2 label:", self.y2label_edit)
         form.addRow("X min:", self.xmin_edit)
         form.addRow("X max:", self.xmax_edit)
         form.addRow("Y min:", self.ymin_edit)
@@ -145,7 +164,7 @@ class GraphView(QWidget):
 
         for widget in (self.xscale_combo, self.yscale_combo, self.legend_check):
             widget.currentIndexChanged.connect(self._apply_axis_props)
-        for widget in (self.xlabel_edit, self.ylabel_edit, self.xmin_edit, self.xmax_edit, self.ymin_edit, self.ymax_edit):
+        for widget in (self.xlabel_edit, self.ylabel_edit, self.y2label_edit, self.xmin_edit, self.xmax_edit, self.ymin_edit, self.ymax_edit):
             widget.editingFinished.connect(self._apply_axis_props)
         return self.group_axis
 
@@ -186,6 +205,37 @@ class GraphView(QWidget):
         self.commands.push(AddLayerCommand(self.graph, layer))
         self.refresh()
 
+    def add_annotation(self) -> None:
+        text, ok = QInputDialog.getText(self, "Add Annotation", "Text:")
+        if not ok or not text:
+            return
+        self.commands.push(AddAnnotationCommand(self.graph, Annotation(text=text)))
+        self.refresh()
+
+    def add_column_plot(self, source: str, column_name: str) -> None:
+        """Plot a single column (used by drag-and-drop from the Project Explorer)."""
+        spec = make_plot_for_column(self.project, source, column_name)
+        if spec is None:
+            return
+        self.commands.push(AddPlotCommand(self.graph, self._active_layer(), spec))
+        self.refresh(select=spec)
+
+    # -- drag & drop (column -> layer) ---------------------------------------
+    def dragEnterEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if event.mimeData().hasFormat(COLUMN_MIME):
+            event.acceptProposedAction()
+
+    def dragMoveEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if event.mimeData().hasFormat(COLUMN_MIME):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if not event.mimeData().hasFormat(COLUMN_MIME):
+            return
+        payload = json.loads(bytes(event.mimeData().data(COLUMN_MIME)).decode("utf-8"))
+        self.add_column_plot(payload.get("source", ""), payload.get("column", ""))
+        event.acceptProposedAction()
+
     def _pick_color(self) -> None:
         color = QColorDialog.getColor(QColor(self._color or "#1f77b4"), self, "Plot Color")
         if color.isValid():
@@ -211,6 +261,7 @@ class GraphView(QWidget):
             symbol=self.symbol_combo.currentText(),
             symbol_size=self.symbol_size_spin.value(),
             legend=self.legend_edit.text().strip(),
+            y_axis=self.yaxis_combo.currentData(),
         ))
         self._refresh_list_labels()
         self.render()
@@ -226,6 +277,7 @@ class GraphView(QWidget):
             y_scale=self.yscale_combo.currentData(),
             x_label=self.xlabel_edit.text(),
             y_label=self.ylabel_edit.text(),
+            y2_label=self.y2label_edit.text(),
             x_min=_float_or_none(self.xmin_edit.text()),
             x_max=_float_or_none(self.xmax_edit.text()),
             y_min=_float_or_none(self.ymin_edit.text()),
@@ -281,6 +333,7 @@ class GraphView(QWidget):
                 self.symbol_combo.setCurrentText(spec.symbol)
                 self.symbol_size_spin.setValue(spec.symbol_size)
                 self.legend_edit.setText(spec.legend)
+                self.yaxis_combo.setCurrentText(spec.y_axis)
                 self._color = spec.color
             self._load_axis_fields(self._active_layer())
         finally:
@@ -292,6 +345,7 @@ class GraphView(QWidget):
         self.yscale_combo.setCurrentText(AxisScale(layer.y_scale).value)
         self.xlabel_edit.setText(layer.x_label)
         self.ylabel_edit.setText(layer.y_label)
+        self.y2label_edit.setText(layer.y2_label)
         self.xmin_edit.setText("" if layer.x_min is None else str(layer.x_min))
         self.xmax_edit.setText("" if layer.x_max is None else str(layer.x_max))
         self.ymin_edit.setText("" if layer.y_min is None else str(layer.y_min))
@@ -320,12 +374,18 @@ class GraphView(QWidget):
                     width=spec.line_width, symbol=spec.symbol,
                     symbol_size=spec.symbol_size, name=data.legend,
                     yerr=data.yerr, xerr=data.xerr,
+                    y_axis=spec.y_axis,
                 )
 
         x_label, y_label = auto_axis_labels(self.project, layer)
-        self.canvas.set_labels(bottom=x_label or None, left=y_label or None)
+        self.canvas.set_labels(bottom=x_label or None, left=y_label or None,
+                               right=layer.y2_label or None)
         self.canvas.set_limits(x=(layer.x_min, layer.x_max), y=(layer.y_min, layer.y_max))
         self.canvas.set_title(self.graph.title or self.graph.name)
+
+        for annotation in self.graph.annotations:
+            self.canvas.add_annotation(annotation.text, annotation.x, annotation.y,
+                                       color=annotation.color, size=annotation.size)
 
 
 def _float_or_none(text: str) -> float | None:

@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from respot.core.model import Graph, Project, Workbook, Worksheet
+from respot.core.model import Column, Graph, Project, Workbook, Worksheet
 
 
 class PropertiesPanel(QWidget):
@@ -53,4 +53,11 @@ class PropertiesPanel(QWidget):
             rows += [("Columns", obj.num_columns), ("Rows", obj.num_rows)]
         elif isinstance(obj, Graph):
             rows += [("Layers", obj.num_layers)]
+        elif isinstance(obj, Column):
+            rows += [
+                ("Type", obj.col_type.value),
+                ("Units", obj.units),
+                ("Comment", obj.comment),
+                ("Values", len(obj)),
+            ]
         return rows

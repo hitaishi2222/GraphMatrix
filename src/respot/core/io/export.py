@@ -40,37 +40,51 @@ def export_graph(
     figsize = (width_mm / 25.4, height_mm / 25.4)
 
     fig, ax_left = plt.subplots(figsize=figsize, dpi=dpi)
-    axes = [ax_left]
+    ax_right = None
 
-    for index, layer in enumerate(graph.layers):
-        ax = ax_left
-        if index == 1:
-            ax = ax_left.twinx()
-            axes.append(ax)
-        series = resolve_layer(project, layer)
+    for layer in graph.layers:
         if layer.x_scale.value == "log":
-            ax.set_xscale("log")
+            ax_left.set_xscale("log")
         if layer.y_scale.value == "log":
-            ax.set_yscale("log")
+            ax_left.set_yscale("log")
+            if ax_right is not None:
+                ax_right.set_yscale("log")
 
+        series = resolve_layer(project, layer)
         for plot_index, (spec, data) in enumerate(zip(layer.plots, series)):
             color = spec.color or _PALETTE[plot_index % len(_PALETTE)]
-            _draw(ax, spec, data, color)
+            if getattr(spec, "y_axis", "left") == "right":
+                if ax_right is None:
+                    ax_right = ax_left.twinx()
+                    if layer.y_scale.value == "log":
+                        ax_right.set_yscale("log")
+                _draw(ax_right, spec, data, color)
+            else:
+                _draw(ax_left, spec, data, color)
 
         x_label, y_label = auto_axis_labels(project, layer)
         if x_label:
-            ax.set_xlabel(x_label)
-        if y_label:
-            ax.set_ylabel(y_label)
+            ax_left.set_xlabel(x_label)
+        if y_label and not ax_left.get_ylabel():
+            ax_left.set_ylabel(y_label)
+        if layer.y2_label and ax_right is not None:
+            ax_right.set_ylabel(layer.y2_label)
         if layer.x_min is not None or layer.x_max is not None:
-            ax.set_xlim(left=layer.x_min, right=layer.x_max)
+            ax_left.set_xlim(left=layer.x_min, right=layer.x_max)
         if layer.y_min is not None or layer.y_max is not None:
-            ax.set_ylim(bottom=layer.y_min, top=layer.y_max)
+            ax_left.set_ylim(bottom=layer.y_min, top=layer.y_max)
 
     if graph.layers and graph.layers[0].show_legend:
-        handles, labels = axes[0].get_legend_handles_labels()
+        handles, labels = ax_left.get_legend_handles_labels()
+        if ax_right is not None:
+            h2, l2 = ax_right.get_legend_handles_labels()
+            handles, labels = handles + h2, labels + l2
         if labels:
-            axes[0].legend(loc="best", fontsize=8, frameon=False)
+            ax_left.legend(handles, labels, loc="best", fontsize=8, frameon=False)
+
+    for annotation in getattr(graph, "annotations", []):
+        ax_left.text(annotation.x, annotation.y, annotation.text, transform=ax_left.transAxes,
+                     color=annotation.color, fontsize=annotation.size, ha="left", va="top")
 
     if graph.title:
         fig.suptitle(graph.title)

@@ -13,16 +13,20 @@ a tabbed workspace (center), and a **Python Console** (bottom, hidden by default
 
 ### 1. Get data in
 - **File → Import Data…** (Ctrl+I): CSV/TSV/TXT/DAT, Excel (.xlsx), Parquet, HDF5/NetCDF.
+- **Drag and drop** data files (or a `.rsproj`) onto the window.
 - **Data → Add Sample Data**: drops a sine wave into the selected worksheet.
 - **Tools → Batch Import…**: import many files at once (one undoable step).
 
 Columns are typed (`X`, `Y`, `YErr`, `Z`, `Label`, `Group`, `Date`, `Text`). Importers
-infer types; first numeric column becomes X, the rest Y.
+infer types; first numeric column becomes X, the rest Y. A header written as
+`Name (units)` round-trips through CSV.
 
 ### 2. Edit the worksheet
 Double-click a cell to edit (the change is undoable). Right-click a **column header**
 for rename / units / comment / type / decimal places / **formula** / insert / delete.
-Right-click a **cell** for row insert/delete.
+Right-click a **cell** for row insert/delete, or **copy / cut / paste** cell blocks
+(Ctrl+C / Ctrl+X / Ctrl+V; a paste is a single undo step). Drag a column header to
+**reorder** columns.
 
 Formulas reference columns by name and use numpy functions, e.g. `sin(X1) + 2`,
 `Y1 * exp(-X1/3)`, `log(Y1)`. They are sandboxed — no arbitrary code execution.
@@ -30,8 +34,14 @@ Formulas reference columns by name and use numpy functions, e.g. `sin(X1) + 2`,
 ### 3. Graph it
 - **Data → Add Graph** creates a graph and auto-plots the first X/Y pair.
 - **Graph → Add Plot to Active Graph…** chooses source sheet, X, Y, Y error, style.
-- The graph sidebar edits plot style/color/symbol and axis scale/labels/limits/legend.
-- Styles: line, scatter, line+symbol, bar, area, step, error bar. Multi-layer supported.
+- **Drag a column** from the Project Explorer onto a graph to plot it (an X column
+  pairs with the sheet's first Y; a Y column with the first X).
+- The graph sidebar edits plot style/color/symbol/**Y axis (left/right)** and axis
+  scale/labels/limits/**Y2 label**/legend.
+- **Graph → Add Annotation…** places a text label; **Graph → Save/Apply Style
+  Template…** copies a graph's whole look onto another graph.
+- Styles: line, scatter, line+symbol, bar, area, step, error bar. Multi-layer and
+  **dual Y axis** supported. Large series are downsampled automatically while panning.
 
 ### 4. Analyze
 Everything is under **Analyze**:
@@ -41,6 +51,8 @@ Everything is under **Analyze**:
   sinusoid, power law, sigmoid, step, log-normal) via lmfit, reporting parameters ±
   standard error, R², χ², AIC/BIC.
 - **Peak Analysis** — peak positions, heights, prominence, FWHM.
+- **Peak Deconvolution** — fit a sum of overlapping Gaussian or Lorentzian peaks
+  (give approximate centres, or leave blank to auto-detect) with a constant baseline.
 - **Signal Processing** — FFT, Savitzky–Golay / moving-average smoothing, Butterworth
   filters, derivative, integration, interpolation, polynomial baseline.
 - **Statistics** — t-tests, one-way ANOVA, Pearson/Spearman correlation, histogram.
@@ -50,13 +62,30 @@ or "Plot on active graph" (adds the curve as columns and a plot).
 
 ### 5. Export
 - **Export → Export Active Graph…** — PDF/SVG/EPS (vector, font-embedded) or
-  PNG/TIFF (raster) at a chosen size in mm and DPI.
+  PNG/TIFF (raster) at a chosen size in mm and DPI. Dual-axis and annotations included.
+- **Export → Export All Graphs…** — batch export every graph in the project to a folder.
 - **Export → Export Worksheet as CSV…**
 
 ### 6. Automate
 - **Tools → Python Console**: a live Python REPL scoped to your project.
 - **Tools → Record Macro** → make edits → **Save Recorded Macro…** writes a runnable
   script. **Tools → Run Script…** replays it.
+- **Tools → Batch Analysis (Recipe)…**: pick a recipe (JSON) and many data files; each
+  file is imported, analyzed, and gets a text report + a figure in the output folder.
+
+#### Analysis recipes
+
+A recipe records *what* to compute (not the data), so it can be re-run anywhere:
+
+```python
+from respot.core.recipes import Recipe, run_recipe, save_recipe
+
+recipe = Recipe("fit", {"model": "Exponential Decay"}, label="exp decay")
+r = run_recipe(recipe, x, y)          # x, y from anywhere
+save_recipe(recipe, "exp.json")       # batch it via Tools → Batch Analysis
+```
+
+Supported operations: `descriptive`, `regression`, `fit`, `peaks`, `deconvolution`, `signal`.
 
 ## Scripting examples
 
@@ -94,6 +123,7 @@ api.save("demo.rsproj")
 | Open project | Ctrl+O |
 | Save project | Ctrl+S |
 | Import data | Ctrl+I |
+| Copy / Cut / Paste (cells) | Ctrl+C / Ctrl+X / Ctrl+V |
 | Undo / Redo | Ctrl+Z / Ctrl+Shift+Z |
 | Quit | Ctrl+Q |
 

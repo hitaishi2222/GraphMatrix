@@ -92,6 +92,33 @@ def first_xy(project: Project) -> tuple[np.ndarray, np.ndarray, str, str] | None
     return None
 
 
+def make_plot_for_column(project: Project, source: str, name: str) -> PlotSpec | None:
+    """Build a sensible plot spec for a single dragged column.
+
+    An X column is paired with the sheet's first Y column; a Y column is paired with
+    the sheet's first X column. Returns None if nothing sensible can be paired.
+    """
+    from .model import ColumnType, PlotSpec
+
+    sheet = project.sheet(source)
+    if sheet is None:
+        return None
+    column = sheet.column(name)
+    if column is None:
+        return None
+    if column.col_type == ColumnType.X:
+        partner = next((c for c in sheet.columns if c.col_type == ColumnType.Y and c is not column), None)
+        if partner is None:
+            return None
+        return PlotSpec(source=source, x=name, y=partner.name)
+    partner = next((c for c in sheet.columns if c.col_type == ColumnType.X and c is not column), None)
+    if partner is None:
+        partner = next((c for c in sheet.columns if c is not column), None)
+    if partner is None:
+        return None
+    return PlotSpec(source=source, x=partner.name, y=name)
+
+
 def make_default_graph(project: Project, name: str) -> Graph | None:
     """Create a graph pre-populated with the project's first X/Y pair."""
     from .model import ColumnType, PlotSpec, PlotStyle

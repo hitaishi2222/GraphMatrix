@@ -53,6 +53,7 @@ class PlotSpec:
     symbol: str = "o"
     symbol_size: float = 7.0
     legend: str = ""
+    y_axis: str = "left"  # "left" | "right" (secondary Y axis)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -61,6 +62,7 @@ class PlotSpec:
             "style": PlotStyle(self.style).value, "color": self.color,
             "line_width": self.line_width, "symbol": self.symbol,
             "symbol_size": self.symbol_size, "legend": self.legend,
+            "y_axis": self.y_axis,
         }
 
     @classmethod
@@ -72,6 +74,28 @@ class PlotSpec:
             color=payload.get("color", ""), line_width=payload.get("line_width", 2.0),
             symbol=payload.get("symbol", "o"), symbol_size=payload.get("symbol_size", 7.0),
             legend=payload.get("legend", ""),
+            y_axis=payload.get("y_axis", "left"),
+        )
+
+
+@dataclass
+class Annotation:
+    """A text label placed on the figure at axes-fraction coordinates."""
+
+    text: str = ""
+    x: float = 0.05
+    y: float = 0.95
+    color: str = "#000000"
+    size: float = 11.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"text": self.text, "x": self.x, "y": self.y, "color": self.color, "size": self.size}
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, Any]) -> "Annotation":
+        return cls(
+            text=payload.get("text", ""), x=payload.get("x", 0.05), y=payload.get("y", 0.95),
+            color=payload.get("color", "#000000"), size=payload.get("size", 11.0),
         )
 
 
@@ -85,6 +109,7 @@ class Layer:
     y_scale: AxisScale = AxisScale.LINEAR
     x_label: str = ""
     y_label: str = ""
+    y2_label: str = ""
     x_min: float | None = None
     x_max: float | None = None
     y_min: float | None = None
@@ -106,7 +131,7 @@ class Layer:
             "plots": [p.to_dict() for p in self.plots],
             "x_scale": AxisScale(self.x_scale).value,
             "y_scale": AxisScale(self.y_scale).value,
-            "x_label": self.x_label, "y_label": self.y_label,
+            "x_label": self.x_label, "y_label": self.y_label, "y2_label": self.y2_label,
             "x_min": self.x_min, "x_max": self.x_max,
             "y_min": self.y_min, "y_max": self.y_max,
             "show_legend": self.show_legend,
@@ -120,6 +145,7 @@ class Layer:
         layer.y_scale = AxisScale(payload.get("y_scale", "linear"))
         layer.x_label = payload.get("x_label", "")
         layer.y_label = payload.get("y_label", "")
+        layer.y2_label = payload.get("y2_label", "")
         layer.x_min = payload.get("x_min")
         layer.x_max = payload.get("x_max")
         layer.y_min = payload.get("y_min")
@@ -138,6 +164,7 @@ class Graph:
         self.name = name
         self.title = title
         self.layers: list[Layer] = [Layer()]
+        self.annotations: list[Annotation] = []
 
     def add_layer(self, layer: Layer | None = None) -> Layer:
         layer = layer or Layer(f"Layer {len(self.layers) + 1}")
@@ -163,6 +190,7 @@ class Graph:
         return {
             "name": self.name, "title": self.title,
             "layers": [l.to_dict() for l in self.layers],
+            "annotations": [a.to_dict() for a in self.annotations],
         }
 
     @classmethod
@@ -171,6 +199,7 @@ class Graph:
         layers = [Layer.from_dict(l) for l in payload.get("layers", [])]
         if layers:
             graph.layers = layers
+        graph.annotations = [Annotation.from_dict(a) for a in payload.get("annotations", [])]
         return graph
 
     def __repr__(self) -> str:  # pragma: no cover - cosmetic

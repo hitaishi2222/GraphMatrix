@@ -39,14 +39,24 @@ class PlotCanvas(ABC):
         name: str | None = None,
         yerr: Sequence[float] | None = None,
         xerr: Sequence[float] | None = None,
+        y_axis: str = "left",
     ) -> Any:
-        """Plot a series and return the backend's plot item."""
+        """Plot a series and return the backend's plot item.
+
+        ``y_axis`` selects the primary ("left") or secondary ("right") Y axis.
+        """
+
+    @abstractmethod
+    def add_annotation(self, text: str, x: float, y: float, *, color: str = "#000000",
+                       size: float = 11.0) -> None:
+        """Place a text annotation at axes-fraction coordinates (0-1)."""
 
     @abstractmethod
     def set_title(self, text: str) -> None: ...
 
     @abstractmethod
-    def set_labels(self, *, bottom: str | None = None, left: str | None = None) -> None: ...
+    def set_labels(self, *, bottom: str | None = None, left: str | None = None,
+                   right: str | None = None) -> None: ...
 
     @abstractmethod
     def set_scales(self, *, x: str = "linear", y: str = "linear") -> None: ...
@@ -57,6 +67,9 @@ class PlotCanvas(ABC):
 
     @abstractmethod
     def show_legend(self, flag: bool) -> None: ...
+
+    @abstractmethod
+    def set_downsampling(self, flag: bool) -> None: ...
 
 
 def create_canvas(backend: str = DEFAULT_BACKEND) -> PlotCanvas:

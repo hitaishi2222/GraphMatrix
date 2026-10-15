@@ -13,6 +13,7 @@ from typing import Any, Callable, Iterable, Sequence
 import numpy as np
 
 from .model import (
+    Annotation,
     Column,
     ColumnType,
     Graph,
@@ -227,24 +228,71 @@ class RemoveColumnCommand(Command):
         self._sheet.insert_column(self._column, index=self._index)
 
 
+class SetCellsCommand(Command):
+    """Set a rectangular block of cells in one undoable step (used by paste).
+
+    The whole sheet is snapshotted before applying so that row growth caused by
+    writing past the last row is undone exactly.
+    """
+
+    label = "Edit Cells"
+
+    def __init__(self, sheet: Worksheet, row: int, column: int, values: Sequence[Sequence[Any]]) -> None:
+        self._sheet, self._row, self._column = sheet, row, column
+        self._values = [list(r) for r in values]
+        self._saved: list[np.ndarray] = []
+
+    def execute(self) -> None:
+        self._saved = [c.data.copy() for c in self._sheet.columns]
+        for dr, row_values in enumerate(self._values):
+            for dc, value in enumerate(row_values):
+                col_index = self._column + dc
+                if col_index >= self._sheet.num_columns:
+                    break
+                self._sheet.set_value(self._row + dr, col_index, value)
+
+    def undo(self) -> None:
+        for column, saved in zip(self._sheet.columns, self._saved):
+            column.data = saved
+
+
+class ReorderColumnsCommand(Command):
+    label = "Reorder Columns"
+
+    def __init__(self, sheet: Worksheet, order: Sequence[Column]) -> None:
+        self._sheet = sheet
+        self._new = list(order)
+        self._old: list[Column] = []
+
+    def execute(self) -> None:
+        self._old = list(self._sheet.columns)
+        self._sheet.columns = list(self._new)
+
+    def undo(self) -> None:
+        self._sheet.columns = list(self._old)
+
+
 class SetCellValueCommand(Command):
     label = "Edit Cell"
 
     def __init__(self, sheet: Worksheet, row: int, column_index: int, value: Any) -> None:
         self._sheet, self._row, self._column_index, self._value = sheet, row, column_index, value
         self._old: Any = None
+        self._old_len = 0
 
     def execute(self) -> None:
         column = self._sheet.columns[self._column_index]
-        self._old = column.get(self._row) if self._row < len(column) else None
+        self._old_len = len(column)
+        self._old = column.get(self._row) if self._row < self._old_len else None
         self._sheet.set_value(self._row, self._column_index, self._value)
 
     def undo(self) -> None:
         column = self._sheet.columns[self._column_index]
-        if self._old is None:
-            self._sheet.delete_rows(self._row)
-        else:
+        if self._row < self._old_len:
             column.set(self._row, self._old)
+        else:
+            # This edit grew the sheet; remove exactly the rows it added.
+            self._sheet.delete_rows(self._old_len, (self._row + 1) - self._old_len)
 
 
 class SetColumnInfoCommand(Command):
@@ -423,6 +471,34 @@ class RemovePlotCommand(Command):
 
     def undo(self) -> None:
         self._layer.plots.insert(self._index if self._index is not None else len(self._layer.plots), self._spec)
+
+
+class AddAnnotationCommand(Command):
+    label = "Add Annotation"
+
+    def __init__(self, graph: Graph, annotation: Annotation) -> None:
+        self._graph, self._annotation = graph, annotation
+
+    def execute(self) -> None:
+        self._graph.annotations.append(self._annotation)
+
+    def undo(self) -> None:
+        self._graph.annotations.remove(self._annotation)
+
+
+class RemoveAnnotationCommand(Command):
+    label = "Remove Annotation"
+
+    def __init__(self, graph: Graph, annotation: Annotation) -> None:
+        self._graph, self._annotation = graph, annotation
+        self._index: int | None = None
+
+    def execute(self) -> None:
+        self._index = self._graph.annotations.index(self._annotation)
+        del self._graph.annotations[self._index]
+
+    def undo(self) -> None:
+        self._graph.annotations.insert(self._index or 0, self._annotation)
 
 
 class MacroCommand(Command):

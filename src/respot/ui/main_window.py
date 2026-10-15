@@ -37,9 +37,11 @@ from respot.core.io.export import export_graph
 from respot.core.model import Column, ColumnType, Graph, PlotSpec, Project, Workbook, Worksheet
 from respot.core.plotting import make_default_graph
 from respot.core.scripting.record import MacroRecorder
+from respot.core.templates import apply_template, load_template, save_template
 from respot.ui.actions import ActionRegistry, ActionSpec
 from respot.ui.analysis_dialogs import (
     AnalysisResultDialog,
+    DeconvolutionDialog,
     DescriptiveDialog,
     FitDialog,
     PeaksDialog,
@@ -85,6 +87,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(APP_TITLE)
         self.resize(1360, 860)
+        self.setAcceptDrops(True)
 
         self.project: Project = project or Project()
         self.commands = CommandStack()
@@ -195,6 +198,9 @@ class MainWindow(QMainWindow):
             ("graph.add_plot", "Add Plot to Active Graph", self._action_add_plot, False),
             ("graph.add_layer", "Add Layer", self._action_add_layer, False),
             ("graph.new_from_data", "New Graph From Data", self._action_add_graph, False),
+            ("graph.add_annotation", "Add Annotation...", self._action_add_annotation, True),
+            ("graph.save_template", "Save Style Template...", self._action_save_template, True),
+            ("graph.apply_template", "Apply Style Template...", self._action_apply_template, False),
             ("graph.export", "Export Active Graph...", self._action_export_graph, True),
         ):
             r.register(ActionSpec(action_id, text, None, menu="Graph", separator_before=sep), slot)
@@ -204,12 +210,14 @@ class MainWindow(QMainWindow):
             ("analyze.regression", "Regression...", self._action_regression, False),
             ("analyze.fit", "Nonlinear Fit...", self._action_fit, False),
             ("analyze.peaks", "Peak Analysis...", self._action_peaks, True),
+            ("analyze.deconvolution", "Peak Deconvolution...", self._action_deconvolution, False),
             ("analyze.signal", "Signal Processing...", self._action_signal, False),
             ("analyze.statistics", "Statistics / t-test / ANOVA...", self._action_statistics, False),
         ):
             r.register(ActionSpec(action_id, text, None, menu="Analyze", separator_before=sep), slot)
 
         r.register(ActionSpec("export.graph", "Export Active Graph...", None, menu="Export"), self._action_export_graph)
+        r.register(ActionSpec("export.all_graphs", "Export All Graphs...", None, menu="Export"), self._action_export_all_graphs)
         r.register(ActionSpec("export.sheet", "Export Worksheet as CSV...", None, menu="Export"), self._action_export_sheet)
 
         r.register(ActionSpec("tools.console", "Python Console", None, menu="Tools", checkable=True), self._toggle_console)
@@ -217,6 +225,7 @@ class MainWindow(QMainWindow):
         r.register(ActionSpec("tools.save_macro", "Save Recorded Macro...", None, menu="Tools"), self._action_save_macro)
         r.register(ActionSpec("tools.run_macro", "Run Script...", None, menu="Tools"), self._action_run_macro)
         r.register(ActionSpec("tools.batch", "Batch Import...", None, menu="Tools", separator_before=True), self._action_batch_import)
+        r.register(ActionSpec("tools.batch_analysis", "Batch Analysis (Recipe)...", None, menu="Tools"), self._action_batch_analysis)
 
         r.register(ActionSpec("help.about", "About Respot", None, menu="Help"), self._action_about)
 
@@ -276,8 +285,10 @@ class MainWindow(QMainWindow):
         if not self._confirm_discard():
             return
         path, _ = QFileDialog.getOpenFileName(self, "Open Project", "", PROJECT_FILTER)
-        if not path:
-            return
+        if path:
+            self._open_project_path(path)
+
+    def _open_project_path(self, path) -> None:
         try:
             project = Project.open(path)
         except Exception as exc:  # noqa: BLE001
@@ -310,35 +321,82 @@ class MainWindow(QMainWindow):
 
     def _action_import(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Import Data", "", _DATA_FILTER)
-        if not path:
-            return
-        try:
-            book = import_file(path)
-        except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Import failed", f"Could not import:\n{exc}")
-            return
-        book.name = self.project.unique_name(book.name)
-        self.commands.push(AddWorkbookCommand(self.project, book))
-        if book.sheets:
-            self._open_sheet_tab(book.sheets[0])
-        self.statusBar().showMessage(f"Imported {path}", 4000)
+        if path:
+            self._import_paths([path])
 
-    def _action_batch_import(self) -> None:
-        paths, _ = QFileDialog.getOpenFileNames(self, "Batch Import", "", _DATA_FILTER)
-        if not paths:
-            return
-        commands = []
+    def _import_paths(self, paths, *, interactive: bool = True) -> None:
+        """Import one or more data files, each as its own undoable step."""
+        paths = [str(p) for p in paths]
+        commands: list = []
+        first_book = None
         for path in paths:
             try:
                 book = import_file(path)
             except Exception as exc:  # noqa: BLE001
-                self.statusBar().showMessage(f"Skipped {path}: {exc}", 6000)
+                if interactive and len(paths) == 1:
+                    QMessageBox.critical(self, "Import failed", f"Could not import:\n{exc}")
+                else:
+                    self.statusBar().showMessage(f"Skipped {Path(path).name}: {exc}", 6000)
                 continue
             book.name = self.project.unique_name(book.name)
             commands.append(AddWorkbookCommand(self.project, book))
-        if commands:
-            self.commands.push(MacroCommand(commands, f"Batch Import ({len(commands)})"))
-            self.statusBar().showMessage(f"Imported {len(commands)} file(s)", 5000)
+            if first_book is None:
+                first_book = book
+        if not commands:
+            return
+        if len(commands) == 1:
+            self.commands.push(commands[0])
+        else:
+            self.commands.push(MacroCommand(commands, f"Import ({len(commands)} files)"))
+        if first_book is not None and first_book.sheets and len(paths) == 1:
+            self._open_sheet_tab(first_book.sheets[0])
+        self.statusBar().showMessage(f"Imported {len(commands)} file(s)", 4000)
+
+    def _action_batch_import(self) -> None:
+        paths, _ = QFileDialog.getOpenFileNames(self, "Batch Import", "", _DATA_FILTER)
+        if paths:
+            self._import_paths(paths, interactive=False)
+
+    def _action_batch_analysis(self) -> None:
+        from respot.core.batch import run_recipe_over_files
+        from respot.core.recipes import load_recipe
+
+        recipe_path, _ = QFileDialog.getOpenFileName(self, "Open Analysis Recipe", "", "Respot Recipe (*.json *.rsr)")
+        if not recipe_path:
+            return
+        try:
+            recipe = load_recipe(recipe_path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Recipe failed", str(exc))
+            return
+        paths, _ = QFileDialog.getOpenFileNames(self, "Select Data Files", "", _DATA_FILTER)
+        if not paths:
+            return
+        out_dir = QFileDialog.getExistingDirectory(self, "Report / Figure Output Folder")
+        items = run_recipe_over_files(paths, recipe, report_dir=out_dir or None, export_dir=out_dir or None)
+        ok = sum(1 for item in items if item.ok)
+        self.statusBar().showMessage(f"Batch analysis: {ok}/{len(items)} succeeded", 6000)
+        failures = [item for item in items if not item.ok]
+        if failures:
+            QMessageBox.warning(self, "Batch failures",
+                                "\n".join(f"{item.path.name}: {item.error}" for item in failures[:10]))
+
+    # ------------------------------------------------------------ drag & drop
+    def dragEnterEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:  # noqa: N802 - Qt override
+        paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
+        if not paths:
+            return
+        projects = [p for p in paths if p.lower().endswith(".rsproj")]
+        data = [p for p in paths if not p.lower().endswith(".rsproj")]
+        if projects:
+            self._open_project_path(projects[0])
+        if data:
+            self._import_paths(data, interactive=False)
+        event.acceptProposedAction()
 
     # ---------------------------------------------------------------- edit ops
     def _action_undo(self) -> None:
@@ -387,6 +445,42 @@ class MainWindow(QMainWindow):
         if self._active_graph_view is not None:
             self._active_graph_view.add_layer()
 
+    def _action_add_annotation(self) -> None:
+        if self._active_graph_view is None:
+            QMessageBox.information(self, "No graph", "Open or create a graph first.")
+            return
+        self._active_graph_view.add_annotation()
+
+    def _action_save_template(self) -> None:
+        graph = self._active_graph()
+        if graph is None:
+            QMessageBox.information(self, "No graph", "Open a graph first.")
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Save Style Template", f"{graph.name}.rstpl", "Respot Template (*.rstpl *.json)")
+        if not path:
+            return
+        save_template(graph, path)
+        self.statusBar().showMessage(f"Saved template {path}", 4000)
+
+    def _action_apply_template(self) -> None:
+        graph = self._active_graph()
+        if graph is None:
+            QMessageBox.information(self, "No graph", "Open a graph first.")
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "Apply Style Template", "", "Respot Template (*.rstpl *.json)")
+        if not path:
+            return
+        try:
+            template = load_template(path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Template failed", str(exc))
+            return
+        apply_template(graph, template)
+        if self._active_graph_view is not None:
+            self._active_graph_view.refresh()
+        self._mark_dirty()
+        self.statusBar().showMessage(f"Applied template {path}", 4000)
+
     def _action_sample_data(self) -> None:
         sheet = self._current_sheet()
         if sheet is None:
@@ -427,6 +521,10 @@ class MainWindow(QMainWindow):
     def _action_peaks(self) -> None:
         if self.project.workbooks:
             self._run_dialog(PeaksDialog(self.project, self))
+
+    def _action_deconvolution(self) -> None:
+        if self.project.workbooks:
+            self._run_dialog(DeconvolutionDialog(self.project, self))
 
     def _action_signal(self) -> None:
         if self.project.workbooks:
@@ -474,6 +572,28 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Export failed", str(exc))
             return
         self.statusBar().showMessage(f"Exported {path}", 4000)
+
+    def _action_export_all_graphs(self) -> None:
+        if not self.project.graphs:
+            QMessageBox.information(self, "No graphs", "This project has no graphs.")
+            return
+        directory = QFileDialog.getExistingDirectory(self, "Export All Graphs To Folder")
+        if not directory:
+            return
+        options = ExportGraphDialog(self)
+        if not options.exec():
+            return
+        out_dir = Path(directory)
+        exported = 0
+        for graph in self.project.graphs:
+            target = out_dir / f"{graph.name}.pdf"
+            try:
+                export_graph(graph, self.project, target, width_mm=options.width.value(),
+                             height_mm=options.height.value(), dpi=options.dpi.value())
+                exported += 1
+            except Exception as exc:  # noqa: BLE001
+                self.statusBar().showMessage(f"Failed {graph.name}: {exc}", 6000)
+        self.statusBar().showMessage(f"Exported {exported} graph(s) to {out_dir}", 5000)
 
     def _action_export_sheet(self) -> None:
         sheet = self._current_sheet()

@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from respot.core.analysis import descriptive, fitting, peaks, regression, signal, statistics
+from respot.core.analysis import deconvolution, descriptive, fitting, peaks, regression, signal, statistics
 from respot.core.commands import AddColumnCommand, CommandStack, MacroCommand
 from respot.core.model import Column, ColumnType, Project, Worksheet
 from respot.ui.widgets import fill_column_combo, fill_sheet_combo, sheet_label
@@ -235,6 +235,41 @@ class PeaksDialog(_TwoColumnDialog):
         )
 
 
+class DeconvolutionDialog(_TwoColumnDialog):
+    def __init__(self, project, parent=None):
+        super().__init__(project, "Peak Deconvolution", parent)
+        self.kind_combo = QComboBox()
+        self.kind_combo.addItems(["Gaussian", "Lorentzian"])
+        self.centers_edit = QLineEdit()
+        self.centers_edit.setPlaceholderText("comma-separated centres; blank = auto-detect")
+        self.x_combo = QComboBox()
+        self.y_combo = QComboBox()
+        self.form.addRow("Peak shape:", self.kind_combo)
+        self.form.addRow("Peak centres:", self.centers_edit)
+        self.form.addRow("X column:", self.x_combo)
+        self.form.addRow("Y column:", self.y_combo)
+        self._refresh_columns()
+
+    def _refresh_columns(self):
+        fill_column_combo(self.x_combo, self.sheet(), types=(ColumnType.X,))
+        fill_column_combo(self.y_combo, self.sheet(), types=(ColumnType.Y,))
+
+    def run(self):
+        x = self._x_array(self.x_combo.currentData())
+        y = self._x_array(self.y_combo.currentData())
+        kind = self.kind_combo.currentText().lower()
+        text = self.centers_edit.text().strip()
+        if not text:
+            return deconvolution.deconvolve_auto(x, y, kind=kind)
+        try:
+            centers = [float(part) for part in text.replace(";", ",").split(",") if part.strip()]
+        except ValueError:
+            result = deconvolution.AnalysisResult(kind="deconvolution", title="Peak Deconvolution")
+            result.notes = "Could not parse peak centres; enter numbers separated by commas."
+            return result
+        return deconvolution.deconvolve(x, y, centers, kind=kind)
+
+
 class SignalDialog(_TwoColumnDialog):
     OPERATIONS = ["Smooth (Savitzky-Golay)", "Moving Average", "Low-pass Filter",
                   "High-pass Filter", "FFT Spectrum", "Derivative", "Integrate",
@@ -274,24 +309,11 @@ class SignalDialog(_TwoColumnDialog):
     def run(self):
         x = self._x_array(self.x_combo.currentData())
         y = self._x_array(self.y_combo.currentData())
-        op = self.operation.currentText()
-        if op == "Smooth (Savitzky-Golay)":
-            return signal.smooth_savgol(x, y, window=self.window.value(), order=self.order.value())
-        if op == "Moving Average":
-            return signal.smooth_moving_average(x, y, window=self.window.value())
-        if op == "Low-pass Filter":
-            return signal.butter_filter(x, y, kind="low", cutoff=self.cutoff.value(), order=self.order.value())
-        if op == "High-pass Filter":
-            return signal.butter_filter(x, y, kind="high", cutoff=self.cutoff.value(), order=self.order.value())
-        if op == "FFT Spectrum":
-            return signal.fft_spectrum(x, y)
-        if op == "Derivative":
-            return signal.differentiate(x, y, order=self.order.value())
-        if op == "Integrate":
-            return signal.integrate_curve(x, y)
-        if op == "Interpolate":
-            return signal.interpolate(x, y, num=self.points.value())
-        return signal.baseline_polynomial(x, y, degree=self.order.value())
+        return signal.run_operation(
+            self.operation.currentText(), x, y,
+            window=self.window.value(), order=self.order.value(),
+            cutoff=self.cutoff.value(), points=self.points.value(),
+        )
 
 
 class StatisticsDialog(_TwoColumnDialog):

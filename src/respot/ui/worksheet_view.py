@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QInputDialog,
     QMenu,
     QMessageBox,
@@ -25,7 +27,9 @@ from respot.core.commands import (
     InsertRowsCommand,
     RemoveColumnCommand,
     RenameCommand,
+    ReorderColumnsCommand,
     SetCellValueCommand,
+    SetCellsCommand,
     SetColumnDataCommand,
     SetColumnInfoCommand,
 )
@@ -65,7 +69,18 @@ class WorksheetView(QWidget):
         self.table.itemChanged.connect(self._on_item_changed)
         self.table.horizontalHeader().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.horizontalHeader().customContextMenuRequested.connect(self._header_menu)
+        self.table.horizontalHeader().setSectionsMovable(True)
+        self.table.horizontalHeader().sectionMoved.connect(self._on_section_moved)
         layout.addWidget(self.table)
+
+        for keys, slot in (
+            (QKeySequence.StandardKey.Copy, self._copy),
+            (QKeySequence.StandardKey.Cut, self._cut),
+            (QKeySequence.StandardKey.Paste, self._paste),
+        ):
+            shortcut = QShortcut(QKeySequence(keys), self)
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(slot)
 
         self.populate()
 
@@ -87,6 +102,9 @@ class WorksheetView(QWidget):
                     item = QTableWidgetItem(_fmt(value, column))
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                     self.table.setItem(row_index, col_index, item)
+            header = self.table.horizontalHeader()
+            for i in range(self.table.columnCount()):
+                header.moveSection(header.visualIndex(i), i)
         finally:
             self._loading = False
         self.table.resizeColumnsToContents()
@@ -112,9 +130,91 @@ class WorksheetView(QWidget):
     def _context_menu(self, pos) -> None:
         menu = QMenu(self)
         row = self.table.currentRow()
+        menu.addAction("Copy", self._copy)
+        menu.addAction("Cut", self._cut)
+        menu.addAction("Paste", self._paste)
+        menu.addSeparator()
         menu.addAction("Insert Row Above", lambda: self.commands.push(InsertRowsCommand(self.sheet, max(row, 0))))
         menu.addAction("Delete Row", lambda: self.commands.push(DeleteRowsCommand(self.sheet, max(row, 0))))
         menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    # -- clipboard -----------------------------------------------------------
+    def _selection_bounds(self) -> tuple[int, int, int, int] | None:
+        ranges = self.table.selectedRanges()
+        if not ranges:
+            row = max(self.table.currentRow(), 0)
+            col = max(self.table.currentColumn(), 0)
+            return row, col, row, col
+        top = min(r.topRow() for r in ranges)
+        left = min(r.leftColumn() for r in ranges)
+        bottom = max(r.bottomRow() for r in ranges)
+        right = max(r.rightColumn() for r in ranges)
+        return top, left, bottom, right
+
+    def _copy(self) -> None:
+        bounds = self._selection_bounds()
+        if bounds is None:
+            return
+        top, left, bottom, right = bounds
+        lines = []
+        for row in range(top, bottom + 1):
+            cells = []
+            for col in range(left, right + 1):
+                item = self.table.item(row, col)
+                cells.append(item.text() if item is not None else "")
+            lines.append("\t".join(cells))
+        QApplication.clipboard().setText("\n".join(lines))
+
+    def _cut(self) -> None:
+        self._copy()
+        bounds = self._selection_bounds()
+        if bounds is None:
+            return
+        top, left, bottom, right = bounds
+        for row in range(top, bottom + 1):
+            for col in range(left, right + 1):
+                if col < self.sheet.num_columns:
+                    column = self.sheet.columns[col]
+                    self.commands.push(SetCellValueCommand(self.sheet, row, col, self._blank(column)))
+
+    def _cell_from_text(self, column: Column, text: str):
+        if column.col_type == ColumnType.TEXT:
+            return text
+        if text.strip() == "":
+            return np.nan
+        try:
+            return float(text)
+        except ValueError:
+            return text
+
+    def _blank(self, column: Column):
+        return "" if column.col_type == ColumnType.TEXT else np.nan
+
+    def _paste(self) -> None:
+        text = QApplication.clipboard().text()
+        if not text:
+            return
+        rows = text.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n").split("\n")
+        row0 = max(self.table.currentRow(), 0)
+        col0 = max(self.table.currentColumn(), 0)
+        if col0 >= self.sheet.num_columns:
+            return
+        values = [
+            [self._cell_from_text(self.sheet.columns[col0 + dc], raw)
+             for dc, raw in enumerate(line.split("\t"))
+             if col0 + dc < self.sheet.num_columns]
+            for line in rows
+        ]
+        self.commands.push(SetCellsCommand(self.sheet, row0, col0, values))
+
+    def _on_section_moved(self, logical: int, old_visual: int, new_visual: int) -> None:
+        if self._loading or self.sheet.num_columns == 0:
+            return
+        header = self.table.horizontalHeader()
+        order = [self.sheet.columns[header.logicalIndex(v)] for v in range(self.sheet.num_columns)]
+        if [c.name for c in order] == self.sheet.column_names:
+            return
+        self.commands.push(ReorderColumnsCommand(self.sheet, order))
 
     def _header_menu(self, pos) -> None:
         col = self.table.horizontalHeader().logicalIndexAt(pos)

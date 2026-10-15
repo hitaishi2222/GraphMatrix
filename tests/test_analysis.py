@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from respot.core.analysis import descriptive, fitting, peaks, regression, signal, statistics
+from respot.core.analysis import deconvolution, descriptive, fitting, peaks, regression, signal, statistics
 
 
 def _exp_decay(n=200):
@@ -81,6 +81,25 @@ def test_smoothing_and_derivative_and_integral():
     assert "Derivative" in signal.differentiate(x, y).curves
     assert "Interpolated" in signal.interpolate(x[:30], y[:30]).curves
     assert signal.integrate_curve(x, y).summary["Total area"] > 0
+
+
+def test_peak_deconvolution_two_gaussians():
+    x = np.linspace(-5, 5, 1200)
+    y = 2.0 * np.exp(-((x + 1.0) ** 2) / (2 * 0.5 ** 2)) + 1.5 * np.exp(-((x - 1.5) ** 2) / (2 * 0.6 ** 2))
+    result = deconvolution.deconvolve(x, y, [-1.0, 1.5], kind="gaussian")
+    assert result.summary["R²"] > 0.999
+    by_name = {p.name: p.value for p in result.parameters}
+    assert abs(by_name["Peak 1 center"] - (-1.0)) < 0.05
+    assert abs(by_name["Peak 2 center"] - 1.5) < 0.05
+    assert "Composite" in result.curves and "Peak 1" in result.curves
+
+
+def test_peak_deconvolution_auto_detects():
+    x = np.linspace(-5, 5, 1001)
+    y = np.exp(-(x ** 2) / 0.5) + np.exp(-((x - 2) ** 2) / 0.5)
+    result = deconvolution.deconvolve_auto(x, y)
+    assert result.summary.get("Peaks", 0) >= 1
+    assert "Composite" in result.curves
 
 
 def test_statistics_suite():

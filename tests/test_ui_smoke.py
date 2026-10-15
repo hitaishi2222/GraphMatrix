@@ -76,3 +76,73 @@ def test_full_workflow(app, tmp_path):
         assert len(sheet.columns) < before
     finally:
         window.close()
+
+
+def test_graph_and_sheet_extras(app, tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from respot.core.commands import AddAnnotationCommand, ReorderColumnsCommand
+    from respot.core.model import Annotation
+    from respot.core.templates import apply_template, graph_to_template
+    from respot.ui.main_window import MainWindow
+    from respot.ui.worksheet_view import WorksheetView
+
+    window = MainWindow()
+    window.confirm_on_close = False
+    try:
+        window._action_sample_data()
+        sheet = window.project.workbooks[0].sheets[0]
+
+        window._action_add_graph()
+        graph_view = window._active_graph_view
+        graph = graph_view.graph
+
+        # Dual Y axis: mark the plot as right-axis and re-render.
+        graph.first_layer.plots[0].y_axis = "right"
+        graph_view.refresh()
+        assert graph.first_layer.plots[0].y_axis == "right"
+
+        # Annotation add + render.
+        window.commands.push(AddAnnotationCommand(graph, Annotation("note", x=0.2, y=0.8)))
+        graph_view.refresh()
+        assert len(graph.annotations) == 1
+
+        # Template capture/apply should not raise and must not touch data refs.
+        apply_template(graph, graph_to_template(graph))
+        assert graph.first_layer.plots[0].y == "Y1"
+
+        # Worksheet clipboard paste is one undoable step.
+        view = WorksheetView(sheet, window.commands, "Book1/Sheet1")
+        QApplication.clipboard().setText("10\t20\n30\t40")
+        view.table.setCurrentCell(0, 0)
+        view._paste()
+        assert sheet.column("X1").data[0] == 10.0
+        assert sheet.column("Y1").data[1] == 40.0
+        window.commands.undo()
+        assert sheet.column("X1").data[0] == 0.0
+
+        # Column reorder is undoable.
+        order = list(reversed(sheet.columns))
+        window.commands.push(ReorderColumnsCommand(sheet, order))
+        assert sheet.column_names[0] == order[0].name
+        window.commands.undo()
+        assert sheet.column_names[0] == "X1"
+
+        # Project Explorer exposes draggable column items, and a drop adds a plot.
+        from PySide6.QtCore import Qt
+
+        from respot.ui.widgets import COLUMN_MIME
+
+        window.project_panel.set_project(window.project)
+        tree = window.project_panel.tree
+        column_item = tree.topLevelItem(0).child(0).child(0).child(0)
+        payload = column_item.data(0, Qt.ItemDataRole.UserRole + 2)
+        assert payload == {"source": "Book1/Sheet1", "column": "X1"}
+        mime = tree.mimeData([column_item])
+        assert mime.hasFormat(COLUMN_MIME)
+
+        before = sum(len(layer.plots) for layer in graph.layers)
+        graph_view.add_column_plot(payload["source"], payload["column"])
+        assert sum(len(layer.plots) for layer in graph.layers) == before + 1
+    finally:
+        window.close()

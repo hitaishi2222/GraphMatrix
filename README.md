@@ -49,16 +49,21 @@ testable, headless-batchable, and free to be accelerated later without touching 
 ## Capabilities
 
 - **Worksheets** — typed columns (X/Y/YErr/Z/label/group/date/text), units, comments,
-  masking, formulas, editable grid, row/column operations.
+  masking, formulas, editable grid, undoable copy/paste, row/column operations,
+  column drag-reorder, drag-and-drop file import.
 - **Import/export** — CSV/TSV, Excel, Parquet, HDF5; export worksheets to CSV.
 - **Graphs** — multi-layer 2D; line/scatter/line+symbol/bar/area/step/error-bar;
-  editable axes and legend; live-linked to data.
+  secondary (dual) Y axis; text annotations; editable axes and legend; style
+  templates; drag a column from the tree to plot it; live-linked to data.
 - **Analysis** — descriptive stats, linear/polynomial regression, nonlinear fitting
   (Gaussian, Lorentzian, exponential, sinusoid, sigmoid, … via lmfit), peak finding,
-  FFT, smoothing, filters, derivative/integral/interpolation, t-tests, ANOVA,
-  correlation, histogram.
-- **Publication export** — PDF/SVG/EPS/PNG/TIFF via matplotlib, sized in mm at your DPI.
-- **Automation** — embedded Python console, macro recording → runnable script, batch import.
+  **peak deconvolution** (multi-peak Gaussian/Lorentzian), FFT, smoothing, filters,
+  derivative/integral/interpolation, t-tests, ANOVA, correlation, histogram.
+- **Recipes** — save an analysis and re-run it on any series, or batch it across many files.
+- **Publication export** — PDF/SVG/EPS/PNG/TIFF via matplotlib, sized in mm at your DPI,
+  dual-axis + annotations, and batch export of every graph in the project.
+- **Automation** — embedded Python console, macro recording → runnable script, batch
+  import, and a batch analysis pipeline (recipe → per-file report + figure).
 
 ## Documentation
 
