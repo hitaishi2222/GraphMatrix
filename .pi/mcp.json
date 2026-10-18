@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "graphmatrix": {
+      "command": "graphmatrix-mcp",
+      "env": {
+        "QT_QPA_PLATFORM": "offscreen"
+      }
+    }
+  }
+}

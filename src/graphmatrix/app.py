@@ -53,6 +53,10 @@ def run(argv: list[str] | None = None, project_paths: list[str] | None = None,
                 pass
             windows.append(w)
             w.show()
+    # One IPC bridge per window so agents can drive the live GUI directly.
+    from graphmatrix.core.ipc import IpcBridge
+
+    app._graphmatrix_ipc = [IpcBridge(w) for w in windows]
     # Keep references alive for the lifetime of the event loop.
     app._graphmatrix_windows = windows
     return app.exec()

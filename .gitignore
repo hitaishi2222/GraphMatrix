@@ -24,3 +24,8 @@ htmlcov/
 # GraphMatrix artifacts
 *.rsproj.tmp
 /Graph.png
+
+# Session/agent artifacts
+.pi/tasks/
+examples/mcp_demo_out/
+agent_live.gm

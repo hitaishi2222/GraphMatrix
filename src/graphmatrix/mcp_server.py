@@ -51,6 +51,10 @@ def _summary(project) -> dict[str, Any]:
             }
             for i, graph in enumerate(project.graphs)
         ],
+        "versions": [
+            {"name": v.get("name", ""), "created": v.get("created", ""), "note": v.get("note", "")}
+            for v in getattr(project, "versions", [])
+        ],
     }
 
 
@@ -167,6 +171,33 @@ def export(
     return {"files": files}
 
 
+# -- live instance control (direct IPC to the running GUI) -------------------
+
+def live_summary() -> dict[str, Any]:
+    """Summary of the project open in the running GraphMatrix window."""
+    from graphmatrix.core.ipc import request
+
+    return request("summary")["summary"]
+
+
+def live_run(code: str, open_graphs: bool = False) -> dict[str, Any]:
+    """Execute Python against the live GUI's project (instant, undoable).
+
+    With ``open_graphs`` true, graphs created by the executed code are opened
+    as tabs in the GUI right away.
+    """
+    from graphmatrix.core.ipc import request
+
+    return request("run", code=code, open_graphs=open_graphs)
+
+
+def live_open(path: str, force: bool = False) -> dict[str, Any]:
+    """Open a project file in the running GUI window."""
+    from graphmatrix.core.ipc import request
+
+    return request("open", path=path, force=force)
+
+
 mcp = _make_mcp() if FastMCP is not None else None
 
 if mcp is not None:
@@ -174,6 +205,9 @@ if mcp is not None:
     mcp.tool(summary)
     mcp.tool(run)
     mcp.tool(export)
+    mcp.tool(live_summary)
+    mcp.tool(live_run)
+    mcp.tool(live_open)
 
 
 def main() -> int:
