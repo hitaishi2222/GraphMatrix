@@ -14,7 +14,8 @@ APP_NAME = "GraphMatrix"
 ORG_NAME = "GraphMatrix"
 
 
-def run(argv: list[str] | None = None, project_paths: list[str] | None = None) -> int:
+def run(argv: list[str] | None = None, project_paths: list[str] | None = None,
+        open_graph: str | None = None) -> int:
     argv = list(sys.argv if argv is None else argv)
     import os
     # On Wayland compositors (e.g. Hyprland) prefer the native wayland platform
@@ -44,6 +45,10 @@ def run(argv: list[str] | None = None, project_paths: list[str] | None = None) -
             w = MainWindow()
             try:
                 w._open_project_path(path)
+                if open_graph:
+                    graph = w.project.graph(open_graph)
+                    if graph is not None:
+                        w._open_graph_tab(graph)
             except Exception:  # noqa: BLE001
                 pass
             windows.append(w)

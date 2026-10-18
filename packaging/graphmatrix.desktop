@@ -5,5 +5,5 @@ Comment=Scientific data analysis and graphing
 Exec=graphmatrix
 Icon=graphmatrix
 Terminal=false
-Categories=Science;Education;Graphics;
+Categories=Science;
 StartupWMClass=graphmatrix

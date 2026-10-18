@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 import json
 import zipfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +21,7 @@ from .graph import Graph
 from .workbook import Workbook
 
 FORMAT = "graphmatrix-project"
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 _MANIFEST = "project.json"
 
 
@@ -74,6 +75,7 @@ class Project:
         self.name = name
         self.workbooks: list[Workbook] = []
         self.graphs: list[Graph] = []
+        self.versions: list[dict[str, Any]] = []
 
     # -- workbooks -----------------------------------------------------------
     def add_workbook(self, workbook: Workbook, *, index: int | None = None) -> Workbook:
@@ -112,6 +114,40 @@ class Project:
             if item.name == name:
                 return item
         return None
+
+    # -- versions ------------------------------------------------------------
+    def create_version(self, name: str, note: str = "") -> dict[str, Any]:
+        name = name.strip()
+        if not name:
+            raise ValueError("version name is required")
+        if any(v.get("name") == name for v in self.versions):
+            raise ValueError(f"version {name!r} already exists")
+        snapshot = self.to_dict()
+        snapshot.pop("versions", None)
+        version = {"name": name, "created": datetime.now().isoformat(timespec="seconds"),
+                   "note": note, "snapshot": snapshot}
+        self.versions.append(version)
+        return version
+
+    def restore_version(self, name: str) -> None:
+        version = next((v for v in self.versions if v.get("name") == name), None)
+        if version is None:
+            raise KeyError(f"no version {name!r}")
+        snapshot = version["snapshot"]
+        self.name = snapshot.get("name", self.name)
+        self.workbooks = [Workbook.from_dict(b) for b in snapshot.get("workbooks", [])]
+        self.graphs = [Graph.from_dict(g) for g in snapshot.get("graphs", [])]
+
+    def delete_version(self, name: str) -> None:
+        self.versions = [v for v in self.versions if v.get("name") != name]
+
+    def rename_version(self, old: str, new: str) -> None:
+        new = new.strip()
+        if not new or any(v.get("name") == new for v in self.versions if v.get("name") != old):
+            raise ValueError("invalid or duplicate version name")
+        for v in self.versions:
+            if v.get("name") == old:
+                v["name"] = new
 
     # -- lookup --------------------------------------------------------------
     def sheet(self, source: str):
@@ -156,6 +192,7 @@ class Project:
             "name": self.name,
             "workbooks": [b.to_dict() for b in self.workbooks],
             "graphs": [g.to_dict() for g in self.graphs],
+            "versions": self.versions,
         }
 
     @classmethod
@@ -166,6 +203,7 @@ class Project:
         project = cls(payload.get("name", "Untitled"))
         project.workbooks = [Workbook.from_dict(b) for b in payload.get("workbooks", [])]
         project.graphs = [Graph.from_dict(g) for g in payload.get("graphs", [])]
+        project.versions = payload.get("versions", []) or []
         return project
 
     def save(self, path: str | Path) -> Path:

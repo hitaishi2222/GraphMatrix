@@ -6,7 +6,7 @@ import traceback
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QFileSystemWatcher, QSize, Qt
 from PySide6.QtGui import QAction, QActionGroup, QFont
 from PySide6.QtWidgets import (
     QApplication,
@@ -17,12 +17,15 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QHBoxLayout,
     QInputDialog,
     QLabel,
+    QListWidget,
     QMainWindow,
     QMenu,
     QMessageBox,
     QPlainTextEdit,
+    QPushButton,
     QSpinBox,
     QTabWidget,
     QToolBar,
@@ -49,6 +52,7 @@ from graphmatrix.core.commands import (
 from graphmatrix.core.io import export_delimited, import_file, supported_extensions
 from graphmatrix.core.io.export import export_graph
 from graphmatrix.core.journals import journal_names, preset as journal_preset_settings
+from graphmatrix.core.instance import register as register_instance, unregister as unregister_instance
 from graphmatrix.core.model import Annotation, Column, ColumnType, Graph, PlotSpec, Project, Workbook, Worksheet
 from graphmatrix.core.plotting import make_default_graph, make_plot_for_column
 from graphmatrix.core.provenance import ProvenanceLog
@@ -159,6 +163,9 @@ class MainWindow(QMainWindow):
         self.provenance = ProvenanceLog()
         self.provenance.attach(self.commands)
         self._path: Path | None = None
+        self._file_watcher = QFileSystemWatcher(self)
+        self._file_watcher.fileChanged.connect(self._on_project_file_changed)
+        self._reloading_from_disk = False
         self._dirty = False
         self.confirm_on_close = True
         self._views: dict[int, QWidget] = {}
@@ -226,6 +233,8 @@ class MainWindow(QMainWindow):
         dock_console.hide()
         self.dock_console = dock_console
 
+        # Versions are exposed via a toolbar dropdown (see _build_toolbar).
+
     def _build_central(self) -> None:
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
@@ -260,6 +269,15 @@ class MainWindow(QMainWindow):
         theme_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         theme_button.setMenu(self._theme_menu)
         toolbar.addWidget(theme_button)
+
+        self._version_menu = QMenu("Version", self)
+        version_button = QToolButton()
+        version_button.setText("Version")
+        version_button.setToolTip("Manage project versions")
+        version_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        version_button.setMenu(self._version_menu)
+        toolbar.addWidget(version_button)
+        self._version_button = version_button
         self.toolbar = toolbar
 
     def _register_actions(self) -> None:
@@ -374,8 +392,17 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------- project ops
     def _set_project(self, project: Project, path: Path | None) -> None:
+        # Stop watching the previous file.
+        if self._path is not None and self._path.exists():
+            try:
+                self._file_watcher.removePath(str(self._path))
+            except Exception:  # noqa: BLE001
+                pass
         self.project = project
         self._path = path
+        if path is not None and path.exists():
+            self._file_watcher.addPath(str(path))
+        register_instance(path)
         self.commands.clear()
         self.provenance.clear()
         self._close_all_tabs()
@@ -383,14 +410,90 @@ class MainWindow(QMainWindow):
         self.console.set_project(project)
         self._set_dirty(False)
 
+    def _on_project_file_changed(self, path: str) -> None:
+        if self._reloading_from_disk:
+            return
+        if self._path is None or str(self._path) != path:
+            return
+        if self._dirty:
+            # Don't clobber unsaved work; warn once.
+            self.statusBar().showMessage("Project file changed on disk (unsaved changes kept)", 4000)
+            return
+        if not Path(path).exists():
+            return
+        self._reloading_from_disk = True
+        try:
+            project = Project.open(path)
+            self._set_project(project, Path(path))
+            self.statusBar().showMessage("Project reloaded from disk", 3000)
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(f"Reload failed: {exc}", 4000)
+        finally:
+            self._reloading_from_disk = False
+            # Re-arm watcher (some platforms drop the path after a change).
+            if self._path is not None and self._path.exists():
+                try:
+                    self._file_watcher.addPath(str(self._path))
+                except Exception:  # noqa: BLE001
+                    pass
+
     def _refresh(self) -> None:
         self.project_panel.set_project(self.project)
         self._update_title()
+        self._refresh_versions()
 
     def _update_title(self) -> None:
         mark = " *" if self._dirty else ""
         location = f"  —  {self._path}" if self._path else ""
         self.setWindowTitle(f"{self.project.name}{mark}{location}  —  {APP_TITLE}")
+
+    def _refresh_versions(self) -> None:
+        self._version_menu.clear()
+        for version in getattr(self.project, "versions", []):
+            name = version.get("name", "")
+            action = self._version_menu.addAction(name, lambda _checked=False, n=name: self._action_restore_version_name(n))
+            action.setCheckable(False)
+        self._version_menu.addSeparator()
+        self._version_menu.addAction("New Version…", self._action_create_version)
+        # Delete submenu
+        delete_menu = self._version_menu.addMenu("Delete Version")
+        for version in getattr(self.project, "versions", []):
+            name = version.get("name", "")
+            delete_menu.addAction(name, lambda _checked=False, n=name: self._action_delete_version_name(n))
+
+    def _action_create_version(self) -> None:
+        name, ok = QInputDialog.getText(self, "New Version", "Version name:")
+        if not ok or not name.strip():
+            return
+        note, _ = QInputDialog.getText(self, "New Version", "Note (optional):")
+        try:
+            self.project.create_version(name.strip(), note.strip())
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Version", str(exc))
+            return
+        self._refresh_versions()
+        self._mark_dirty()
+
+    def _action_restore_version_name(self, name: str) -> None:
+        if QMessageBox.question(self, "Restore Version",
+                                f"Restore version {name!r}? Current changes will be replaced.") \
+                != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.project.restore_version(name)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "Version", str(exc))
+            return
+        self._refresh()
+        self._mark_dirty()
+
+    def _action_delete_version_name(self, name: str) -> None:
+        if QMessageBox.question(self, "Delete Version", f"Delete version {name!r}?") \
+                != QMessageBox.StandardButton.Yes:
+            return
+        self.project.delete_version(name)
+        self._refresh_versions()
+        self._mark_dirty()
 
     def _set_dirty(self, flag: bool) -> None:
         if flag != self._dirty:
@@ -1158,6 +1261,7 @@ class MainWindow(QMainWindow):
     # ----------------------------------------------------------------- events
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt override
         if not self.confirm_on_close or self._confirm_discard():
+            unregister_instance()
             event.accept()
         else:
             event.ignore()

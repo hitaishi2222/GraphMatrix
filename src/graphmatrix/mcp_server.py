@@ -88,13 +88,19 @@ def connect(path: str | None = None) -> dict[str, Any]:
     from graphmatrix.core.commands import CommandStack
     from graphmatrix.core.model import Project
 
+    from graphmatrix.core.instance import get as get_instance
+
+    running = get_instance()
     if path and Path(path).exists():
         project = Project.open(path)
+    elif path is None and running and running.get("project") and Path(running["project"]).exists():
+        project = Project.open(running["project"])
     else:
         project = Project(Path(path).stem if path else "Untitled")
     pid = str(uuid.uuid4())
     _SESSIONS[pid] = (project, CommandStack())
-    return {"project_id": pid, "summary": _summary(project)}
+    return {"project_id": pid, "summary": _summary(project),
+            "running_instance": running}
 
 
 def summary(project_id: str) -> dict[str, Any]:
