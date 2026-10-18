@@ -332,12 +332,20 @@ class PyQtGraphCanvas(PlotCanvas):
         else:
             self._show_hover((best[1], best[2], best[3]))
 
-    def set_title(self, text: str) -> None:
+    def set_title(self, text: str, *, fontfamily: str = "", fontsize: float = 14.0,
+                  color: str = "") -> None:
         self._title = text
-        self._plot_item.setTitle(text, color=self._fg)
+        self._plot_item.setTitle(text, color=color or self._fg, size=f"{int(fontsize)}pt")
+
+    def set_grid(self, rows: int = 1, cols: int = 1) -> None:
+        pass
+
+    def set_current_panel(self, index: int) -> None:
+        pass
 
     def set_labels(self, *, bottom: str | None = None, left: str | None = None,
-                   right: str | None = None) -> None:
+                   right: str | None = None, fontfamily: str = "",
+                   fontsize: float = 12.0, color: str = "") -> None:
         if bottom:
             self._plot_item.setLabel("bottom", bottom)
         if left:

@@ -138,13 +138,29 @@ def _render_figure(fig, ax_left, graph: Graph, project: Project) -> None:
             else:
                 _draw(ax_left, spec, data, color)
 
+        label_kwargs = {}
+        if getattr(layer, "label_font_family", ""):
+            label_kwargs["fontfamily"] = layer.label_font_family
+        label_kwargs["fontsize"] = getattr(layer, "label_font_size", 12.0) or 12.0
+        if getattr(layer, "label_color", ""):
+            label_kwargs["color"] = layer.label_color
+
         x_label, y_label = auto_axis_labels(project, layer)
         if x_label:
-            ax_left.set_xlabel(x_label)
+            ax_left.set_xlabel(x_label, **label_kwargs)
         if y_label and not ax_left.get_ylabel():
-            ax_left.set_ylabel(y_label)
+            ax_left.set_ylabel(y_label, **label_kwargs)
         if layer.y2_label and ax_right is not None:
-            ax_right.set_ylabel(layer.y2_label)
+            ax_right.set_ylabel(layer.y2_label, **label_kwargs)
+
+        if getattr(graph, "title", ""):
+            title_kwargs = {}
+            if getattr(graph, "title_font_family", ""):
+                title_kwargs["fontfamily"] = graph.title_font_family
+            title_kwargs["fontsize"] = getattr(graph, "title_font_size", 14.0) or 14.0
+            if getattr(graph, "title_color", ""):
+                title_kwargs["color"] = graph.title_color
+            ax_left.set_title(graph.title, **title_kwargs)
         if layer.x_min is not None or layer.x_max is not None:
             ax_left.set_xlim(left=layer.x_min, right=layer.x_max)
         if layer.y_min is not None or layer.y_max is not None:

@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QFont, QFontDatabase
 from PySide6.QtWidgets import (
     QColorDialog,
     QComboBox,
@@ -22,7 +22,9 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSpinBox,
     QSplitter,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -72,6 +74,7 @@ class GraphView(QWidget):
         self.setAcceptDrops(True)
 
         self.canvas = create_canvas()
+        self.canvas.label_click_callback = self._on_label_click
         self.plot_list = QListWidget()
         self.plot_list.currentRowChanged.connect(self._on_plot_selected)
         self.hover_enabled = False
@@ -90,7 +93,7 @@ class GraphView(QWidget):
         side.addLayout(buttons)
 
         side.addWidget(self._build_plot_group())
-        side.addWidget(self._build_axis_group())
+        self.group_axis = self._build_axis_group()
         side.addWidget(self._build_ref_group())
         side.addStretch(1)
 
@@ -157,17 +160,37 @@ class GraphView(QWidget):
         self._color = ""
         return self.group_plot
 
-    def _build_axis_group(self) -> QGroupBox:
-        self.group_axis = QGroupBox("Axes")
-        form = QFormLayout(self.group_axis)
+    def _build_axis_group(self) -> QTabWidget:
+        self.group_axis = QTabWidget()
+        scales_tab = QWidget()
+        form = QFormLayout(scales_tab)
+        labels_tab = QWidget()
+        lform = QFormLayout(labels_tab)
+        ticks_tab = QWidget()
+        tform = QFormLayout(ticks_tab)
         self.xscale_combo = QComboBox()
         self.yscale_combo = QComboBox()
         for scale in AxisScale:
             self.xscale_combo.addItem(scale.value, scale)
             self.yscale_combo.addItem(scale.value, scale)
+        self.title_edit = QLineEdit()
         self.xlabel_edit = QLineEdit()
         self.ylabel_edit = QLineEdit()
         self.y2label_edit = QLineEdit()
+        self.font_family_combo = QComboBox()
+        self.font_family_combo.addItems(QFontDatabase.families())
+        self.label_font_size_spin = QDoubleSpinBox()
+        self.label_font_size_spin.setRange(6.0, 48.0)
+        self.label_font_size_spin.setValue(12.0)
+        self.title_font_size_spin = QDoubleSpinBox()
+        self.title_font_size_spin.setRange(6.0, 48.0)
+        self.title_font_size_spin.setValue(14.0)
+        self.label_color_button = QPushButton("label color")
+        self.title_color_button = QPushButton("title color")
+        self.layout_rows_spin = QSpinBox()
+        self.layout_rows_spin.setRange(1, 6)
+        self.layout_cols_spin = QSpinBox()
+        self.layout_cols_spin.setRange(1, 6)
         self.xmin_edit = QLineEdit()
         self.xmax_edit = QLineEdit()
         self.ymin_edit = QLineEdit()
@@ -186,23 +209,44 @@ class GraphView(QWidget):
             self.plot_theme_combo.addItem(pt.label, pt.id)
         form.addRow("X scale:", self.xscale_combo)
         form.addRow("Y scale:", self.yscale_combo)
-        form.addRow("X label:", self.xlabel_edit)
-        form.addRow("Y label:", self.ylabel_edit)
-        form.addRow("Y2 label:", self.y2label_edit)
         form.addRow("X min:", self.xmin_edit)
         form.addRow("X max:", self.xmax_edit)
         form.addRow("Y min:", self.ymin_edit)
         form.addRow("Y max:", self.ymax_edit)
         form.addRow("Legend:", self.legend_check)
-        form.addRow("Minor ticks:", self.minor_ticks_check)
-        form.addRow("Tick direction:", self.tick_direction_combo)
         form.addRow("Plot theme:", self.plot_theme_combo)
+        form.addRow("Layout rows:", self.layout_rows_spin)
+        form.addRow("Layout cols:", self.layout_cols_spin)
+
+        lform.addRow("Title:", self.title_edit)
+        lform.addRow("X label:", self.xlabel_edit)
+        lform.addRow("Y label:", self.ylabel_edit)
+        lform.addRow("Y2 label:", self.y2label_edit)
+        lform.addRow("Font family:", self.font_family_combo)
+        lform.addRow("Label size:", self.label_font_size_spin)
+        lform.addRow("Title size:", self.title_font_size_spin)
+        lform.addRow("Label color:", self.label_color_button)
+        lform.addRow("Title color:", self.title_color_button)
+
+        tform.addRow("Minor ticks:", self.minor_ticks_check)
+        tform.addRow("Tick direction:", self.tick_direction_combo)
+
+        self.group_axis.addTab(scales_tab, "Scales/Range")
+        self.group_axis.addTab(labels_tab, "Labels/Fonts")
+        self.group_axis.addTab(ticks_tab, "Ticks")
 
         for widget in (self.xscale_combo, self.yscale_combo, self.legend_check, self.minor_ticks_check, self.tick_direction_combo):
             widget.currentIndexChanged.connect(self._apply_axis_props)
         self.plot_theme_combo.currentIndexChanged.connect(self._apply_plot_theme)
-        for widget in (self.xlabel_edit, self.ylabel_edit, self.y2label_edit, self.xmin_edit, self.xmax_edit, self.ymin_edit, self.ymax_edit):
+        for widget in (self.title_edit, self.xlabel_edit, self.ylabel_edit, self.y2label_edit, self.xmin_edit, self.xmax_edit, self.ymin_edit, self.ymax_edit):
             widget.editingFinished.connect(self._apply_axis_props)
+        self.font_family_combo.currentIndexChanged.connect(self._apply_axis_props)
+        self.label_font_size_spin.valueChanged.connect(self._apply_axis_props)
+        self.title_font_size_spin.valueChanged.connect(self._apply_axis_props)
+        self.label_color_button.clicked.connect(self._pick_label_color)
+        self.title_color_button.clicked.connect(self._pick_title_color)
+        self.layout_rows_spin.valueChanged.connect(self._apply_axis_props)
+        self.layout_cols_spin.valueChanged.connect(self._apply_axis_props)
         return self.group_axis
 
     def _build_ref_group(self) -> QGroupBox:
@@ -348,6 +392,18 @@ class GraphView(QWidget):
             self._update_color_button()
             self._apply_plot_props()
 
+    def _pick_label_color(self) -> None:
+        color = QColorDialog.getColor(QColor(getattr(self, "_label_color", "") or "#000000"), self, "Label Color")
+        if color.isValid():
+            self._label_color = color.name()
+            self._apply_axis_props()
+
+    def _pick_title_color(self) -> None:
+        color = QColorDialog.getColor(QColor(getattr(self, "_title_color", "") or "#000000"), self, "Title Color")
+        if color.isValid():
+            self._title_color = color.name()
+            self._apply_axis_props()
+
     def _update_color_button(self) -> None:
         self.color_button.setStyleSheet(f"background-color: {self._color or '#ffffff'}")
 
@@ -391,7 +447,20 @@ class GraphView(QWidget):
             show_legend=self.legend_check.currentData(),
             minor_ticks=self.minor_ticks_check.currentData(),
             tick_direction=self.tick_direction_combo.currentText(),
+            label_font_family=self.font_family_combo.currentText(),
+            label_font_size=float(self.label_font_size_spin.value()),
+            label_color=getattr(self, "_label_color", ""),
         ))
+        self.commands.push(SetAttributesCommand(
+            self.graph, "Edit Title/Fonts",
+            title=self.title_edit.text(),
+            title_font_family=self.font_family_combo.currentText(),
+            title_font_size=float(self.title_font_size_spin.value()),
+            title_color=getattr(self, "_title_color", ""),
+            layout_rows=int(self.layout_rows_spin.value()),
+            layout_cols=int(self.layout_cols_spin.value()),
+        ))
+        self.canvas.set_grid(int(self.layout_rows_spin.value()), int(self.layout_cols_spin.value()))
         self.render()
         self._changed()
 
@@ -408,6 +477,15 @@ class GraphView(QWidget):
     def _changed(self) -> None:
         if self._on_change:
             self._on_change()
+
+    def _on_label_click(self, name: str) -> None:
+        self.group_axis.setVisible(True)
+        if name == "title":
+            self.title_edit.setFocus()
+        elif name == "axes":
+            self.xmin_edit.setFocus()
+        else:
+            self.xlabel_edit.setFocus()
 
     # -- rendering -----------------------------------------------------------
     def refresh(self, select: PlotSpec | None = None) -> None:
@@ -490,9 +568,21 @@ class GraphView(QWidget):
     def _load_axis_fields(self, layer: Layer) -> None:
         self.xscale_combo.setCurrentText(AxisScale(layer.x_scale).value)
         self.yscale_combo.setCurrentText(AxisScale(layer.y_scale).value)
+        self.title_edit.setText(self.graph.title)
         self.xlabel_edit.setText(layer.x_label)
         self.ylabel_edit.setText(layer.y_label)
         self.y2label_edit.setText(layer.y2_label)
+        self.font_family_combo.setCurrentText(layer.label_font_family or self.font_family_combo.itemText(0))
+        self.label_font_size_spin.setValue(layer.label_font_size)
+        self.title_font_size_spin.setValue(self.graph.title_font_size)
+        self._label_color = layer.label_color
+        self._title_color = self.graph.title_color
+        self.layout_rows_spin.blockSignals(True)
+        self.layout_rows_spin.setValue(getattr(self.graph, "layout_rows", 1))
+        self.layout_rows_spin.blockSignals(False)
+        self.layout_cols_spin.blockSignals(True)
+        self.layout_cols_spin.setValue(getattr(self.graph, "layout_cols", 1))
+        self.layout_cols_spin.blockSignals(False)
         self.xmin_edit.setText("" if layer.x_min is None else str(layer.x_min))
         self.xmax_edit.setText("" if layer.x_max is None else str(layer.x_max))
         self.ymin_edit.setText("" if layer.y_min is None else str(layer.y_min))
@@ -515,13 +605,14 @@ class GraphView(QWidget):
         self._loading = False
 
     def render(self) -> None:
-        self.canvas.clear()
+        self.canvas.set_grid(getattr(self.graph, "layout_rows", 1), getattr(self.graph, "layout_cols", 1))
         self.canvas.set_theme(self.graph.plot_theme or theme.current_preset())
         layer = self._active_layer()
         self.canvas.set_scales(x=AxisScale(layer.x_scale).value, y=AxisScale(layer.y_scale).value)
         self.canvas.show_legend(layer.show_legend)
 
-        for each in self.graph.layers:
+        for panel_index, each in enumerate(self.graph.layers):
+            self.canvas.set_current_panel(panel_index)
             for spec in each.plots:
                 data = resolve_plot(self.project, spec)
                 if data is None:
@@ -545,14 +636,19 @@ class GraphView(QWidget):
                     line_style=ref.line_style, label=ref.label,
                 )
 
+        self.canvas.set_current_panel(0)
         x_label, y_label = auto_axis_labels(self.project, layer)
         self.canvas.set_labels(bottom=x_label or None, left=y_label or None,
-                               right=layer.y2_label or None)
+                               right=layer.y2_label or None,
+                               fontfamily=layer.label_font_family,
+                               fontsize=layer.label_font_size,
+                               color=layer.label_color)
         self.canvas.set_limits(x=(layer.x_min, layer.x_max), y=(layer.y_min, layer.y_max))
         self.canvas.set_ticks(minor=getattr(layer, "minor_ticks", True),
                              direction=getattr(layer, "tick_direction", "out"))
         if self.graph.title:
-            self.canvas.set_title(self.graph.title)
+            self.canvas.set_title(self.graph.title, fontfamily=self.graph.title_font_family,
+                                 fontsize=self.graph.title_font_size, color=self.graph.title_color)
         self.canvas.set_hover(self.hover_enabled)
 
         for annotation in self.graph.annotations:

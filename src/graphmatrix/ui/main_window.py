@@ -233,6 +233,16 @@ class MainWindow(QMainWindow):
         dock_console.hide()
         self.dock_console = dock_console
 
+        # Axes properties dock (right side)
+        self.axes_container = QWidget()
+        self.axes_layout = QVBoxLayout(self.axes_container)
+        self.axes_layout.setContentsMargins(2, 2, 2, 2)
+        dock_axes = QDockWidget("Axes", self)
+        dock_axes.setObjectName("dock.axes")
+        dock_axes.setWidget(self.axes_container)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock_axes)
+        self.dock_axes = dock_axes
+
         # Versions are exposed via a toolbar dropdown (see _build_toolbar).
 
     def _build_central(self) -> None:
@@ -1170,6 +1180,15 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------- tabs
     def _on_tab_changed(self, index: int) -> None:
         widget = self.tabs.widget(index)
+        # Swap the axes property panel to the active graph view.
+        # Clear the container first.
+        while self.axes_layout.count():
+            item = self.axes_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
+        if isinstance(widget, GraphView):
+            self.axes_layout.addWidget(widget.group_axis)
         if isinstance(widget, GraphView):
             self._active_graph_view = widget
             action = self.registry.action("graph.hover")

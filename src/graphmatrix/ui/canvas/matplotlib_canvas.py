@@ -47,12 +47,17 @@ class MatplotlibCanvas(PlotCanvas):
         lay.setSpacing(0)
         lay.addWidget(self._toolbar)
         lay.addWidget(self._canvas)
+        self._grid_rows = 1
+        self._grid_cols = 1
         self._ax_left = self._fig.add_subplot(111)
+        self._axes = [self._ax_left]
+        self._current_panel = 0
         self._ax_right = None
         self._series: list[tuple[np.ndarray, np.ndarray, str]] = []
         self._hover_enabled = False
         self._hover_cid = None
         self._canvas.mpl_connect("button_press_event", self._on_button_press)
+        self.label_click_callback = None
         self._cross_v = None
         self._cross_h = None
         self._readout = None
@@ -64,7 +69,14 @@ class MatplotlibCanvas(PlotCanvas):
 
     def clear(self) -> None:
         self._fig.clear()
-        self._ax_left = self._fig.add_subplot(111)
+        rows = max(1, getattr(self, "_grid_rows", 1))
+        cols = max(1, getattr(self, "_grid_cols", 1))
+        if rows * cols > 1:
+            axes = self._fig.subplots(rows, cols, squeeze=False)
+            self._axes = [ax for row in axes for ax in row]
+        else:
+            self._axes = [self._fig.add_subplot(111)]
+        self._ax_left = self._axes[0]
         self._ax_right = None
         self._series = []
         self._cross_v = None
@@ -76,6 +88,17 @@ class MatplotlibCanvas(PlotCanvas):
         except Exception:
             pass
         self._canvas.draw_idle()
+
+    def set_grid(self, rows: int = 1, cols: int = 1) -> None:
+        self._grid_rows = max(1, rows)
+        self._grid_cols = max(1, cols)
+        self.clear()
+
+    def set_current_panel(self, index: int) -> None:
+        if self._axes:
+            self._current_panel = index % len(self._axes)
+            self._ax_left = self._axes[self._current_panel]
+            self._ax_right = None
 
     def plot(
         self,
@@ -177,19 +200,31 @@ class MatplotlibCanvas(PlotCanvas):
                 ha="left", va="top")
         self._canvas.draw_idle()
 
-    def set_title(self, text: str) -> None:
-        self._fig.suptitle(text)
+    def set_title(self, text: str, *, fontfamily: str = "", fontsize: float = 14.0,
+                  color: str = "") -> None:
+        kwargs = {"fontsize": fontsize or 14.0}
+        if fontfamily:
+            kwargs["fontfamily"] = fontfamily
+        if color:
+            kwargs["color"] = color
+        self._fig.suptitle(text, **kwargs)
         self._canvas.draw_idle()
 
-    def set_labels(self, *, bottom=None, left=None, right=None) -> None:
+    def set_labels(self, *, bottom=None, left=None, right=None,
+                   fontfamily: str = "", fontsize: float = 12.0, color: str = "") -> None:
+        kwargs = {"fontsize": fontsize or 12.0}
+        if fontfamily:
+            kwargs["fontfamily"] = fontfamily
+        if color:
+            kwargs["color"] = color
         if bottom is not None:
-            self._ax_left.set_xlabel(bottom)
+            self._ax_left.set_xlabel(bottom, **kwargs)
         if left is not None:
-            self._ax_left.set_ylabel(left)
+            self._ax_left.set_ylabel(left, **kwargs)
         if right is not None:
             if self._ax_right is None:
                 self._ax_right = self._ax_left.twinx()
-            self._ax_right.set_ylabel(right)
+            self._ax_right.set_ylabel(right, **kwargs)
         self._canvas.draw_idle()
 
     def set_scales(self, *, x: str = "linear", y: str = "linear") -> None:
@@ -319,6 +354,20 @@ class MatplotlibCanvas(PlotCanvas):
             self._readout = None
 
     def _on_button_press(self, event) -> None:
+        try:
+            if event.inaxes is not None and callable(self.label_click_callback):
+                # Axis area (not a label) -> focus the axes property group.
+                for name, artist in (("title", getattr(self._fig, "_suptitle", None)),
+                                     ("xlabel", self._ax_left.xaxis.label),
+                                     ("ylabel", self._ax_left.yaxis.label)):
+                    if artist is not None:
+                        contains, _ = artist.contains(event)
+                        if contains:
+                            self.label_click_callback(name)
+                            return
+                self.label_click_callback("axes")
+        except Exception:  # noqa: BLE001
+            pass
         if getattr(event, "dblclick", False):
             try:
                 self._ax_left.autoscale()

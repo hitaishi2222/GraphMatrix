@@ -155,6 +155,9 @@ class Layer:
     x_label: str = ""
     y_label: str = ""
     y2_label: str = ""
+    label_font_family: str = ""
+    label_font_size: float = 12.0
+    label_color: str = ""
     x_min: float | None = None
     x_max: float | None = None
     y_min: float | None = None
@@ -194,6 +197,9 @@ class Layer:
             "show_legend": self.show_legend,
             "minor_ticks": self.minor_ticks,
             "tick_direction": self.tick_direction,
+            "label_font_family": self.label_font_family,
+            "label_font_size": self.label_font_size,
+            "label_color": self.label_color,
         }
 
     @classmethod
@@ -216,6 +222,9 @@ class Layer:
         if td == "both":
             td = "inout"
         layer.tick_direction = td
+        layer.label_font_family = payload.get("label_font_family", "")
+        layer.label_font_size = payload.get("label_font_size", 12.0)
+        layer.label_color = payload.get("label_color", "")
         return layer
 
     def __repr__(self) -> str:  # pragma: no cover - cosmetic
@@ -228,6 +237,11 @@ class Graph:
     def __init__(self, name: str = "Graph1", title: str = "") -> None:
         self.name = name
         self.title = title
+        self.title_font_family: str = ""
+        self.title_font_size: float = 14.0
+        self.title_color: str = ""
+        self.layout_rows: int = 1
+        self.layout_cols: int = 1
         self.layers: list[Layer] = [Layer()]
         self.annotations: list[Annotation] = []
         self.journal_preset: str = ""
@@ -256,6 +270,11 @@ class Graph:
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name, "title": self.title,
+            "title_font_family": self.title_font_family,
+            "title_font_size": self.title_font_size,
+            "title_color": self.title_color,
+            "layout_rows": self.layout_rows,
+            "layout_cols": self.layout_cols,
             "layers": [l.to_dict() for l in self.layers],
             "annotations": [a.to_dict() for a in self.annotations],
             "journal_preset": self.journal_preset,
@@ -265,6 +284,11 @@ class Graph:
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "Graph":
         graph = cls(payload.get("name", "Graph1"), payload.get("title", ""))
+        graph.title_font_family = payload.get("title_font_family", "")
+        graph.title_font_size = payload.get("title_font_size", 14.0)
+        graph.title_color = payload.get("title_color", "")
+        graph.layout_rows = int(payload.get("layout_rows", 1) or 1)
+        graph.layout_cols = int(payload.get("layout_cols", 1) or 1)
         layers = [Layer.from_dict(l) for l in payload.get("layers", [])]
         if layers:
             graph.layers = layers
