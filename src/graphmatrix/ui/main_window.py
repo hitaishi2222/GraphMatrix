@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSpinBox,
+    QSplitter,
     QTabWidget,
     QToolBar,
     QToolButton,
@@ -78,6 +79,7 @@ from graphmatrix.ui.console import ConsoleView
 from graphmatrix.ui.digitize_dialog import DigitizeDialog
 from graphmatrix.ui.brushing import BrushSelection
 from graphmatrix.ui.graph_view import GraphView
+from graphmatrix.ui.live_dialog import LiveController
 from graphmatrix.ui.project_panel import ProjectPanel
 from graphmatrix.ui.properties_panel import PropertiesPanel
 from graphmatrix.ui.widgets import sheet_label
@@ -172,6 +174,9 @@ class MainWindow(QMainWindow):
         # Linked brushing: one shared row selection across sheet + graph tabs.
         self.brush = BrushSelection(self)
         self.brush.changed.connect(self._apply_brush)
+
+        # Live / streaming data board (Tools → Live Data…).
+        self.live = LiveController(self)
         self._dirty = False
         self.confirm_on_close = True
         self._views: dict[int, QWidget] = {}
@@ -214,9 +219,33 @@ class MainWindow(QMainWindow):
     def _build_docks(self) -> None:
         self.properties_panel = PropertiesPanel()
         self.properties_panel.rename_requested.connect(self._apply_rename)
+
+        # Right dock: object properties on top; below, tabs for the active
+        # graph view's Plot panel and Axes editor (swapped per graph tab).
+        self._plot_host = QWidget()
+        self._plot_host_layout = QVBoxLayout(self._plot_host)
+        self._plot_host_layout.setContentsMargins(2, 2, 2, 2)
+        self.axes_container = QWidget()
+        self.axes_layout = QVBoxLayout(self.axes_container)
+        self.axes_layout.setContentsMargins(2, 2, 2, 2)
+        self.axes_layout.setSpacing(4)
+
+        self._graph_tabs = QTabWidget()
+        self._graph_tabs.setDocumentMode(True)
+        self._graph_tabs.addTab(self._plot_host, "Plot")
+        self._graph_tabs.addTab(self.axes_container, "Axes")
+
+        right_splitter = QSplitter(Qt.Orientation.Vertical)
+        right_splitter.setObjectName("splitter.properties")
+        right_splitter.addWidget(self.properties_panel)
+        right_splitter.addWidget(self._graph_tabs)
+        right_splitter.setStretchFactor(0, 0)
+        right_splitter.setStretchFactor(1, 1)
+        right_splitter.setSizes([200, 600])
+
         dock_props = QDockWidget("Properties", self)
         dock_props.setObjectName("dock.properties")
-        dock_props.setWidget(self.properties_panel)
+        dock_props.setWidget(right_splitter)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock_props)
         self.dock_properties = dock_props
 
@@ -238,16 +267,6 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock_console)
         dock_console.hide()
         self.dock_console = dock_console
-
-        # Axes properties dock (right side)
-        self.axes_container = QWidget()
-        self.axes_layout = QVBoxLayout(self.axes_container)
-        self.axes_layout.setContentsMargins(2, 2, 2, 2)
-        dock_axes = QDockWidget("Axes", self)
-        dock_axes.setObjectName("dock.axes")
-        dock_axes.setWidget(self.axes_container)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock_axes)
-        self.dock_axes = dock_axes
 
         # Versions are exposed via a toolbar dropdown (see _build_toolbar).
 
@@ -404,6 +423,7 @@ class MainWindow(QMainWindow):
         r.register(ActionSpec("tools.run_macro", "Run Script...", None, menu="Tools"), self._action_run_macro)
         r.register(ActionSpec("tools.batch", "Batch Import...", None, menu="Tools", separator_before=True), self._action_batch_import)
         r.register(ActionSpec("tools.batch_analysis", "Batch Analysis (Recipe)...", None, menu="Tools"), self._action_batch_analysis)
+        r.register(ActionSpec("tools.live", "Live Data...", None, menu="Tools", separator_before=True), self._action_live_data)
 
         r.register(ActionSpec("help.about", "About GraphMatrix", None, menu="Help"), self._action_about)
 
@@ -621,6 +641,11 @@ class MainWindow(QMainWindow):
         paths, _ = QFileDialog.getOpenFileNames(self, "Batch Import", "", _DATA_FILTER)
         if paths:
             self._import_paths(paths, interactive=False)
+
+    def _action_live_data(self) -> None:
+        from graphmatrix.ui.live_dialog import LiveDataDialog
+
+        LiveDataDialog(self, controller=self.live, parent=self).show()
 
     def _action_batch_analysis(self) -> None:
         from graphmatrix.core.batch import run_recipe_over_files
@@ -1192,14 +1217,19 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------- tabs
     def _on_tab_changed(self, index: int) -> None:
         widget = self.tabs.widget(index)
-        # Swap the axes property panel to the active graph view.
-        # Clear the container first.
+        # Swap the graph side panels (Plot + Axes) to the active graph view.
         while self.axes_layout.count():
             item = self.axes_layout.takeAt(0)
             w = item.widget()
             if w is not None:
                 w.setParent(None)
+        while self._plot_host_layout.count():
+            item = self._plot_host_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.setParent(None)
         if isinstance(widget, GraphView):
+            self._plot_host_layout.addWidget(widget.plot_panel)
             self.axes_layout.addWidget(widget.group_axis)
         if isinstance(widget, GraphView):
             self._active_graph_view = widget

@@ -87,46 +87,39 @@ class GraphView(QWidget):
         self.plot_list.currentRowChanged.connect(self._on_plot_selected)
         self.hover_enabled = False
 
-        sidebar = QWidget()
-        side = QVBoxLayout(sidebar)
-        side.addWidget(self._label("Plots"))
-        side.addWidget(self.plot_list)
-
-        buttons = QHBoxLayout()
-        for text, slot in (("Add Plot", self.add_plot), ("Remove", self.remove_plot), ("Add Layer", self.add_layer)):
-            button = QPushButton(text)
-            button.setFlat(True)
-            button.clicked.connect(slot)
-            buttons.addWidget(button)
-        side.addLayout(buttons)
-
-        side.addWidget(self._build_plot_group())
+        # Side panel lives in the main window's Properties dock (swapped per
+        # graph view), not inside this tab: the tab shows only the canvas.
+        self.plot_panel = self._build_plot_panel()
         self.group_axis = self._build_axis_group()
-        side.addWidget(self._build_ref_group())
-        side.addStretch(1)
 
-        self.splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.splitter.addWidget(sidebar)
-        self.splitter.addWidget(self.canvas.widget())
-        self.splitter.setStretchFactor(0, 0)
-        self.splitter.setStretchFactor(1, 1)
-        self.splitter.setSizes([320, 900])
-
-        layout = QHBoxLayout(self)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.splitter)
+        layout.addWidget(self.canvas.widget())
 
         self.refresh()
 
     # -- construction helpers ------------------------------------------------
-    @staticmethod
-    def _label(text: str) -> QWidget:
-        from PySide6.QtWidgets import QLabel
+    def _build_plot_panel(self) -> QWidget:
+        """Plots list + plot properties + reference lines (hosted by the dock)."""
+        self._plot_group = QGroupBox("Plots")
+        plot_layout = QVBoxLayout(self._plot_group)
+        plot_layout.addWidget(self.plot_list)
+        buttons = QHBoxLayout()
+        for text, slot in (("Add Plot", self.add_plot), ("Remove", self.remove_plot), ("Add Layer", self.add_layer)):
+            button = QPushButton(text)
+            button.clicked.connect(slot)
+            buttons.addWidget(button)
+        plot_layout.addLayout(buttons)
 
-        label = QLabel(text)
-        label.setStyleSheet("font-weight: bold;")
-        return label
-
+        panel = QWidget()
+        side = QVBoxLayout(panel)
+        side.setContentsMargins(4, 4, 4, 4)
+        side.setSpacing(6)
+        side.addWidget(self._plot_group)
+        side.addWidget(self._build_plot_group())
+        side.addWidget(self._build_ref_group())
+        side.addStretch(1)
+        return panel
     def _build_plot_group(self) -> QGroupBox:
         self.group_plot = QGroupBox("Plot Properties")
         form = QFormLayout(self.group_plot)
@@ -279,7 +272,6 @@ class GraphView(QWidget):
         self.remove_ref_button = QPushButton("Remove")
         self.remove_ref_button.clicked.connect(self.remove_reference_line)
         for button in (self.add_h_button, self.add_v_button, self.remove_ref_button):
-            button.setFlat(True)
             buttons.addWidget(button)
         layout.addLayout(buttons)
 
