@@ -226,6 +226,11 @@ def _render_figure(fig, axes, graph: Graph, project: Project) -> None:
                 continue
             _ax.tick_params(which="both", direction=direction)
 
+        if not getattr(layer, "show_y_axis", True):
+            ax_left.tick_params(axis="y", which="both", left=False, labelleft=False)
+            ax_left.spines["left"].set_visible(False)
+            ax_left.yaxis.label.set_visible(False)
+
         for ref in getattr(layer, "ref_lines", []):
             style = _linestyle(ref.line_style)
             position = (

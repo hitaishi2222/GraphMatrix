@@ -97,6 +97,10 @@ fields that apply to the current type. Type changes are undoable and never delet
 layers or plots; the Project Explorer labels each graph with its type, e.g.
 `Graph1  [Stack (vertical panels)]`.
 
+**Axes → Ticks → Y axis → Hide** removes a panel's Y axis line, ticks, and labels.
+It is handy for stacks where the traces should read as clean waveforms; legends
+are drawn per panel after the plots. All changes are undoable.
+
 ### 4. Analyze
 
 Everything is under **Analyze**:

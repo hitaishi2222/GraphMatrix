@@ -19,6 +19,22 @@ and scriptable automation. It targets Windows, macOS, and Linux from a single co
 > **GraphMatrix is still in active development.** APIs, file formats, and UI details
 > may change between releases; please report issues and back up your projects.
 
+## Screenshots
+
+Complex figures rendered by GraphMatrix: layout templates, multi-panel grids,
+shared-X stacks with hidden Y axes, dual axes, and side-by-side twins.
+
+<table>
+  <tr>
+    <td width="50%"><img src="assets/screenshots/graph-grid.png" alt="2x2 grid graph"><br><sub><b>Grid (2×2)</b> — error bars, a damped oscillation, peaks with a fit and reference line, and a colour-mapped Z panel.</sub></td>
+    <td width="50%"><img src="assets/screenshots/graph-stack-no-y.png" alt="Stack graph with hidden Y axes"><br><sub><b>Stack</b> — three traces share X while the Y axes are hidden for a clean stack.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/screenshots/graph-dual-y.png" alt="Double Y graph"><br><sub><b>Double Y</b> — voltage on the left, detector counts on the right, with an area fill and a reference line.</sub></td>
+    <td width="50%"><img src="assets/screenshots/graph-x-twin.png" alt="X-Twin graph"><br><sub><b>X-Twin</b> — signal and residual side by side, sharing Y.</sub></td>
+  </tr>
+</table>
+
 ## Installation
 
 ### From source (recommended for now)

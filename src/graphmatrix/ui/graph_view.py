@@ -37,6 +37,7 @@ from graphmatrix.core.commands import (
     AddPlotCommand,
     AddReferenceLineCommand,
     CommandStack,
+    MacroCommand,
     RemovePlotCommand,
     RemoveReferenceLineCommand,
     SetAttributesCommand,
@@ -227,6 +228,12 @@ class GraphView(QWidget):
         self.minor_ticks_check.addItem("Off", False)
         self.tick_direction_combo = QComboBox()
         self.tick_direction_combo.addItems(["out", "in", "inout"])
+        self.yaxis_visible_check = QComboBox()
+        self.yaxis_visible_check.addItem("Show", True)
+        self.yaxis_visible_check.addItem("Hide", False)
+        self.yaxis_visible_check.setToolTip(
+            "Hide the Y axis (line, ticks, labels) for a clean stacked panel."
+        )
         self.plot_theme_combo = QComboBox()
         self.plot_theme_combo.addItem("Follow app theme", "")
         for pt in plot_themes.PLOT_THEMES.values():
@@ -300,6 +307,7 @@ class GraphView(QWidget):
 
         tform.addRow("Minor ticks:", self.minor_ticks_check)
         tform.addRow("Tick direction:", self.tick_direction_combo)
+        tform.addRow("Y axis:", self.yaxis_visible_check)
 
         for widget in (
             self.xscale_combo,
@@ -307,6 +315,7 @@ class GraphView(QWidget):
             self.legend_check,
             self.minor_ticks_check,
             self.tick_direction_combo,
+            self.yaxis_visible_check,
         ):
             widget.currentIndexChanged.connect(self._apply_axis_props)
         self.graphtype_combo.currentIndexChanged.connect(self._apply_graph_type)
@@ -582,41 +591,46 @@ class GraphView(QWidget):
         if self._loading:
             return
         layer = self._active_layer()
+        # One undoable step for an axis/property edit (layer + figure fields).
         self.commands.push(
-            SetAttributesCommand(
-                layer,
-                "Edit Axes",
-                x_scale=self.xscale_combo.currentData(),
-                y_scale=self.yscale_combo.currentData(),
-                x_label=self.xlabel_edit.text(),
-                y_label=self.ylabel_edit.text(),
-                y2_label=self.y2label_edit.text(),
-                z_label=self.zlabel_edit.text(),
-                x_min=_float_or_none(self.xmin_edit.text()),
-                x_max=_float_or_none(self.xmax_edit.text()),
-                y_min=_float_or_none(self.ymin_edit.text()),
-                y_max=_float_or_none(self.ymax_edit.text()),
-                show_legend=self.legend_check.currentData(),
-                minor_ticks=self.minor_ticks_check.currentData(),
-                tick_direction=self.tick_direction_combo.currentText(),
-                label_font_family=self.font_family_combo.currentText(),
-                label_font_size=float(self.label_font_size_spin.value()),
-                label_color=getattr(self, "_label_color", ""),
-            )
-        )
-        self.commands.push(
-            SetAttributesCommand(
-                self.graph,
-                "Edit Title/Fonts",
-                title=self.title_edit.text(),
-                title_font_family=self.font_family_combo.currentText(),
-                title_font_size=float(self.title_font_size_spin.value()),
-                title_color=getattr(self, "_title_color", ""),
-                layout_rows=int(self.layout_rows_spin.value()),
-                layout_cols=int(self.layout_cols_spin.value()),
-                panel_gap_x=float(self.panel_gapx_spin.value()),
-                panel_gap_y=float(self.panel_gapy_spin.value()),
-                y_delta=float(self.ydelta_spin.value()),
+            MacroCommand(
+                [
+                    SetAttributesCommand(
+                        layer,
+                        "Edit Axes",
+                        x_scale=self.xscale_combo.currentData(),
+                        y_scale=self.yscale_combo.currentData(),
+                        x_label=self.xlabel_edit.text(),
+                        y_label=self.ylabel_edit.text(),
+                        y2_label=self.y2label_edit.text(),
+                        z_label=self.zlabel_edit.text(),
+                        x_min=_float_or_none(self.xmin_edit.text()),
+                        x_max=_float_or_none(self.xmax_edit.text()),
+                        y_min=_float_or_none(self.ymin_edit.text()),
+                        y_max=_float_or_none(self.ymax_edit.text()),
+                        show_legend=self.legend_check.currentData(),
+                        minor_ticks=self.minor_ticks_check.currentData(),
+                        tick_direction=self.tick_direction_combo.currentText(),
+                        show_y_axis=self.yaxis_visible_check.currentData(),
+                        label_font_family=self.font_family_combo.currentText(),
+                        label_font_size=float(self.label_font_size_spin.value()),
+                        label_color=getattr(self, "_label_color", ""),
+                    ),
+                    SetAttributesCommand(
+                        self.graph,
+                        "Edit Title/Fonts",
+                        title=self.title_edit.text(),
+                        title_font_family=self.font_family_combo.currentText(),
+                        title_font_size=float(self.title_font_size_spin.value()),
+                        title_color=getattr(self, "_title_color", ""),
+                        layout_rows=int(self.layout_rows_spin.value()),
+                        layout_cols=int(self.layout_cols_spin.value()),
+                        panel_gap_x=float(self.panel_gapx_spin.value()),
+                        panel_gap_y=float(self.panel_gapy_spin.value()),
+                        y_delta=float(self.ydelta_spin.value()),
+                    ),
+                ],
+                label="Edit Axes",
             )
         )
         self.canvas.set_grid(
@@ -774,6 +788,9 @@ class GraphView(QWidget):
         self.minor_ticks_check.setCurrentIndex(
             0 if getattr(layer, "minor_ticks", True) else 1
         )
+        self.yaxis_visible_check.setCurrentIndex(
+            0 if getattr(layer, "show_y_axis", True) else 1
+        )
         idx = self.tick_direction_combo.findText(
             getattr(layer, "tick_direction", "out")
         )
@@ -892,7 +909,6 @@ class GraphView(QWidget):
             self.canvas.set_scales(
                 x=AxisScale(each.x_scale).value, y=AxisScale(each.y_scale).value
             )
-            self.canvas.show_legend(each.show_legend)
             for spec in each.plots:
                 data = resolve_plot(self.project, spec)
                 if data is None:
@@ -960,6 +976,16 @@ class GraphView(QWidget):
                 minor=getattr(each, "minor_ticks", True),
                 direction=getattr(each, "tick_direction", "out"),
             )
+            self.canvas.set_axis_visibility(
+                bottom=show_x,
+                left=getattr(each, "show_y_axis", True),
+                right=any(
+                    getattr(spec, "y_axis", "left") == "right"
+                    for spec in each.plots
+                ),
+            )
+            # Add the legend after the plots so its handles exist.
+            self.canvas.show_legend(each.show_legend)
 
         self.canvas.set_current_panel(0)
         if self.graph.title:

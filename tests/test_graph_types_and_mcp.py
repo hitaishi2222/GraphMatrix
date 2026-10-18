@@ -51,10 +51,12 @@ def test_graph_type_syncs_layout_and_roundtrips():
     assert (graph.layout_rows, graph.layout_cols) == (1, 1)
     assert graph.num_layers == 3  # switching type never drops layers
 
+    graph.first_layer.show_y_axis = False
     restored = Graph.from_dict(graph.to_dict())
     assert restored.graph_type == GraphType.DOUBLE_Y.value
     assert restored.panel_gap_x == graph.panel_gap_x
     assert restored.y_delta == graph.y_delta
+    assert restored.first_layer.show_y_axis is False
 
 
 def test_set_graph_type_command_is_undoable():
@@ -222,6 +224,27 @@ def test_main_window_graph_type_menu_toolbar_and_properties(qapp):
 
 
 # -- MCP control -------------------------------------------------------------
+
+
+def test_y_axis_visibility_toggle(qapp):
+    from graphmatrix.ui.main_window import MainWindow
+
+    window = MainWindow()
+    window.confirm_on_close = False
+    try:
+        window._action_sample_data()
+        window._action_add_graph()
+        view = window._active_graph_view
+        layer = view.graph.first_layer
+        assert layer.show_y_axis is True
+
+        view.group_axis.setCurrentIndex(2)  # Ticks tab
+        view.yaxis_visible_check.setCurrentIndex(1)  # Hide
+        assert layer.show_y_axis is False
+        window.commands.undo()
+        assert layer.show_y_axis is True
+    finally:
+        window.close()
 
 
 def test_mcp_controller_command_and_panel_states(qapp):

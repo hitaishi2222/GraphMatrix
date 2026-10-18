@@ -61,6 +61,7 @@ class MatplotlibCanvas(PlotCanvas):
         self._axes = [self._ax_left]
         self._current_panel = 0
         self._ax_right = None
+        self._right_axes: dict[int, object] = {}
         self._series: list[tuple[np.ndarray, np.ndarray, str]] = []
         self._series_meta: list[dict] = []  # brush/click bookkeeping per series
         self._brush_artists: list = []
@@ -88,6 +89,7 @@ class MatplotlibCanvas(PlotCanvas):
             self._axes = [self._fig.add_subplot(111)]
         self._ax_left = self._axes[0]
         self._ax_right = None
+        self._right_axes = {}
         self._series = []
         self._series_meta = []
         self._brush_artists = []
@@ -124,12 +126,8 @@ class MatplotlibCanvas(PlotCanvas):
         if self._axes:
             self._current_panel = index % len(self._axes)
             self._ax_left = self._axes[self._current_panel]
-            if getattr(self, "_ax_right", None) is not None:
-                try:
-                    self._ax_right.remove()
-                except Exception:  # noqa: BLE001
-                    pass
-            self._ax_right = None
+            # Reuse this panel's secondary axis; other panels keep theirs.
+            self._ax_right = self._right_axes.get(self._current_panel)
 
     def plot(
         self,
@@ -156,9 +154,11 @@ class MatplotlibCanvas(PlotCanvas):
 
         ax = self._ax_left
         if y_axis == "right":
-            if self._ax_right is None:
-                self._ax_right = self._ax_left.twinx()
-            ax = self._ax_right
+            ax = self._right_axes.get(self._current_panel)
+            if ax is None:
+                ax = self._ax_left.twinx()
+                self._right_axes[self._current_panel] = ax
+            self._ax_right = ax
 
         xs = np.asarray(x, dtype=float)
         ys = np.asarray(y, dtype=float)
@@ -432,6 +432,12 @@ class MatplotlibCanvas(PlotCanvas):
         if color:
             kwargs["color"] = color
         self._fig.suptitle(text, **kwargs)
+        # Reserve a strip at the top so a centred figure title never overlaps
+        # the first row of panels (grid/stack/x-twin layouts).
+        try:
+            self._fig.subplots_adjust(top=0.90)
+        except Exception:  # noqa: BLE001 - no axes yet / matplotlib edge cases
+            pass
         self._canvas.draw_idle()
 
     def set_labels(
@@ -456,6 +462,7 @@ class MatplotlibCanvas(PlotCanvas):
         if right is not None:
             if self._ax_right is None:
                 self._ax_right = self._ax_left.twinx()
+                self._right_axes[self._current_panel] = self._ax_right
             self._ax_right.set_ylabel(right, **kwargs)
         self._canvas.draw_idle()
 
@@ -464,6 +471,27 @@ class MatplotlibCanvas(PlotCanvas):
         self._ax_left.set_yscale(y)
         if self._ax_right is not None:
             self._ax_right.set_yscale(y)
+        self._canvas.draw_idle()
+
+    def set_axis_visibility(
+        self, *, bottom: bool = True, left: bool = True, right: bool = True
+    ) -> None:
+        """Show/hide the axis line, ticks, tick labels, and labels for one panel."""
+        ax = self._ax_left
+        ax.tick_params(
+            axis="x", which="both", bottom=bool(bottom), labelbottom=bool(bottom)
+        )
+        ax.tick_params(axis="y", which="both", left=bool(left), labelleft=bool(left))
+        ax.spines["bottom"].set_visible(bool(bottom))
+        ax.spines["left"].set_visible(bool(left))
+        ax.xaxis.label.set_visible(bool(bottom))
+        ax.yaxis.label.set_visible(bool(left))
+        if self._ax_right is not None:
+            self._ax_right.tick_params(
+                axis="y", which="both", right=bool(right), labelright=bool(right)
+            )
+            self._ax_right.spines["right"].set_visible(bool(right))
+            self._ax_right.yaxis.label.set_visible(bool(right))
         self._canvas.draw_idle()
 
     def set_ticks(self, *, minor: bool = True, direction: str = "out") -> None:
@@ -522,6 +550,9 @@ class MatplotlibCanvas(PlotCanvas):
             bg, fg, grid_alpha = colors
         self._fig.patch.set_facecolor(bg)
         axes = list(getattr(self, "_axes", []))
+        for right in getattr(self, "_right_axes", {}).values():
+            if right is not None and right not in axes:
+                axes.append(right)
         if self._ax_right is not None and self._ax_right not in axes:
             axes.append(self._ax_right)
         for ax in axes:

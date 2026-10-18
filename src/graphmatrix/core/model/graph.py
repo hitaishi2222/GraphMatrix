@@ -267,6 +267,7 @@ class Layer:
     show_legend: bool = True
     minor_ticks: bool = True
     tick_direction: str = "out"
+    show_y_axis: bool = True  # hide ticks/labels/spine for clean stacked panels
     z_label: str = "Value"  # colourbar / 3D z-axis label
 
     def add_plot(self, spec: PlotSpec) -> PlotSpec:
@@ -304,6 +305,7 @@ class Layer:
             "show_legend": self.show_legend,
             "minor_ticks": self.minor_ticks,
             "tick_direction": self.tick_direction,
+            "show_y_axis": self.show_y_axis,
             "z_label": self.z_label,
             "label_font_family": self.label_font_family,
             "label_font_size": self.label_font_size,
@@ -328,6 +330,7 @@ class Layer:
         layer.y_max = payload.get("y_max")
         layer.show_legend = payload.get("show_legend", True)
         layer.minor_ticks = payload.get("minor_ticks", True)
+        layer.show_y_axis = bool(payload.get("show_y_axis", True))
         td = payload.get("tick_direction", "out")
         if td == "both":
             td = "inout"

@@ -120,6 +120,11 @@ class PlotCanvas(ABC):
         backends degrade to a no-op.
         """
 
+    def set_axis_visibility(
+        self, *, bottom: bool = True, left: bool = True, right: bool = True
+    ) -> None:
+        """Show/hide axes for the current panel (multi-panel backend only)."""
+
     @abstractmethod
     def set_current_panel(self, index: int) -> None: ...
 
