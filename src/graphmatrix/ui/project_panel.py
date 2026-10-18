@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from graphmatrix.core.model import Graph, Project, Workbook, Worksheet
+from graphmatrix.ui.icons import lucide_icon
 from graphmatrix.ui.widgets import COLUMN_MIME
 
 _ROLE_OBJ = Qt.ItemDataRole.UserRole + 1
@@ -82,21 +83,23 @@ class ProjectPanel(QWidget):
 
         project_item = QTreeWidgetItem([self._project.name])
         project_item.setData(0, _ROLE_OBJ, self._project)
+        project_item.setIcon(0, lucide_icon("database", "project"))
         self.tree.addTopLevelItem(project_item)
 
         for book in self._project.workbooks:
             book_item = QTreeWidgetItem([book.name])
             book_item.setData(0, _ROLE_OBJ, book)
-            book_item.setIcon(0, self.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+            book_item.setIcon(0, lucide_icon("folder", "workbook"))
             project_item.addChild(book_item)
             for sheet in book.sheets:
                 sheet_item = QTreeWidgetItem([f"{sheet.name}  ({sheet.num_rows}×{sheet.num_columns})"])
                 sheet_item.setData(0, _ROLE_OBJ, sheet)
-                sheet_item.setIcon(0, self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+                sheet_item.setIcon(0, lucide_icon("file-text", "sheet"))
                 book_item.addChild(sheet_item)
                 for column in sheet.columns:
                     col_item = QTreeWidgetItem([f"{column.name}  [{column.col_type.value}]"])
                     col_item.setData(0, _ROLE_OBJ, column)
+                    col_item.setIcon(0, lucide_icon("columns", "column"))
                     col_item.setData(0, _ROLE_DRAG, {
                         "source": f"{book.name}/{sheet.name}", "column": column.name,
                     })
@@ -105,7 +108,7 @@ class ProjectPanel(QWidget):
         for graph in self._project.graphs:
             graph_item = QTreeWidgetItem([graph.name])
             graph_item.setData(0, _ROLE_OBJ, graph)
-            graph_item.setIcon(0, self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+            graph_item.setIcon(0, lucide_icon("line-chart", "graph"))
             project_item.addChild(graph_item)
 
         project_item.setExpanded(True)
