@@ -1,5 +1,7 @@
 # GraphMatrix
 
+![GraphMatrix banner](assets/banner.svg)
+
 A cross-platform scientific data analysis and graphing GUI.
 
 GraphMatrix aims to be a Python-first, open alternative to tools like OriginPro:
