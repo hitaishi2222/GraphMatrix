@@ -39,7 +39,9 @@ class _Interpreter(code.InteractiveInterpreter):
 class ConsoleView(QWidget):
     """Output pane + input line, with history and a persistent namespace."""
 
-    def __init__(self, project: Project, commands: CommandStack, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, project: Project, commands: CommandStack, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self._commands = commands
         self._history: list[str] = []
@@ -68,7 +70,9 @@ class ConsoleView(QWidget):
         layout.addLayout(row)
 
         self.set_project(project)
-        self._write("GraphMatrix console. `api` and `project` are in scope. Try: api.add_column('Book1/Sheet1','X1','X',data=[0,1,2])")
+        self._write(
+            "GraphMatrix console. `api` and `project` are in scope. Try: api.add_column('Book1/Sheet1','X1','X',data=[0,1,2])"
+        )
 
     # -- namespace -----------------------------------------------------------
     def set_project(self, project: Project) -> None:
@@ -77,7 +81,9 @@ class ConsoleView(QWidget):
 
     def _write(self, text: str) -> None:
         self.output.appendPlainText(text)
-        self.output.verticalScrollBar().setValue(self.output.verticalScrollBar().maximum())
+        self.output.verticalScrollBar().setValue(
+            self.output.verticalScrollBar().maximum()
+        )
 
     # -- execution -----------------------------------------------------------
     def _execute_current(self) -> None:
@@ -125,7 +131,11 @@ class ConsoleView(QWidget):
                 return True
             if key == Qt.Key.Key_Down and self._history:
                 self._history_index = min(len(self._history), self._history_index + 1)
-                self.input.setText("" if self._history_index >= len(self._history) else self._history[self._history_index])
+                self.input.setText(
+                    ""
+                    if self._history_index >= len(self._history)
+                    else self._history[self._history_index]
+                )
                 return True
         return super().eventFilter(obj, event)
 
@@ -134,7 +144,11 @@ class ConsoleView(QWidget):
         stdout = io.StringIO()
         try:
             with contextlib.redirect_stdout(stdout):
-                exec(compile(source, "<macro>", "exec"), self._interp.locals, self._interp.locals)
+                exec(
+                    compile(source, "<macro>", "exec"),
+                    self._interp.locals,
+                    self._interp.locals,
+                )
         except Exception:  # noqa: BLE001
             self._write(traceback.format_exc())
         output = stdout.getvalue()

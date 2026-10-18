@@ -2,8 +2,22 @@
 
 from .columns import Column, ColumnType
 from .formula import FormulaError, evaluate_column_formula
-from .graph import (Annotation, AxisScale, Graph, Layer, PlotSpec, PlotStyle,
-                    ReferenceLine, LINE_STYLES, Z_STYLES, is_3d_style)
+from .graph import (
+    Annotation,
+    AxisScale,
+    Graph,
+    GraphType,
+    GRAPH_TYPES,
+    GRAPH_TYPE_LABELS,
+    graph_type_label,
+    Layer,
+    PlotSpec,
+    PlotStyle,
+    ReferenceLine,
+    LINE_STYLES,
+    Z_STYLES,
+    is_3d_style,
+)
 from .project import FORMAT, FORMAT_VERSION, Project
 from .workbook import Workbook
 from .worksheet import Worksheet
@@ -14,6 +28,10 @@ __all__ = [
     "Worksheet",
     "Workbook",
     "Graph",
+    "GraphType",
+    "GRAPH_TYPES",
+    "GRAPH_TYPE_LABELS",
+    "graph_type_label",
     "Layer",
     "PlotSpec",
     "PlotStyle",

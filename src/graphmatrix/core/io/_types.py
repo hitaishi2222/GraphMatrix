@@ -42,14 +42,19 @@ def _name_type(name: str, index: int) -> ColumnType:
     return ColumnType.X if index == 0 else ColumnType.Y
 
 
-def build_worksheet(name: str, header: Sequence[str] | None, rows: Sequence[Sequence[object]]) -> Worksheet:
+def build_worksheet(
+    name: str, header: Sequence[str] | None, rows: Sequence[Sequence[object]]
+) -> Worksheet:
     """Build a worksheet from a header + rows, inferring types and designations."""
     ncols = max([len(r) for r in rows] + ([len(header)] if header else [0]), default=0)
     if header is None:
         names = [f"C{i + 1}" for i in range(ncols)]
         units = [""] * ncols
     else:
-        cleaned = [str(h).strip() if str(h).strip() else f"C{i + 1}" for i, h in enumerate(header)]
+        cleaned = [
+            str(h).strip() if str(h).strip() else f"C{i + 1}"
+            for i, h in enumerate(header)
+        ]
         cleaned += [f"C{i + 1}" for i in range(len(cleaned), ncols)]
         pairs = [_split_units(item) for item in cleaned]
         names = [name for name, _ in pairs]

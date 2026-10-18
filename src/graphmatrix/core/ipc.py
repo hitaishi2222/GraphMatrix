@@ -31,7 +31,7 @@ from PySide6.QtCore import QObject
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 #: Ops the bridge answers.
-_OPS = ("ping", "summary", "run", "open")
+_OPS = ("ping", "summary", "run", "open", "screenshot")
 
 #: Client-side default timeout in seconds.
 DEFAULT_TIMEOUT = 30.0
@@ -111,8 +111,10 @@ class IpcBridge(QObject):
         QLocalServer.removeServer(self._path)  # clear stale socket files
         self.server = QLocalServer(self)
         if not self.server.listen(self._path):
-            raise RuntimeError(f"IPC bridge failed to listen on {self._path}: "
-                               f"{self.server.errorString()}")
+            raise RuntimeError(
+                f"IPC bridge failed to listen on {self._path}: "
+                f"{self.server.errorString()}"
+            )
         try:
             os.chmod(self._path, 0o600)  # same-user only
         except OSError:
@@ -197,22 +199,44 @@ class IpcBridge(QObject):
                 if id(graph) not in before:
                     self.window._open_graph_tab(graph)
                     opened.append(graph.name)
-        return {"stdout": buf.getvalue(), "stderr": err.getvalue(),
-                "opened_graphs": opened}
+        return {
+            "stdout": buf.getvalue(),
+            "stderr": err.getvalue(),
+            "opened_graphs": opened,
+        }
 
     def _op_open(self, req: dict) -> dict:
         path = req.get("path")
         if not path:
             raise ValueError("op 'open' requires a 'path'")
         if self.window._dirty and not req.get("force"):
-            raise RuntimeError("window has unsaved changes; pass force:true to discard them")
+            raise RuntimeError(
+                "window has unsaved changes; pass force:true to discard them"
+            )
         self.window._open_project_path(path)
         return {"opened": str(path)}
 
+    def _op_screenshot(self, req: dict) -> dict:
+        path = req.get("path")
+        if not path:
+            raise ValueError("op 'screenshot' requires a 'path'")
+        from PySide6.QtGui import QPixmap
+        pm = self.window.grab()
+        out = Path(path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if not pm.save(str(out)):
+            raise RuntimeError(f"failed to save screenshot to {out}")
+        return {"path": str(out), "width": pm.width(), "height": pm.height()}
+
 
 # -- client side (no Qt required) -------------------------------------------
-def request(op: str, *, sock_path: str | None = None, timeout: float = DEFAULT_TIMEOUT,
-            **payload: Any) -> dict[str, Any]:
+def request(
+    op: str,
+    *,
+    sock_path: str | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+    **payload: Any,
+) -> dict[str, Any]:
     """Send one request to a running GUI's IPC bridge and return its response."""
     import socket as _socket
 

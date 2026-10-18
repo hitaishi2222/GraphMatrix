@@ -124,8 +124,12 @@ class Project:
             raise ValueError(f"version {name!r} already exists")
         snapshot = self.to_dict()
         snapshot.pop("versions", None)
-        version = {"name": name, "created": datetime.now().isoformat(timespec="seconds"),
-                   "note": note, "snapshot": snapshot}
+        version = {
+            "name": name,
+            "created": datetime.now().isoformat(timespec="seconds"),
+            "note": note,
+            "snapshot": snapshot,
+        }
         self.versions.append(version)
         return version
 
@@ -143,7 +147,9 @@ class Project:
 
     def rename_version(self, old: str, new: str) -> None:
         new = new.strip()
-        if not new or any(v.get("name") == new for v in self.versions if v.get("name") != old):
+        if not new or any(
+            v.get("name") == new for v in self.versions if v.get("name") != old
+        ):
             raise ValueError("invalid or duplicate version name")
         for v in self.versions:
             if v.get("name") == old:
@@ -182,7 +188,7 @@ class Project:
                     if spec.source == old:
                         spec.source = new
                     elif spec.source.startswith(old + "/"):
-                        spec.source = new + spec.source[len(old):]
+                        spec.source = new + spec.source[len(old) :]
 
     # -- serialization -------------------------------------------------------
     def to_dict(self) -> dict[str, Any]:
@@ -201,7 +207,9 @@ class Project:
         if fmt not in (None, FORMAT):
             raise ValueError(f"not a GraphMatrix project (format={fmt!r})")
         project = cls(payload.get("name", "Untitled"))
-        project.workbooks = [Workbook.from_dict(b) for b in payload.get("workbooks", [])]
+        project.workbooks = [
+            Workbook.from_dict(b) for b in payload.get("workbooks", [])
+        ]
         project.graphs = [Graph.from_dict(g) for g in payload.get("graphs", [])]
         project.versions = payload.get("versions", []) or []
         return project

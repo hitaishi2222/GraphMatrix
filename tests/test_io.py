@@ -46,7 +46,9 @@ def test_excel_roundtrip(tmp_path):
     reimported = importer.import_file(path)
     assert reimported.num_sheets == 1
     assert reimported.sheets[0].column("Y1") is not None
-    np.testing.assert_allclose(reimported.sheets[0].column("Y1").data, [10.0, 20.0, 30.0])
+    np.testing.assert_allclose(
+        reimported.sheets[0].column("Y1").data, [10.0, 20.0, 30.0]
+    )
 
 
 def test_parquet_roundtrip(tmp_path):

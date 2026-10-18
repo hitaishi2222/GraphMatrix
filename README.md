@@ -84,6 +84,11 @@ testable, headless-batchable, and free to be accelerated later without touching 
   dashed/dotted line styles; horizontal & vertical reference lines; hover crosshair
   and nearest-point readout; secondary (dual) Y axis; text annotations; editable axes
   and legend; style templates; drag a column from the tree to plot it; live-linked to data.
+- **Graph layout types** — Simple, Stack (vertical panels), Double Y (2Y), X-Twin
+  (side-by-side) and Grid (R×C), selectable from **Graph → Graph Type**, the toolbar,
+  the project tree's right-click menu, or **Properties**. The sidebar shows only the
+  fields that type uses — grid rows/columns and panel gaps for a grid, Y-delta for a
+  stack, and so on — and changes are undoable.
 - **Analysis** — descriptive stats, linear/polynomial regression, nonlinear fitting
   (Gaussian, Lorentzian, exponential, sinusoid, sigmoid, … via lmfit), peak finding,
   **peak deconvolution** (multi-peak Gaussian/Lorentzian), **slope over an X range**,
@@ -129,21 +134,43 @@ graphmatrix doctor                      # check environment and dependencies
 
 ## MCP server
 
-GraphMatrix exposes an MCP server for AI assistants (stdio transport):
+GraphMatrix exposes an MCP server for AI assistants. Install the optional extra
+first:
 
 ```bash
 pip install "graphmatrix[mcp]"
-graphmatrix-mcp
 ```
 
-Tools: `connect`, `summary` (workbooks, sheets, graphs, and project versions),
-`run` (Python against the GraphMatrix API — including pipelines, versioning,
-batch statistics, colour/XYZ plots, numeric fit regions via
+There are two ways to run it:
+
+- **In-app control (recommended):** open **Tools → MCP Server…** (or click the
+  **MCP** status mark in the bottom-right corner of the window). Choose a transport
+  (Streamable HTTP or SSE), host and port, then **Start server**. The dock shows a
+  coloured status mark (grey stopped, amber starting, green running, red error), the
+  endpoint, the exposed tools, live server logs, and a live-GUI bridge indicator.
+  **Copy HTTP config** / **Copy stdio config** put a ready client config on the
+  clipboard.
+- **Editor-launched stdio:** configure your client to run `graphmatrix-mcp`.
+
+```bash
+graphmatrix-mcp                                   # stdio (editors launch this)
+graphmatrix-mcp --transport http --port 8765     # port-based server
+```
+
+Tools: `connect`, `summary` (workbooks, sheets, graphs, layout types, and project
+versions), `run` (Python against the GraphMatrix API — including pipelines,
+versioning, batch statistics, colour/XYZ plots, numeric fit regions via
 `api.fit(..., x_min=..., x_max=...)`, and live data tailing via
-`graphmatrix.core.live.LiveFileSource`), and `export`. Example client config:
+`graphmatrix.core.live.LiveFileSource`), `export`, and the live tools
+`live_summary`, `live_run`, `live_open`, `live_screenshot` (these drive the running
+GUI over its local IPC bridge). Example configs:
 
 ```json
 { "mcpServers": { "graphmatrix": { "command": "graphmatrix-mcp" } } }
+```
+
+```json
+{ "mcpServers": { "graphmatrix-live": { "url": "http://127.0.0.1:8765/mcp" } } }
 ```
 
 ## Supported formats
@@ -157,7 +184,10 @@ batch statistics, colour/XYZ plots, numeric fit regions via
 - `Ctrl+N` New project · `Ctrl+O` Open · `Ctrl+S` Save
 - `Ctrl+Z` / `Ctrl+Shift+Z` Undo / Redo
 - `Ctrl+Shift+P` Command palette
-- `F2` Rename selected object
+- `F2` Rename selected object / column
+- `Ctrl+Alt+N` / `Ctrl+Alt+C` Add row / column at the end of the active sheet
+- `Ctrl+Alt+=` Insert rows above the selection
+- `Ctrl+Alt+-` / `Ctrl+Alt+Shift+-` Delete selected rows / columns
 
 ## Troubleshooting
 

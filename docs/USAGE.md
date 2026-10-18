@@ -18,6 +18,7 @@ working; every rename is a single undoable step.
 ## The workflow
 
 ### 1. Get data in
+
 - **File → Import Data…** (Ctrl+I): CSV/TSV/TXT/DAT, Excel (.xlsx), Parquet, HDF5/NetCDF.
 - **Drag and drop** data files (or a `.rsproj`) onto the window.
 - **Data → Add Sample Data**: drops a sine wave into the selected worksheet.
@@ -28,16 +29,29 @@ infer types; first numeric column becomes X, the rest Y. A header written as
 `Name (units)` round-trips through CSV.
 
 ### 2. Edit the worksheet
-Double-click a cell to edit (the change is undoable). Right-click a **column header**
-for rename / units / comment / type / decimal places / **formula** / insert / delete.
-Right-click a **cell** for row insert/delete, or **copy / cut / paste** cell blocks
+
+Double-click a cell to edit (the change is undoable). Click the **+** button just to
+the right of the last column header to append a column. Right-click a **column
+header** for rename / units / comment / type / decimal places / **formula** / insert /
+delete. Right-click a **row number** for insert/delete rows, or right-click a **cell**
+for the same row/column actions plus **copy / cut / paste** cell blocks
 (Ctrl+C / Ctrl+X / Ctrl+V; a paste is a single undo step). Drag a column header to
 **reorder** columns.
+
+Row and column shortcuts (also in **Data → Rows and Columns**):
+
+- `Ctrl+Alt+N` — add a row at the end
+- `Ctrl+Alt+C` — add a column at the end
+- `Ctrl+Alt+=` — insert row(s) above the selection
+- `Ctrl+Alt+-` — delete the selected row(s)
+- `Ctrl+Alt+Shift+-` — delete the selected column(s)
+- `F2` — rename the selected column
 
 Formulas reference columns by name and use numpy functions, e.g. `sin(X1) + 2`,
 `Y1 * exp(-X1/3)`, `log(Y1)`. They are sandboxed — no arbitrary code execution.
 
 ### 3. Graph it
+
 - **Data → Add Graph** creates a graph and auto-plots the first X/Y pair.
 - **Graph → Add Plot to Active Graph…** chooses source sheet, X, Y, Y error, style.
 - **Drag a column** from the Project Explorer onto a graph to plot it (an X column
@@ -63,8 +77,30 @@ Formulas reference columns by name and use numpy functions, e.g. `sin(X1) + 2`,
   graph: it restyles the plots' line widths and marker sizes and records the preset so
   the exporter uses the matching font sizes and default dimensions. Undoable.
 
+#### Graph layout types
+
+Use **Graph → Graph Type**, the **Graph type** combo in the toolbar, the right-click
+menu on a graph in the Project Explorer, or the **Properties** inspector to switch
+between:
+
+- **Simple** — one plot frame.
+- **Stack** — layers stacked vertically, sharing X. New stack graphs start with two
+  panels; **Graph → Add Layer** adds more. **Y delta** shifts each successive panel's
+  data (waterfall-style).
+- **Double Y (2Y)** — one frame with a secondary right axis; set a plot's **Y axis**
+  to *Right* in the plot sidebar.
+- **X-Twin** — layers side by side, sharing Y.
+- **Grid** — an R×C grid of panels; set **Grid rows/columns** and **Panel gap X/Y**.
+
+The sidebar's **Axes → Layout** tab and the Properties inspector only enable the
+fields that apply to the current type. Type changes are undoable and never delete
+layers or plots; the Project Explorer labels each graph with its type, e.g.
+`Graph1  [Stack (vertical panels)]`.
+
 ### 4. Analyze
+
 Everything is under **Analyze**:
+
 - **Descriptive Statistics** — N, mean, std, quartiles, skew, kurtosis, CI.
 - **Regression** — linear and polynomial.
 - **Nonlinear Fit** — 9 built-in models (Gaussian, Lorentzian, exponential decay/growth,
@@ -93,6 +129,7 @@ Every report can push its **curves back into the project**: "Add as columns" (un
 or "Plot on active graph" (adds the curve as columns and a plot).
 
 ### 4b. Reproducibility
+
 - **Tools → Analysis Methods…** shows a plain-language methods write-up: data imports,
   analysis runs (with their summaries), and notable operations, in order.
 - **Export → Export Project as Python Script…** writes a script that rebuilds every
@@ -102,12 +139,14 @@ or "Plot on active graph" (adds the curve as columns and a plot).
   whole piece of work, reproducible and documented.
 
 ### 5. Export
+
 - **Export → Export Active Graph…** — PDF/SVG/EPS (vector, font-embedded) or
   PNG/TIFF (raster) at a chosen size in mm and DPI. Dual-axis and annotations included.
 - **Export → Export All Graphs…** — batch export every graph in the project to a folder.
 - **Export → Export Worksheet as CSV…**
 
 ### 6. Automate
+
 - **Tools → Command Palette…** (`Ctrl+Shift+P`) — fuzzy-search every action and run it.
 - **Tools → Python Console**: a live Python REPL scoped to your project.
 - **Tools → Record Macro** → make edits → **Save Recorded Macro…** writes a runnable
@@ -115,16 +154,35 @@ or "Plot on active graph" (adds the curve as columns and a plot).
 - **Tools → Batch Analysis (Recipe)…**: pick a recipe (JSON) and many data files; each
   file is imported, analyzed, and gets a text report + a figure in the output folder.
 
+## MCP server control
+
+Install the optional extra (`pip install "graphmatrix[mcp]"`), then open
+**Tools → MCP Server…** or click the **MCP** mark in the status bar. The dock lets you:
+
+- pick **Streamable HTTP** or **SSE**, a host and a port, then **Start server** /
+  **Stop server**;
+- read the coloured status mark (grey stopped, amber starting, green running, red
+  error), the endpoint, and the live GUI bridge socket;
+- review the exposed tools and stream the server's log;
+- copy an HTTP or stdio client config to the clipboard.
+
+The same server can be launched outside the GUI:
+
+```bash
+graphmatrix-mcp                                   # stdio
+graphmatrix-mcp --transport http --port 8765     # persistent endpoint
+```
+
 #### Analysis recipes
 
-A recipe records *what* to compute (not the data), so it can be re-run anywhere:
+A recipe records _what_ to compute (not the data), so it can be re-run anywhere:
 
 ```python
 from graphmatrix.core.recipes import Recipe, run_recipe, save_recipe
 
 recipe = Recipe("fit", {"model": "Exponential Decay"}, label="exp decay")
-r = run_recipe(recipe, x, y)          # x, y from anywhere
-save_recipe(recipe, "exp.json")       # batch it via Tools → Batch Analysis
+r = run_recipe(recipe, x, y)  # x, y from anywhere
+save_recipe(recipe, "exp.json")  # batch it via Tools → Batch Analysis
 ```
 
 Supported operations: `descriptive`, `regression`, `fit`, `peaks`, `deconvolution`,
@@ -144,7 +202,7 @@ api.add_workbook("Demo")
 api.add_worksheet("Demo", "Sheet1")
 x = np.linspace(0, 10, 300)
 api.add_column("Demo/Sheet1", "X1", "X", data=x, units="s")
-api.add_column("Demo/Sheet1", "Y1", "Y", data=3*np.exp(-x/2) + 0.1)
+api.add_column("Demo/Sheet1", "Y1", "Y", data=3 * np.exp(-x / 2) + 0.1)
 api.add_graph("Fit", "Demo/Sheet1", "X1", "Y1")
 
 # Fit and inspect
@@ -166,8 +224,10 @@ Figure-as-code and reproducible bundles are one call each:
 from graphmatrix.core.code_export import project_to_script
 from graphmatrix.core.report import export_analysis_bundle
 
-print(project_to_script(project))          # a script that rebuilds the project
-export_analysis_bundle(project, None, "bundle")   # data/ + figures/ + reproduce.py + methods.md
+print(project_to_script(project))  # a script that rebuilds the project
+export_analysis_bundle(
+    project, None, "bundle"
+)  # data/ + figures/ + reproduce.py + methods.md
 ```
 
 The digitizer is also importable (pixel anchors → data values):
@@ -177,8 +237,8 @@ from graphmatrix.core.analysis.digitize import digitize_curve
 
 result = digitize_curve(
     "scan.png",
-    x_anchors=((60, 0.0), (740, 10.0)),   # (pixel, value) × 2 for the x axis
-    y_anchors=((560, 0.0), (60, 5.0)),    # (pixel, value) × 2 for the y axis
+    x_anchors=((60, 0.0), (740, 10.0)),  # (pixel, value) × 2 for the x axis
+    y_anchors=((560, 0.0), (60, 5.0)),  # (pixel, value) × 2 for the y axis
 )
 x, y = result.curves["Digitized"]
 ```
@@ -188,12 +248,12 @@ x, y = result.curves["Digitized"]
 **View → Theme** (or the **Theme** dropdown on the toolbar) switches between four
 presets. The choice is remembered between runs.
 
-| Preset | Colour scheme | Design |
-|--------|---------------|--------|
-| **Classic Dark** (default) | dark | neutral, square-ish |
-| **Classic Light** | light | neutral, square-ish |
-| **Modern Dark** | dark | deeper surfaces, indigo accent, rounded and compact |
-| **Modern Light** | light | airy surfaces, indigo accent, rounded and compact |
+| Preset                     | Colour scheme | Design                                              |
+| -------------------------- | ------------- | --------------------------------------------------- |
+| **Classic Dark** (default) | dark          | neutral, square-ish                                 |
+| **Classic Light**          | light         | neutral, square-ish                                 |
+| **Modern Dark**            | dark          | deeper surfaces, indigo accent, rounded and compact |
+| **Modern Light**           | light         | airy surfaces, indigo accent, rounded and compact   |
 
 The design language ("classic" vs "modern") and the colour scheme are independent,
 so the plot canvas, axes, legends, and annotations are recoloured to match whichever
@@ -201,17 +261,17 @@ preset is active.
 
 ## Keyboard shortcuts
 
-| Action | Shortcut |
-|--------|----------|
-| New project | Ctrl+N |
-| Open project | Ctrl+O |
-| Save project | Ctrl+S |
-| Import data | Ctrl+I |
+| Action                     | Shortcut                 |
+| -------------------------- | ------------------------ |
+| New project                | Ctrl+N                   |
+| Open project               | Ctrl+O                   |
+| Save project               | Ctrl+S                   |
+| Import data                | Ctrl+I                   |
 | Copy / Cut / Paste (cells) | Ctrl+C / Ctrl+X / Ctrl+V |
-| Undo / Redo | Ctrl+Z / Ctrl+Shift+Z |
-| Rename selected item | F2 |
-| Command palette | Ctrl+Shift+P |
-| Quit | Ctrl+Q |
+| Undo / Redo                | Ctrl+Z / Ctrl+Shift+Z    |
+| Rename selected item       | F2                       |
+| Command palette            | Ctrl+Shift+P             |
+| Quit                       | Ctrl+Q                   |
 
 ## Project files
 

@@ -39,27 +39,39 @@ def fft_spectrum(x: Sequence[float], y: Sequence[float]) -> AnalysisResult:
     peak = int(np.argmax(amplitude[1:]) + 1) if amplitude.size > 1 else 0
     result.curves["Spectrum"] = (freqs, amplitude)
     result.summary = {
-        "N": float(n), "Sampling freq": fs,
+        "N": float(n),
+        "Sampling freq": fs,
         "Peak frequency": float(freqs[peak]) if freqs.size else float("nan"),
         "Peak amplitude": float(amplitude[peak]) if amplitude.size else float("nan"),
     }
     return result
 
 
-def smooth_savgol(x: Sequence[float], y: Sequence[float], *, window: int = 11, order: int = 3) -> AnalysisResult:
+def smooth_savgol(
+    x: Sequence[float], y: Sequence[float], *, window: int = 11, order: int = 3
+) -> AnalysisResult:
     x, y = _clean(x, y)
     result = AnalysisResult(kind="smooth", title="Savitzky-Golay Smoothing")
-    window = min(window if window % 2 == 1 else window + 1, y.size if y.size % 2 == 1 else y.size - 1)
+    window = min(
+        window if window % 2 == 1 else window + 1,
+        y.size if y.size % 2 == 1 else y.size - 1,
+    )
     if window < order + 2:
         result.notes = "Window too small for the polynomial order."
         return result
     smoothed = sci_signal.savgol_filter(y, window, order)
     result.curves["Smoothed"] = (x, smoothed)
-    result.summary = {"Window": float(window), "Order": float(order), "N": float(y.size)}
+    result.summary = {
+        "Window": float(window),
+        "Order": float(order),
+        "N": float(y.size),
+    }
     return result
 
 
-def smooth_moving_average(x: Sequence[float], y: Sequence[float], *, window: int = 5) -> AnalysisResult:
+def smooth_moving_average(
+    x: Sequence[float], y: Sequence[float], *, window: int = 5
+) -> AnalysisResult:
     x, y = _clean(x, y)
     result = AnalysisResult(kind="smooth", title="Moving Average")
     window = max(1, min(window, y.size))
@@ -71,8 +83,13 @@ def smooth_moving_average(x: Sequence[float], y: Sequence[float], *, window: int
 
 
 def butter_filter(
-    x: Sequence[float], y: Sequence[float], *,
-    kind: str = "low", cutoff: float = 1.0, order: int = 4, fs: float | None = None,
+    x: Sequence[float],
+    y: Sequence[float],
+    *,
+    kind: str = "low",
+    cutoff: float = 1.0,
+    order: int = 4,
+    fs: float | None = None,
 ) -> AnalysisResult:
     x, y = _clean(x, y)
     result = AnalysisResult(kind="filter", title=f"Butterworth Filter ({kind})")
@@ -96,9 +113,13 @@ def butter_filter(
     return result
 
 
-def differentiate(x: Sequence[float], y: Sequence[float], *, order: int = 1) -> AnalysisResult:
+def differentiate(
+    x: Sequence[float], y: Sequence[float], *, order: int = 1
+) -> AnalysisResult:
     x, y = _clean(x, y)
-    result = AnalysisResult(kind="differentiate", title=f"Numerical Derivative (order {order})")
+    result = AnalysisResult(
+        kind="differentiate", title=f"Numerical Derivative (order {order})"
+    )
     if x.size < 2:
         result.notes = "Not enough data."
         return result
@@ -122,7 +143,9 @@ def integrate_curve(x: Sequence[float], y: Sequence[float]) -> AnalysisResult:
     return result
 
 
-def interpolate(x: Sequence[float], y: Sequence[float], *, num: int = 200, kind: str = "cubic") -> AnalysisResult:
+def interpolate(
+    x: Sequence[float], y: Sequence[float], *, num: int = 200, kind: str = "cubic"
+) -> AnalysisResult:
     x, y = _clean(x, y)
     result = AnalysisResult(kind="interpolate", title=f"Interpolation ({kind})")
     if x.size < 2:
@@ -131,7 +154,11 @@ def interpolate(x: Sequence[float], y: Sequence[float], *, num: int = 200, kind:
     order = np.argsort(x)
     x, y = x[order], y[order]
     xi = np.linspace(x.min(), x.max(), max(num, x.size))
-    k = kind if kind in ("linear", "nearest", "zero", "slinear", "quadratic", "cubic") else "linear"
+    k = (
+        kind
+        if kind in ("linear", "nearest", "zero", "slinear", "quadratic", "cubic")
+        else "linear"
+    )
     if k in ("quadratic", "cubic") and x.size < 4:
         k = "linear"
     try:
@@ -148,16 +175,21 @@ def interpolate(x: Sequence[float], y: Sequence[float], *, num: int = 200, kind:
     return result
 
 
-def baseline_polynomial(x: Sequence[float], y: Sequence[float], *, degree: int = 3) -> AnalysisResult:
+def baseline_polynomial(
+    x: Sequence[float], y: Sequence[float], *, degree: int = 3
+) -> AnalysisResult:
     x, y = _clean(x, y)
     if x.size <= degree:
-        result = AnalysisResult(kind="baseline", title=f"Polynomial Baseline (deg {degree})")
+        result = AnalysisResult(
+            kind="baseline", title=f"Polynomial Baseline (deg {degree})"
+        )
         result.notes = "Not enough points."
         return result
     coeffs = np.polyfit(x, y, degree)
     baseline = np.polyval(coeffs, x)
-    return _baseline_result(x, y, baseline, f"Polynomial Baseline (deg {degree})",
-                            Degree=float(degree))
+    return _baseline_result(
+        x, y, baseline, f"Polynomial Baseline (deg {degree})", Degree=float(degree)
+    )
 
 
 def _baseline_result(
@@ -189,7 +221,12 @@ def baseline_linear(x: Sequence[float], y: Sequence[float]) -> AnalysisResult:
 
 
 def baseline_als(
-    x: Sequence[float], y: Sequence[float], *, lam: float = 1e5, p: float = 0.01, niter: int = 10
+    x: Sequence[float],
+    y: Sequence[float],
+    *,
+    lam: float = 1e5,
+    p: float = 0.01,
+    niter: int = 10,
 ) -> AnalysisResult:
     """Asymmetric least squares baseline (Eilers & Boelens, 2005).
 
@@ -215,11 +252,20 @@ def baseline_als(
         weight_matrix = sparse.spdiags(weights, 0, n, n)
         baseline = spsolve((weight_matrix + penalty).tocsc(), weights * y)
         weights = p * (y > baseline) + (1.0 - p) * (y < baseline)
-    return _baseline_result(x, y, np.asarray(baseline), "Baseline (ALS)",
-                            Lambda=float(lam), p=float(p), Iterations=float(niter))
+    return _baseline_result(
+        x,
+        y,
+        np.asarray(baseline),
+        "Baseline (ALS)",
+        Lambda=float(lam),
+        p=float(p),
+        Iterations=float(niter),
+    )
 
 
-def baseline_rolling_ball(x: Sequence[float], y: Sequence[float], *, radius: int = 50) -> AnalysisResult:
+def baseline_rolling_ball(
+    x: Sequence[float], y: Sequence[float], *, radius: int = 50
+) -> AnalysisResult:
     """Morphological (grey-scale opening) baseline — a rolling ball under the signal."""
     from scipy import ndimage
 
@@ -232,7 +278,9 @@ def baseline_rolling_ball(x: Sequence[float], y: Sequence[float], *, radius: int
     if size % 2 == 0:
         size += 1
     baseline = ndimage.grey_opening(y, size=size)
-    return _baseline_result(x, y, baseline, "Baseline (rolling ball)", Radius=float(radius))
+    return _baseline_result(
+        x, y, baseline, "Baseline (rolling ball)", Radius=float(radius)
+    )
 
 
 def baseline_rubber_band(x: Sequence[float], y: Sequence[float]) -> AnalysisResult:
@@ -262,11 +310,15 @@ def _lower_hull(xs: np.ndarray, ys: np.ndarray) -> tuple[np.ndarray, np.ndarray]
     return hull_x, hull_y
 
 
-def _cross(o: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:
+def _cross(
+    o: tuple[float, float], a: tuple[float, float], b: tuple[float, float]
+) -> float:
     return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
 
 
-def baseline_median(x: Sequence[float], y: Sequence[float], *, window: int = 51) -> AnalysisResult:
+def baseline_median(
+    x: Sequence[float], y: Sequence[float], *, window: int = 51
+) -> AnalysisResult:
     """Median-filter baseline; robust to narrow peaks, so good for a first pass."""
     from scipy import signal as _signal
 
@@ -285,13 +337,25 @@ def baseline_median(x: Sequence[float], y: Sequence[float], *, window: int = 51)
 
 #: Baseline methods accepted by :func:`baseline_correction`, in menu order.
 BASELINE_METHODS = (
-    "Polynomial", "Linear", "ALS", "Rolling ball", "Rubber band", "Median",
+    "Polynomial",
+    "Linear",
+    "ALS",
+    "Rolling ball",
+    "Rubber band",
+    "Median",
 )
 
 
 def baseline_correction(
-    x: Sequence[float], y: Sequence[float], *, method: str = "Polynomial",
-    degree: int = 3, lam: float = 1e5, p: float = 0.01, radius: int = 50, window: int = 51,
+    x: Sequence[float],
+    y: Sequence[float],
+    *,
+    method: str = "Polynomial",
+    degree: int = 3,
+    lam: float = 1e5,
+    p: float = 0.01,
+    radius: int = 50,
+    window: int = 51,
 ) -> AnalysisResult:
     """Dispatch to a named baseline method (shared by the dialog and recipes)."""
     key = (method or "Polynomial").strip().lower()
@@ -319,10 +383,20 @@ _BASELINE_BY_OPERATION = {
 }
 
 _OPERATIONS = (
-    "Smooth (Savitzky-Golay)", "Moving Average", "Low-pass Filter", "High-pass Filter",
-    "FFT Spectrum", "Derivative", "Integrate", "Interpolate", "Baseline (polynomial)",
-    "Baseline (linear)", "Baseline (ALS)", "Baseline (rolling ball)",
-    "Baseline (rubber band)", "Baseline (median)",
+    "Smooth (Savitzky-Golay)",
+    "Moving Average",
+    "Low-pass Filter",
+    "High-pass Filter",
+    "FFT Spectrum",
+    "Derivative",
+    "Integrate",
+    "Interpolate",
+    "Baseline (polynomial)",
+    "Baseline (linear)",
+    "Baseline (ALS)",
+    "Baseline (rolling ball)",
+    "Baseline (rubber band)",
+    "Baseline (median)",
 )
 
 
@@ -362,15 +436,33 @@ def run_operation(
     if name in _BASELINE_BY_OPERATION or baseline_method is not None:
         method = baseline_method or _BASELINE_BY_OPERATION.get(name, name)
         return baseline_correction(
-            x, y, method=method, degree=order, lam=lam, radius=window, window=window,
+            x,
+            y,
+            method=method,
+            degree=order,
+            lam=lam,
+            radius=window,
+            window=window,
         )
     return baseline_polynomial(x, y, degree=order)
 
 
 __all__ = [
-    "fft_spectrum", "smooth_savgol", "smooth_moving_average", "butter_filter",
-    "differentiate", "integrate_curve", "interpolate", "baseline_polynomial",
-    "baseline_linear", "baseline_als", "baseline_rolling_ball",
-    "baseline_rubber_band", "baseline_median", "baseline_correction",
-    "BASELINE_METHODS", "run_operation", "operations",
+    "fft_spectrum",
+    "smooth_savgol",
+    "smooth_moving_average",
+    "butter_filter",
+    "differentiate",
+    "integrate_curve",
+    "interpolate",
+    "baseline_polynomial",
+    "baseline_linear",
+    "baseline_als",
+    "baseline_rolling_ball",
+    "baseline_rubber_band",
+    "baseline_median",
+    "baseline_correction",
+    "BASELINE_METHODS",
+    "run_operation",
+    "operations",
 ]

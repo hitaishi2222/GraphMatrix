@@ -9,13 +9,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+
 from ..journals import export_rcparams, figure_size
 from ..model import Graph, PlotStyle, Project, Z_STYLES, is_3d_style
 from ..plotting import auto_axis_labels, grid_xyz, resolve_layer
 
 _PALETTE = (
-    "#1f77b4", "#d62728", "#2ca02c", "#9467bd",
-    "#ff7f0e", "#17becf", "#8c564b", "#e377c2",
+    "#1f77b4",
+    "#d62728",
+    "#2ca02c",
+    "#9467bd",
+    "#ff7f0e",
+    "#17becf",
+    "#8c564b",
+    "#e377c2",
 )
 
 #: Plot-theme (canvas) colours mirrored from ``ui.theme`` so export stays
@@ -91,19 +99,28 @@ def export_graph(
     )
     with mpl.rc_context(rc):
         fig = plt.figure(figsize=figsize, dpi=dpi)
-        ax_left = fig.add_subplot(111, projection="3d") if use_3d else fig.add_subplot(111)
+        rows = max(1, int(getattr(graph, "layout_rows", 1) or 1))
+        cols = max(1, int(getattr(graph, "layout_cols", 1) or 1))
+        if use_3d:
+            axes = [fig.add_subplot(111, projection="3d")]
+        elif rows * cols > 1:
+            grid = fig.subplots(rows, cols, squeeze=False)
+            axes = [ax for row in grid for ax in row]
+        else:
+            axes = [fig.add_subplot(111)]
         plot_theme = getattr(graph, "plot_theme", "")
         _colors = _PLOT_THEME_COLORS.get(plot_theme)
         if _colors is not None:
             bg, fg = _colors
             fig.patch.set_facecolor(bg)
-            ax_left.set_facecolor(bg)
-            ax_left.tick_params(colors=fg)
-            ax_left.xaxis.label.set_color(fg)
-            ax_left.yaxis.label.set_color(fg)
-            for spine in ax_left.spines.values():
-                spine.set_color(fg)
-        _render_figure(fig, ax_left, graph, project)
+            for ax in axes:
+                ax.set_facecolor(bg)
+                ax.tick_params(colors=fg)
+                ax.xaxis.label.set_color(fg)
+                ax.yaxis.label.set_color(fg)
+                for spine in ax.spines.values():
+                    spine.set_color(fg)
+        _render_figure(fig, axes, graph, project)
         fmt = path.suffix.lower().lstrip(".") if path.suffix else "pdf"
         if fmt == "tiff":
             fmt = "tif"
@@ -115,16 +132,29 @@ def export_graph(
             raise ValueError(
                 f"Unsupported export format '.{fmt}'. Choose one of: {supported}."
             )
-        fig.savefig(path, format=fmt, dpi=dpi, transparent=transparent, bbox_inches="tight")
+        fig.savefig(
+            path, format=fmt, dpi=dpi, transparent=transparent, bbox_inches="tight"
+        )
         plt.close(fig)
     return path
 
 
-def _render_figure(fig, ax_left, graph: Graph, project: Project) -> None:
-    """Draw every layer, plot, reference line, and annotation onto ``ax_left``."""
-    ax_right = None
+def _render_figure(fig, axes, graph: Graph, project: Project) -> None:
+    """Draw each layer onto its own panel, honouring the graph's layout type."""
+    if not axes:
+        return
+    single_panel = len(axes) == 1
+    graph_type = getattr(graph, "graph_type", "simple")
+    right_axes: dict[int, object] = {}
+    offset_panels = graph_type in ("stack", "x-twin")
+    y_delta = float(getattr(graph, "y_delta", 0.0) or 0.0)
 
-    for layer in graph.layers:
+    for panel_index, layer in enumerate(graph.layers):
+        axis_index = 0 if single_panel else min(panel_index, len(axes) - 1)
+        ax_left = axes[axis_index]
+        ax_right = right_axes.get(axis_index)
+        offset = panel_index * y_delta if offset_panels else 0.0
+
         if layer.x_scale.value == "log":
             ax_left.set_xscale("log")
         if layer.y_scale.value == "log":
@@ -135,15 +165,34 @@ def _render_figure(fig, ax_left, graph: Graph, project: Project) -> None:
         series = resolve_layer(project, layer)
         for plot_index, (spec, data) in enumerate(zip(layer.plots, series)):
             color = spec.color or _PALETTE[plot_index % len(_PALETTE)]
-            _z_label = getattr(layer, "z_label", "") or getattr(data, "z_label", "") or "Value"
+            _z_label = (
+                getattr(layer, "z_label", "") or getattr(data, "z_label", "") or "Value"
+            )
             if getattr(spec, "y_axis", "left") == "right":
                 if ax_right is None:
                     ax_right = ax_left.twinx()
+                    right_axes[axis_index] = ax_right
                     if layer.y_scale.value == "log":
                         ax_right.set_yscale("log")
-                _draw(ax_right, spec, data, color, fig=fig, z_label=_z_label)
+                _draw(
+                    ax_right,
+                    spec,
+                    data,
+                    color,
+                    fig=fig,
+                    z_label=_z_label,
+                    y_offset=offset,
+                )
             else:
-                _draw(ax_left, spec, data, color, fig=fig, z_label=_z_label)
+                _draw(
+                    ax_left,
+                    spec,
+                    data,
+                    color,
+                    fig=fig,
+                    z_label=_z_label,
+                    y_offset=offset,
+                )
 
         label_kwargs = {}
         if getattr(layer, "label_font_family", ""):
@@ -153,21 +202,14 @@ def _render_figure(fig, ax_left, graph: Graph, project: Project) -> None:
             label_kwargs["color"] = layer.label_color
 
         x_label, y_label = auto_axis_labels(project, layer)
-        if x_label:
+        last_panel = panel_index == len(graph.layers) - 1
+        if x_label and not (graph_type == "stack" and not last_panel):
             ax_left.set_xlabel(x_label, **label_kwargs)
-        if y_label and not ax_left.get_ylabel():
+        if y_label and not (graph_type == "x-twin" and panel_index != 0):
             ax_left.set_ylabel(y_label, **label_kwargs)
         if layer.y2_label and ax_right is not None:
             ax_right.set_ylabel(layer.y2_label, **label_kwargs)
 
-        if getattr(graph, "title", ""):
-            title_kwargs = {}
-            if getattr(graph, "title_font_family", ""):
-                title_kwargs["fontfamily"] = graph.title_font_family
-            title_kwargs["fontsize"] = getattr(graph, "title_font_size", 14.0) or 14.0
-            if getattr(graph, "title_color", ""):
-                title_kwargs["color"] = graph.title_color
-            ax_left.set_title(graph.title, **title_kwargs)
         if layer.x_min is not None or layer.x_max is not None:
             ax_left.set_xlim(left=layer.x_min, right=layer.x_max)
         if layer.y_min is not None or layer.y_max is not None:
@@ -186,67 +228,146 @@ def _render_figure(fig, ax_left, graph: Graph, project: Project) -> None:
 
         for ref in getattr(layer, "ref_lines", []):
             style = _linestyle(ref.line_style)
+            position = (
+                ref.position + offset
+                if ref.orientation == "h" and offset
+                else ref.position
+            )
             if ref.orientation == "v":
-                line = ax_left.axvline(ref.position, color=ref.color, linewidth=ref.width,
-                                       linestyle=style)
+                line = ax_left.axvline(
+                    position, color=ref.color, linewidth=ref.width, linestyle=style
+                )
             else:
-                line = ax_left.axhline(ref.position, color=ref.color, linewidth=ref.width,
-                                       linestyle=style)
+                line = ax_left.axhline(
+                    position, color=ref.color, linewidth=ref.width, linestyle=style
+                )
             if ref.label:
                 _label_reference_line(ax_left, ref, line)
 
-    if graph.layers and graph.layers[0].show_legend:
-        handles, labels = ax_left.get_legend_handles_labels()
-        if ax_right is not None:
-            h2, l2 = ax_right.get_legend_handles_labels()
-            handles, labels = handles + h2, labels + l2
-        if labels:
-            ax_left.legend(handles, labels, loc="best", frameon=False)
+        if getattr(layer, "show_legend", True):
+            handles, labels = ax_left.get_legend_handles_labels()
+            if ax_right is not None:
+                h2, l2 = ax_right.get_legend_handles_labels()
+                handles, labels = handles + h2, labels + l2
+            if labels:
+                ax_left.legend(handles, labels, loc="best", frameon=False)
 
     for annotation in getattr(graph, "annotations", []):
-        ax_left.text(annotation.x, annotation.y, annotation.text, transform=ax_left.transAxes,
-                     color=annotation.color, fontsize=annotation.size, ha="left", va="top")
+        axes[0].text(
+            annotation.x,
+            annotation.y,
+            annotation.text,
+            transform=axes[0].transAxes,
+            color=annotation.color,
+            fontsize=annotation.size,
+            ha="left",
+            va="top",
+        )
 
     if graph.title:
-        fig.suptitle(graph.title)
+        title_kwargs = {}
+        if getattr(graph, "title_font_family", ""):
+            title_kwargs["fontfamily"] = graph.title_font_family
+        title_kwargs["fontsize"] = getattr(graph, "title_font_size", 14.0) or 14.0
+        if getattr(graph, "title_color", ""):
+            title_kwargs["color"] = graph.title_color
+        fig.suptitle(graph.title, **title_kwargs)
 
-    fig.tight_layout()
+    try:
+        fig.tight_layout()
+    except Exception:  # noqa: BLE001 - 3D/tight-layout combinations can fail
+        pass
+    if len(axes) > 1:
+        try:
+            fig.subplots_adjust(
+                wspace=max(
+                    0.0, float(getattr(graph, "panel_gap_x", 12.0) or 0.0) / 100.0
+                ),
+                hspace=max(
+                    0.0, float(getattr(graph, "panel_gap_y", 12.0) or 0.0) / 100.0
+                ),
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
 
-def _draw(ax, spec, data, color, fig=None, z_label="") -> None:
+def _draw(ax, spec, data, color, fig=None, z_label="", y_offset=0.0) -> None:
     style = PlotStyle(spec.style)
     label = data.legend or None
     x, y = data.x, data.y
+    if y_offset:
+        y = np.asarray(y, dtype=float) + y_offset
     ls = _linestyle(getattr(spec, "line_style", "solid"))
 
     if style in Z_STYLES:
         render_xyz_mpl(
-            ax, fig, style, data, cmap=getattr(spec, "cmap", "viridis"),
-            color=color, width=spec.line_width, symbol=spec.symbol,
-            symbol_size=spec.symbol_size, line_style=ls, label=label,
+            ax,
+            fig,
+            style,
+            data,
+            cmap=getattr(spec, "cmap", "viridis"),
+            color=color,
+            width=spec.line_width,
+            symbol=spec.symbol,
+            symbol_size=spec.symbol_size,
+            line_style=ls,
+            label=label,
             z_label=z_label or (getattr(data, "z_label", "") or "Value"),
         )
         return
 
     if style is PlotStyle.SCATTER:
-        ax.plot(x, y, linestyle="none", marker=spec.symbol, markersize=spec.symbol_size * 0.6,
-                color=color, label=label)
+        ax.plot(
+            x,
+            y,
+            linestyle="none",
+            marker=spec.symbol,
+            markersize=spec.symbol_size * 0.6,
+            color=color,
+            label=label,
+        )
     elif style is PlotStyle.LINE:
         ax.plot(x, y, color=color, linewidth=spec.line_width, linestyle=ls, label=label)
     elif style is PlotStyle.LINE_SYMBOL:
-        ax.plot(x, y, color=color, linewidth=spec.line_width, marker=spec.symbol,
-                markersize=spec.symbol_size * 0.6, linestyle=ls, label=label)
+        ax.plot(
+            x,
+            y,
+            color=color,
+            linewidth=spec.line_width,
+            marker=spec.symbol,
+            markersize=spec.symbol_size * 0.6,
+            linestyle=ls,
+            label=label,
+        )
     elif style is PlotStyle.BAR:
         ax.bar(x, y, color=color, label=label)
     elif style is PlotStyle.AREA:
         ax.fill_between(x, y, alpha=0.3, color=color)
         ax.plot(x, y, color=color, linewidth=spec.line_width, linestyle=ls, label=label)
     elif style is PlotStyle.STEP:
-        ax.step(x, y, where="mid", color=color, linewidth=spec.line_width, linestyle=ls, label=label)
+        ax.step(
+            x,
+            y,
+            where="mid",
+            color=color,
+            linewidth=spec.line_width,
+            linestyle=ls,
+            label=label,
+        )
     elif style is PlotStyle.ERRORBAR:
-        ax.errorbar(x, y, yerr=data.yerr, xerr=data.xerr, color=color,
-                    linewidth=spec.line_width, linestyle=ls, marker=spec.symbol,
-                    markersize=spec.symbol_size * 0.6, capsize=3, label=label)
+        ax.errorbar(
+            x,
+            y,
+            yerr=data.yerr,
+            xerr=data.xerr,
+            color=color,
+            linewidth=spec.line_width,
+            linestyle=ls,
+            marker=spec.symbol,
+            markersize=spec.symbol_size * 0.6,
+            capsize=3,
+            label=label,
+        )
 
 
 def _label_reference_line(ax, ref, line) -> None:
@@ -258,11 +379,26 @@ def _label_reference_line(ax, ref, line) -> None:
         return
     pad = 0.01 * (ymax - ymin if ymax != ymin else 1.0)
     if ref.orientation == "v":
-        ax.text(ref.position, ymax - pad, ref.label, color=ref.color, fontsize=8,
-                ha="left", va="top", rotation=90)
+        ax.text(
+            ref.position,
+            ymax - pad,
+            ref.label,
+            color=ref.color,
+            fontsize=8,
+            ha="left",
+            va="top",
+            rotation=90,
+        )
     else:
-        ax.text(xmax, ref.position, ref.label, color=ref.color, fontsize=8,
-                ha="right", va="bottom")
+        ax.text(
+            xmax,
+            ref.position,
+            ref.label,
+            color=ref.color,
+            fontsize=8,
+            ha="right",
+            va="bottom",
+        )
 
 
 _CBAR_DEFAULT_CMAP = "viridis"
@@ -313,11 +449,24 @@ def render_xyz_mpl(
     if style is PlotStyle.COLOR_SCATTER:
         if data.z is None:
             # No colour column: degrade to a plain scatter.
-            ax.scatter(data.x, data.y, s=ms * 55, c=color or None, label=label,
-                       marker=symbol or "o")
+            ax.scatter(
+                data.x,
+                data.y,
+                s=ms * 55,
+                c=color or None,
+                label=label,
+                marker=symbol or "o",
+            )
             return
-        sc = ax.scatter(data.x, data.y, c=data.z, cmap=cmap,
-                        s=ms * 55, marker=symbol or "o", label=label)
+        sc = ax.scatter(
+            data.x,
+            data.y,
+            c=data.z,
+            cmap=cmap,
+            s=ms * 55,
+            marker=symbol or "o",
+            label=label,
+        )
         _finish_colorbar(sc, z_label)
         return
 
@@ -354,9 +503,15 @@ def render_xyz_mpl(
             return
         # SURFACE3D
         gx, gy, grid = grid_xyz(data.x, data.y, z)
-        surface = ax.plot_surface(gx, gy, grid, cmap=cmap, linewidth=0.1,
-                                  antialiased=True,
-                                  color=color or None)
+        surface = ax.plot_surface(
+            gx,
+            gy,
+            grid,
+            cmap=cmap,
+            linewidth=0.1,
+            antialiased=True,
+            color=color or None,
+        )
         _finish_colorbar(surface, z_label)
         return
 

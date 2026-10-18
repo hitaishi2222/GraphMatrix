@@ -9,9 +9,21 @@ pytest.importorskip("PySide6")
 from graphmatrix.ui import theme  # noqa: E402
 
 _TOKEN_KEYS = {
-    "window", "panel", "base", "alt", "border", "text", "muted", "accent",
-    "accent_text", "hover", "disabled", "canvas_bg", "canvas_fg",
-    "canvas_grid", "danger",
+    "window",
+    "panel",
+    "base",
+    "alt",
+    "border",
+    "text",
+    "muted",
+    "accent",
+    "accent_text",
+    "hover",
+    "disabled",
+    "canvas_bg",
+    "canvas_fg",
+    "canvas_grid",
+    "danger",
 }
 
 
@@ -26,10 +38,17 @@ def test_every_preset_has_the_same_palette_tokens():
 
 
 def test_dark_and_modern_flags():
-    assert theme.PRESETS["classic-dark"].dark and not theme.PRESETS["classic-dark"].modern
-    assert not theme.PRESETS["classic-light"].dark and not theme.PRESETS["classic-light"].modern
+    assert (
+        theme.PRESETS["classic-dark"].dark and not theme.PRESETS["classic-dark"].modern
+    )
+    assert (
+        not theme.PRESETS["classic-light"].dark
+        and not theme.PRESETS["classic-light"].modern
+    )
     assert theme.PRESETS["modern-dark"].dark and theme.PRESETS["modern-dark"].modern
-    assert not theme.PRESETS["modern-light"].dark and theme.PRESETS["modern-light"].modern
+    assert (
+        not theme.PRESETS["modern-light"].dark and theme.PRESETS["modern-light"].modern
+    )
 
 
 def test_unknown_preset_falls_back_to_default():

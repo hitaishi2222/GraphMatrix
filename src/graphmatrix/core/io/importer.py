@@ -53,7 +53,9 @@ def _read_hdf5(path: Path) -> Worksheet:
     import h5py
 
     with h5py.File(path, "r") as handle:
-        dataset_name = next((k for k in handle.keys() if isinstance(handle[k], h5py.Dataset)), None)
+        dataset_name = next(
+            (k for k in handle.keys() if isinstance(handle[k], h5py.Dataset)), None
+        )
         if dataset_name is None:
             raise ImportError_(f"no dataset found in {path.name}")
         array = np.asarray(handle[dataset_name])
@@ -62,7 +64,9 @@ def _read_hdf5(path: Path) -> Worksheet:
         sheet.add_column("Y1", ColumnType.Y, array)
     else:
         for col in range(array.shape[1]):
-            sheet.add_column(f"C{col + 1}", ColumnType.X if col == 0 else ColumnType.Y, array[:, col])
+            sheet.add_column(
+                f"C{col + 1}", ColumnType.X if col == 0 else ColumnType.Y, array[:, col]
+            )
     return sheet
 
 
@@ -105,7 +109,9 @@ def import_file(path: str | Path) -> Workbook:
     return book
 
 
-def export_delimited(sheet: Worksheet, path: str | Path, *, delimiter: str = ",") -> Path:
+def export_delimited(
+    sheet: Worksheet, path: str | Path, *, delimiter: str = ","
+) -> Path:
     from . import delimited
 
     return delimited.write_sheet(sheet, path, delimiter=delimiter)

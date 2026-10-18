@@ -47,8 +47,8 @@ def make_spectra_csv(path: Path, seed: int = 7) -> None:
     x = np.linspace(0, 100, 400)
     y = (
         0.3
-        + 1.8 * np.exp(-0.5 * ((x - 30) / 3.5) ** 2)   # peak 1
-        + 1.2 * np.exp(-0.5 * ((x - 62) / 5.0) ** 2)   # peak 2
+        + 1.8 * np.exp(-0.5 * ((x - 30) / 3.5) ** 2)  # peak 1
+        + 1.2 * np.exp(-0.5 * ((x - 62) / 5.0) ** 2)  # peak 2
         + rng.normal(0, 0.02, x.size)
     )
     z = y * (1.0 + x / 200.0)  # colour-mapping demo column
@@ -96,8 +96,11 @@ def parse(result):
 
 
 def block(payload) -> str:
-    text = json.dumps(payload, indent=2, ensure_ascii=False) if isinstance(
-        payload, (dict, list)) else str(payload)
+    text = (
+        json.dumps(payload, indent=2, ensure_ascii=False)
+        if isinstance(payload, (dict, list))
+        else str(payload)
+    )
     return "\n".join("  " + line for line in text.split("\n")).rstrip()
 
 
@@ -146,8 +149,8 @@ async def demo() -> list[str]:
 
             # ---- run 1: import data, colour-mapped scatter (M10), save ------
             code_import = f"""
-api.import_data(r"{DATA / 'spectra.csv'}")
-api.import_data(r"{DATA / 'calibration.csv'}")
+api.import_data(r"{DATA / "spectra.csv"}")
+api.import_data(r"{DATA / "calibration.csv"}")
 
 api.add_graph("Spectrum Colour")
 api.add_plot("Spectrum Colour", _src("spectra"), "X", "Y",
@@ -155,20 +158,29 @@ api.add_plot("Spectrum Colour", _src("spectra"), "X", "Y",
 for g in project.graphs:
     g.first_layer.z_label = "Signal ratio"
 
-api.save(r"{OUT / 'spectra.gm'}")
+api.save(r"{OUT / "spectra.gm"}")
 "books: " + ", ".join(b.name for b in project.workbooks)
 """
-            run1 = parse(await session.call_tool(
-                "run", {"project_id": pid, "code": SRC_HELPER + code_import}))
+            run1 = parse(
+                await session.call_tool(
+                    "run", {"project_id": pid, "code": SRC_HELPER + code_import}
+                )
+            )
             log("run: import + colour-mapped scatter (M10 z/cmap)", run1)
             if not run1["ok"]:
                 raise SystemExit(run1["stderr"])
 
             # ---- run 2: snapshot the raw import (versioning, 46f4c27) -------
-            run2 = parse(await session.call_tool(
-                "run", {"project_id": pid,
+            run2 = parse(
+                await session.call_tool(
+                    "run",
+                    {
+                        "project_id": pid,
                         "code": "project.create_version('v1-import', "
-                                "note='raw spectra + calibration imported')\n'ok'"}))
+                        "note='raw spectra + calibration imported')\n'ok'",
+                    },
+                )
+            )
             log("run: create_version('v1-import')", run2)
 
             # ---- run 3: peak integration (M10) ------------------------------
@@ -176,8 +188,11 @@ api.save(r"{OUT / 'spectra.gm'}")
 peaks = api.find_peaks(_src("spectra"), "X", "Y", prominence=0.4, integrate=True)
 print(peaks.to_text())
 """
-            run3 = parse(await session.call_tool(
-                "run", {"project_id": pid, "code": SRC_HELPER + code_peaks}))
+            run3 = parse(
+                await session.call_tool(
+                    "run", {"project_id": pid, "code": SRC_HELPER + code_peaks}
+                )
+            )
             log("run: find_peaks(integrate=True) — peak integration", run3)
             if run3.get("stdout"):
                 text = block(run3["stdout"])
@@ -194,8 +209,11 @@ print('all-range slope ', repr(bad.parameters[0].display()), ' R2', round(bad.su
 print('fit-region slope', repr(good.parameters[0].display()), ' R2', round(good.summary['R²'], 4))
 print('region:', good.summary.get('Fit region'))
 """
-            run4 = parse(await session.call_tool(
-                "run", {"project_id": pid, "code": SRC_HELPER + code_fit}))
+            run4 = parse(
+                await session.call_tool(
+                    "run", {"project_id": pid, "code": SRC_HELPER + code_fit}
+                )
+            )
             log("run: linear_fit(x_min=40) — numeric fit region", run4)
             if run4.get("stdout"):
                 text = block(run4["stdout"])
@@ -220,11 +238,14 @@ project.restore_version('v1-import')
 print('graphs after restore to v1:', [g.name for g in project.graphs])
 project.restore_version('v2-analysis')
 print('graphs after restore to v2:', [g.name for g in project.graphs])
-api.save(r"{OUT / 'spectra.gm'}")
+api.save(r"{OUT / "spectra.gm"}")
 "done"
 """
-            run5 = parse(await session.call_tool(
-                "run", {"project_id": pid, "code": SRC_HELPER + code_final}))
+            run5 = parse(
+                await session.call_tool(
+                    "run", {"project_id": pid, "code": SRC_HELPER + code_final}
+                )
+            )
             log("run: batch_stats + heatmap + versions + restore", run5)
             if run5.get("stdout"):
                 text = block(run5["stdout"])
@@ -249,7 +270,7 @@ from graphmatrix.core.model import Column, ColumnType, Worksheet
 book = api.add_workbook("Live")
 sheet = Worksheet("Live sensor")
 api.commands.push(AddWorksheetCommand(book, sheet))
-src = LiveFileSource(Path(r"{DATA / 'live_sensor.csv'}"))
+src = LiveFileSource(Path(r"{DATA / "live_sensor.csv"}"))
 for i, name in enumerate(src.columns()):
     col_type = ColumnType.X if i == 0 else ColumnType.Y
     api.commands.push(AddColumnCommand(sheet, Column(name, col_type)))
@@ -267,7 +288,7 @@ n1 = tick()  # batch 1 is already on disk
 # The writer appends batch 2 between polls — a second live tick.
 t2 = 3.0 + np.arange(10) * 0.25
 sig2 = 20.0 + 0.05 * t2 + 2.0 * np.sin(t2 / 3.0) + np.random.default_rng(23).normal(0, 0.2, t2.size)
-with open(r"{DATA / 'live_sensor.csv'}", "a", encoding="utf-8") as fh:
+with open(r"{DATA / "live_sensor.csv"}", "a", encoding="utf-8") as fh:
     fh.writelines(f"{{a:.6g}},{{b:.6g}}\\n" for a, b in zip(t2, sig2))
 n2 = tick()
 
@@ -278,8 +299,11 @@ print(f"ticks appended {{n1}} + {{n2}} rows; sheet rows now {{sheet.num_rows}}")
 print("poly fit N:", fit.summary["N"], "R2:", round(fit.summary["R²"], 4))
 "done"
 """
-            run6 = parse(await session.call_tool(
-                "run", {"project_id": pid, "code": SRC_HELPER + code_live}))
+            run6 = parse(
+                await session.call_tool(
+                    "run", {"project_id": pid, "code": SRC_HELPER + code_live}
+                )
+            )
             log("run: live tailing (M11 LiveFileSource + command appends)", run6)
             if run6.get("stdout"):
                 text = block(run6["stdout"])
@@ -293,11 +317,14 @@ print("poly fit N:", fit.summary["N"], "R2:", round(fit.summary["R²"], 4))
 sheet = project.sheet("Live/Live sensor")
 assert sheet.num_rows == 22, sheet.num_rows
 project.create_version("v3-live", note="live sensor tail (2 ticks) + polynomial fit")
-api.save(r"{OUT / 'spectra.gm'}")
+api.save(r"{OUT / "spectra.gm"}")
 print("live sheet rows:", sheet.num_rows, "| versions:", [v["name"] for v in project.versions])
 """
-            run7 = parse(await session.call_tool(
-                "run", {"project_id": pid, "code": code_persist}))
+            run7 = parse(
+                await session.call_tool(
+                    "run", {"project_id": pid, "code": code_persist}
+                )
+            )
             log("run: live rows persist across MCP calls + save", run7)
             if run7.get("stdout"):
                 text = block(run7["stdout"])
@@ -311,10 +338,18 @@ print("live sheet rows:", sheet.num_rows, "| versions:", [v["name"] for v in pro
             log("summary (now includes versions)", summary)
 
             # ---- export all graphs to PDF --------------------------------------
-            export = parse(await session.call_tool("export", {
-                "project_id": pid, "graphs": "1-3",
-                "out_dir": str(OUT), "format": "pdf", "dpi": 150,
-            }))
+            export = parse(
+                await session.call_tool(
+                    "export",
+                    {
+                        "project_id": pid,
+                        "graphs": "1-3",
+                        "out_dir": str(OUT),
+                        "format": "pdf",
+                        "dpi": 150,
+                    },
+                )
+            )
             log("export graphs 1-3 -> PDF", export)
             if isinstance(export, dict) and not export.get("files"):
                 raise SystemExit(f"export failed: {export}")
@@ -331,8 +366,13 @@ def main() -> int:
     transcript = asyncio.run(demo())
 
     (OUT / "mcp_transcript.txt").write_text(
-        "MCP session transcript (GraphMatrix)\n" + "=" * 60 + "\n"
-        + "\n".join(transcript) + "\n", encoding="utf-8")
+        "MCP session transcript (GraphMatrix)\n"
+        + "=" * 60
+        + "\n"
+        + "\n".join(transcript)
+        + "\n",
+        encoding="utf-8",
+    )
     print(f"\nDone. Outputs in {OUT}")
     return 0
 

@@ -1,0 +1,6 @@
+- Ui fofr different types of Graphs. Like There is no options to select, simple stack 2y x-twin etc anywhere.
+- NO option to delete graphs with right click on graph in tree.
+- We should update tree with options to add things from there it self.
+- According to the graph type it should show the properties we can change in the graph.
+  - If it is a grid gaps should be one of options.
+  - If it is a x-twin stack y-delta should be in optins etc.

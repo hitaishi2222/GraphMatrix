@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from graphmatrix.core.analysis.result import AnalysisResult
 from graphmatrix.core.commands import AddGraphCommand, AddPlotCommand, CommandStack
-from graphmatrix.core.model import ColumnType, Graph, PlotSpec, Project, Workbook, Worksheet
+from graphmatrix.core.model import (
+    ColumnType,
+    Graph,
+    PlotSpec,
+    Project,
+    Workbook,
+    Worksheet,
+)
 from graphmatrix.core.provenance import ProvenanceLog, format_summary
 
 
@@ -33,14 +40,19 @@ def test_described_commands_are_recorded():
     log.attach(stack)
     graph = Graph("Graph1")
     stack.push(AddGraphCommand(project, graph))
-    stack.push(AddPlotCommand(graph, graph.first_layer, PlotSpec("Book1/Sheet1", "X1", "Y1")))
+    stack.push(
+        AddPlotCommand(graph, graph.first_layer, PlotSpec("Book1/Sheet1", "X1", "Y1"))
+    )
     assert any("Plotted" in entry.text for entry in log.entries)
 
 
 def test_methods_markdown_groups_into_sections():
     log = ProvenanceLog()
     log.record_import("run42.csv", "Book1")
-    log.record_analysis(AnalysisResult("fit", "Gaussian Fit", summary={"R2": 0.998}), source="Book1/Sheet1")
+    log.record_analysis(
+        AnalysisResult("fit", "Gaussian Fit", summary={"R2": 0.998}),
+        source="Book1/Sheet1",
+    )
     log.record_note("Excluded run 7 — detector glitch")
     md = log.methods_markdown(Project("Demo"))
     assert md.startswith("# Methods — Demo")

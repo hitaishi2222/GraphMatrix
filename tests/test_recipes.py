@@ -31,13 +31,17 @@ def test_recipe_runs_and_roundtrips(tmp_path):
 
 def test_recipe_signal_and_peaks():
     x, y = _decay()
-    assert run_recipe(Recipe("signal", {"operation": "FFT Spectrum"}), x, y).kind == "fft"
+    assert (
+        run_recipe(Recipe("signal", {"operation": "FFT Spectrum"}), x, y).kind == "fft"
+    )
     assert run_recipe(Recipe("descriptive"), x, y).summary["N"] == 200
 
 
 def test_recipe_rejects_unknown_operation(tmp_path):
     path = tmp_path / "bad.json"
-    path.write_text('{"format": "graphmatrix-recipe", "operation": "nonsense"}', encoding="utf-8")
+    path.write_text(
+        '{"format": "graphmatrix-recipe", "operation": "nonsense"}', encoding="utf-8"
+    )
     with pytest.raises(ValueError):
         load_recipe(path)
 
@@ -55,7 +59,9 @@ def test_batch_recipe_pipeline(tmp_path):
     recipe = Recipe("fit", {"model": "Exponential Decay"})
     items = run_recipe_over_files(
         [tmp_path / "f0.csv", tmp_path / "f1.csv", tmp_path / "missing.csv"],
-        recipe, report_dir=reports, export_dir=figures,
+        recipe,
+        report_dir=reports,
+        export_dir=figures,
     )
 
     assert items[0].ok and items[1].ok and not items[2].ok

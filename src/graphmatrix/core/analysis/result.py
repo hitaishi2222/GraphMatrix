@@ -47,7 +47,10 @@ class AnalysisResult:
         if self.parameters:
             lines.append("Parameters:")
             for param in self.parameters:
-                lines.append(f"  {param.name:<16} {param.display()}" + (f"   {param.description}" if param.description else ""))
+                lines.append(
+                    f"  {param.name:<16} {param.display()}"
+                    + (f"   {param.description}" if param.description else "")
+                )
             lines.append("")
         for name, table in self.tables.items():
             lines.append(f"{name}:")

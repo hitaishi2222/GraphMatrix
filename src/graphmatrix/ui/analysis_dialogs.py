@@ -25,7 +25,16 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from graphmatrix.core.analysis import deconvolution, descriptive, fitting, peaks, ranged, regression, signal, statistics
+from graphmatrix.core.analysis import (
+    deconvolution,
+    descriptive,
+    fitting,
+    peaks,
+    ranged,
+    regression,
+    signal,
+    statistics,
+)
 from graphmatrix.core.commands import AddColumnCommand, CommandStack, MacroCommand
 from graphmatrix.core.model import Column, ColumnType, Project, Worksheet
 from graphmatrix.ui.widgets import fill_column_combo, fill_sheet_combo, sheet_label
@@ -34,9 +43,17 @@ from graphmatrix.ui.widgets import fill_column_combo, fill_sheet_combo, sheet_la
 class AnalysisResultDialog(QDialog):
     """Renders an AnalysisResult and can push its curves back into the project."""
 
-    def __init__(self, result, *, project: Project | None = None, commands: CommandStack | None = None,
-                 default_sheet: Worksheet | None = None, add_to_graph=None, add_annotation=None,
-                 parent=None) -> None:
+    def __init__(
+        self,
+        result,
+        *,
+        project: Project | None = None,
+        commands: CommandStack | None = None,
+        default_sheet: Worksheet | None = None,
+        add_to_graph=None,
+        add_annotation=None,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(result.title)
         self.resize(680, 560)
@@ -53,7 +70,9 @@ class AnalysisResultDialog(QDialog):
         layout.addWidget(view)
 
         row = QHBoxLayout()
-        has_curves = bool(result.curves) and project is not None and commands is not None
+        has_curves = (
+            bool(result.curves) and project is not None and commands is not None
+        )
         if has_curves:
             row.addWidget(QLabel("Curves:"))
             self.curve_combo = QComboBox()
@@ -123,8 +142,20 @@ class AnalysisResultDialog(QDialog):
         for name, x, y in self._selected_curves():
             xname = sheet.unique_column_name(f"{name}_X")
             yname = sheet.unique_column_name(f"{name}_Y")
-            commands.append(AddColumnCommand(sheet, Column(xname, ColumnType.X, x), source=sheet_label(self._project, sheet)))
-            commands.append(AddColumnCommand(sheet, Column(yname, ColumnType.Y, y), source=sheet_label(self._project, sheet)))
+            commands.append(
+                AddColumnCommand(
+                    sheet,
+                    Column(xname, ColumnType.X, x),
+                    source=sheet_label(self._project, sheet),
+                )
+            )
+            commands.append(
+                AddColumnCommand(
+                    sheet,
+                    Column(yname, ColumnType.Y, y),
+                    source=sheet_label(self._project, sheet),
+                )
+            )
         self._commands.push(MacroCommand(commands, f"Add {name} columns"))
 
     def _plot_on_graph(self) -> None:
@@ -147,7 +178,9 @@ class _TwoColumnDialog(QDialog):
         fill_sheet_combo(self.sheet_combo, project)
         self.sheet_combo.currentIndexChanged.connect(self._refresh_columns)
         self.form.addRow("Data source:", self.sheet_combo)
-        self._buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self._buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
         self._buttons.accepted.connect(self.accept)
         self._buttons.rejected.connect(self.reject)
         layout = QVBoxLayout(self)
@@ -180,7 +213,9 @@ class DescriptiveDialog(_TwoColumnDialog):
             self.columns.addItem(item)
 
     def run(self):
-        names = [i.data(1) for i in self.columns.selectedItems()] or [c.name for c in self.sheet().columns]
+        names = [i.data(1) for i in self.columns.selectedItems()] or [
+            c.name for c in self.sheet().columns
+        ]
         return descriptive.summarize_columns(self.sheet(), names)
 
 
@@ -220,7 +255,9 @@ class RegressionDialog(_TwoColumnDialog):
         x_min, x_max = number(self.x_min_edit.text()), number(self.x_max_edit.text())
         if self.mode.currentText() == "Linear":
             return regression.linear_fit(x, y, x_min=x_min, x_max=x_max)
-        return regression.polynomial_fit(x, y, self.degree.value(), x_min=x_min, x_max=x_max)
+        return regression.polynomial_fit(
+            x, y, self.degree.value(), x_min=x_min, x_max=x_max
+        )
 
 
 class FitDialog(_TwoColumnDialog):
@@ -246,7 +283,9 @@ class FitDialog(_TwoColumnDialog):
     def _refresh_columns(self):
         fill_column_combo(self.x_combo, self.sheet(), types=(ColumnType.X,))
         fill_column_combo(self.y_combo, self.sheet(), types=(ColumnType.Y,))
-        fill_column_combo(self.yerr_combo, self.sheet(), types=(ColumnType.YERR,), include_none=True)
+        fill_column_combo(
+            self.yerr_combo, self.sheet(), types=(ColumnType.YERR,), include_none=True
+        )
 
     def run(self):
         def number(text):
@@ -255,10 +294,18 @@ class FitDialog(_TwoColumnDialog):
 
         x = self._x_array(self.x_combo.currentData())
         y = self._x_array(self.y_combo.currentData())
-        yerr = self._x_array(self.yerr_combo.currentData()) if self.yerr_combo.currentData() else None
+        yerr = (
+            self._x_array(self.yerr_combo.currentData())
+            if self.yerr_combo.currentData()
+            else None
+        )
         return fitting.fit_model(
-            self.model_combo.currentText(), x, y, yerr=yerr,
-            x_min=number(self.x_min_edit.text()), x_max=number(self.x_max_edit.text()),
+            self.model_combo.currentText(),
+            x,
+            y,
+            yerr=yerr,
+            x_min=number(self.x_min_edit.text()),
+            x_max=number(self.x_max_edit.text()),
         )
 
 
@@ -305,7 +352,9 @@ class DeconvolutionDialog(_TwoColumnDialog):
         self.kind_combo = QComboBox()
         self.kind_combo.addItems(["Gaussian", "Lorentzian"])
         self.centers_edit = QLineEdit()
-        self.centers_edit.setPlaceholderText("comma-separated centres; blank = auto-detect")
+        self.centers_edit.setPlaceholderText(
+            "comma-separated centres; blank = auto-detect"
+        )
         self.x_combo = QComboBox()
         self.y_combo = QComboBox()
         self.form.addRow("Peak shape:", self.kind_combo)
@@ -326,20 +375,39 @@ class DeconvolutionDialog(_TwoColumnDialog):
         if not text:
             return deconvolution.deconvolve_auto(x, y, kind=kind)
         try:
-            centers = [float(part) for part in text.replace(";", ",").split(",") if part.strip()]
+            centers = [
+                float(part)
+                for part in text.replace(";", ",").split(",")
+                if part.strip()
+            ]
         except ValueError:
-            result = deconvolution.AnalysisResult(kind="deconvolution", title="Peak Deconvolution")
-            result.notes = "Could not parse peak centres; enter numbers separated by commas."
+            result = deconvolution.AnalysisResult(
+                kind="deconvolution", title="Peak Deconvolution"
+            )
+            result.notes = (
+                "Could not parse peak centres; enter numbers separated by commas."
+            )
             return result
         return deconvolution.deconvolve(x, y, centers, kind=kind)
 
 
 class SignalDialog(_TwoColumnDialog):
-    OPERATIONS = ["Smooth (Savitzky-Golay)", "Moving Average", "Low-pass Filter",
-                  "High-pass Filter", "FFT Spectrum", "Derivative", "Integrate",
-                  "Interpolate", "Baseline (polynomial)", "Baseline (linear)",
-                  "Baseline (ALS)", "Baseline (rolling ball)", "Baseline (rubber band)",
-                  "Baseline (median)"]
+    OPERATIONS = [
+        "Smooth (Savitzky-Golay)",
+        "Moving Average",
+        "Low-pass Filter",
+        "High-pass Filter",
+        "FFT Spectrum",
+        "Derivative",
+        "Integrate",
+        "Interpolate",
+        "Baseline (polynomial)",
+        "Baseline (linear)",
+        "Baseline (ALS)",
+        "Baseline (rolling ball)",
+        "Baseline (rubber band)",
+        "Baseline (median)",
+    ]
 
     def __init__(self, project, parent=None):
         super().__init__(project, "Signal Processing", parent)
@@ -391,10 +459,15 @@ class SignalDialog(_TwoColumnDialog):
         x = self._x_array(self.x_combo.currentData())
         y = self._x_array(self.y_combo.currentData())
         return signal.run_operation(
-            self.operation.currentText(), x, y,
-            window=self.window.value(), order=self.order.value(),
-            cutoff=self.cutoff.value(), points=self.points.value(),
-            lam=self.lam.value(), baseline_method=self.baseline_method.currentText(),
+            self.operation.currentText(),
+            x,
+            y,
+            window=self.window.value(),
+            order=self.order.value(),
+            cutoff=self.cutoff.value(),
+            points=self.points.value(),
+            lam=self.lam.value(),
+            baseline_method=self.baseline_method.currentText(),
         )
 
 
@@ -435,9 +508,16 @@ class SlopeDialog(_TwoColumnDialog):
 
 
 class StatisticsDialog(_TwoColumnDialog):
-    OPERATIONS = ["Independent t-test", "Paired t-test", "One-sample t-test",
-                  "One-way ANOVA", "Correlation (Pearson)", "Correlation (Spearman)",
-                  "Correlation matrix", "Histogram"]
+    OPERATIONS = [
+        "Independent t-test",
+        "Paired t-test",
+        "One-sample t-test",
+        "One-way ANOVA",
+        "Correlation (Pearson)",
+        "Correlation (Spearman)",
+        "Correlation matrix",
+        "Histogram",
+    ]
 
     def __init__(self, project, parent=None):
         super().__init__(project, "Statistics", parent)
@@ -488,6 +568,10 @@ class StatisticsDialog(_TwoColumnDialog):
         if op == "Correlation (Spearman)":
             return statistics.correlation(a, b, method="spearman")
         if op == "Correlation matrix":
-            names = [i.data(1) for i in self.columns.selectedItems()] or [c.name for c in self.sheet().columns if c.col_type == ColumnType.Y]
-            return statistics.correlation_matrix(names, [self._x_array(n) for n in names])
+            names = [i.data(1) for i in self.columns.selectedItems()] or [
+                c.name for c in self.sheet().columns if c.col_type == ColumnType.Y
+            ]
+            return statistics.correlation_matrix(
+                names, [self._x_array(n) for n in names]
+            )
         return statistics.histogram(a, bins=self.bins.value())

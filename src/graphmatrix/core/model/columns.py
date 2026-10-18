@@ -126,6 +126,39 @@ class Column:
     def extend(self, values: Sequence[Any]) -> None:
         self._data = np.concatenate([self._data, _to_array(values, self._data.dtype)])
 
+    def insert_blanks(self, index: int, count: int = 1) -> None:
+        """Insert ``count`` blank values at ``index``.
+
+        Integer and boolean columns are promoted to float so a blank is a real
+        NaN rather than a wrapped-around sentinel (which numpy would otherwise
+        produce when casting NaN into an integer dtype).
+        """
+        index = max(0, min(int(index), len(self)))
+        count = max(0, int(count))
+        if count == 0:
+            return
+        data = self._data
+        dtype = data.dtype
+        head, tail = data[:index], data[index:]
+        if np.issubdtype(dtype, np.floating):
+            pad = np.full(count, np.nan, dtype=dtype)
+            self._data = np.concatenate([head, pad, tail])
+        elif np.issubdtype(dtype, np.datetime64):
+            pad = np.full(count, np.datetime64("NaT"), dtype=dtype)
+            self._data = np.concatenate([head, pad, tail])
+        elif np.issubdtype(dtype, np.integer) or np.issubdtype(dtype, np.bool_):
+            pad = np.full(count, np.nan)
+            self._data = np.concatenate(
+                [head.astype(float), pad, tail.astype(float)]
+            )
+        else:
+            # String/object columns: use an empty object so blanks are visible
+            # and can later be replaced by text or numbers.
+            pad = np.full(count, "", dtype=object)
+            self._data = np.concatenate(
+                [head.astype(object), pad, tail.astype(object)]
+            )
+
     # -- serialization -------------------------------------------------------
     def to_dict(self, *, include_data: bool = True) -> dict[str, Any]:
         payload: dict[str, Any] = {

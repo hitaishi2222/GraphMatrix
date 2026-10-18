@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sys
 import numpy as np
+
 sys.setrecursionlimit(10000)
 
 from .base import PlotCanvas
@@ -30,7 +31,10 @@ class MatplotlibCanvas(PlotCanvas):
 
     def __init__(self) -> None:
         from matplotlib.figure import Figure
-        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
+        from matplotlib.backends.backend_qtagg import (
+            FigureCanvasQTAgg,
+            NavigationToolbar2QT,
+        )
         from PySide6.QtWidgets import QVBoxLayout, QWidget
 
         self._fig = Figure()
@@ -51,6 +55,8 @@ class MatplotlibCanvas(PlotCanvas):
         lay.addWidget(self._canvas)
         self._grid_rows = 1
         self._grid_cols = 1
+        self._gap_x = 0.0
+        self._gap_y = 0.0
         self._ax_left = self._fig.add_subplot(111)
         self._axes = [self._ax_left]
         self._current_panel = 0
@@ -93,12 +99,26 @@ class MatplotlibCanvas(PlotCanvas):
             self.set_theme(self._last_theme)
         except Exception:
             pass
+        self._apply_gaps()
         self._canvas.draw_idle()
 
     def set_grid(self, rows: int = 1, cols: int = 1) -> None:
         self._grid_rows = max(1, rows)
         self._grid_cols = max(1, cols)
         self.clear()
+
+    def set_panel_gaps(self, h_gap: float = 0.0, v_gap: float = 0.0) -> None:
+        """Set the fractional space between panels (0 = flush, 1 = one panel)."""
+        self._gap_x = max(0.0, float(h_gap or 0.0))
+        self._gap_y = max(0.0, float(v_gap or 0.0))
+        self._apply_gaps()
+        self._canvas.draw_idle()
+
+    def _apply_gaps(self) -> None:
+        try:
+            self._fig.subplots_adjust(wspace=self._gap_x, hspace=self._gap_y)
+        except Exception:  # noqa: BLE001 - no subplots yet / tight layout pending
+            pass
 
     def set_current_panel(self, index: int) -> None:
         if self._axes:
@@ -113,14 +133,17 @@ class MatplotlibCanvas(PlotCanvas):
 
     def plot(
         self,
-        x, y, *,
+        x,
+        y,
+        *,
         style: str = "line",
         color: str = "",
         width: float = 2.0,
         symbol: str = "o",
         symbol_size: float = 7.0,
         name: str | None = None,
-        yerr=None, xerr=None,
+        yerr=None,
+        xerr=None,
         y_axis: str = "left",
         line_style: str = "solid",
         z=None,
@@ -163,14 +186,23 @@ class MatplotlibCanvas(PlotCanvas):
             self._record_series_meta(xs_s, ys_s, rows_s, ax, ms)
             self._series.append((xs_s, ys_s, name or ""))
             render_xyz_mpl(
-                ax, self._fig, plot_style,
+                ax,
+                self._fig,
+                plot_style,
                 SimpleNamespace(
-                    x=xs, y=ys,
-                    z=None if z is None else np.asarray(z, float)[:n], legend=lbl,
+                    x=xs,
+                    y=ys,
+                    z=None if z is None else np.asarray(z, float)[:n],
+                    legend=lbl,
                 ),
-                cmap="viridis", color=col or "",
-                width=width, symbol=symbol, symbol_size=symbol_size,
-                line_style=ls, label=lbl, z_label="Value",
+                cmap="viridis",
+                color=col or "",
+                width=width,
+                symbol=symbol,
+                symbol_size=symbol_size,
+                line_style=ls,
+                label=lbl,
+                z_label="Value",
             )
             try:
                 self._fig.tight_layout()
@@ -180,30 +212,66 @@ class MatplotlibCanvas(PlotCanvas):
             return
 
         if style == "scatter":
-            ax.plot(xs, ys, linestyle="none", marker=marker or "o", markersize=ms,
-                    color=col, label=lbl)
+            ax.plot(
+                xs,
+                ys,
+                linestyle="none",
+                marker=marker or "o",
+                markersize=ms,
+                color=col,
+                label=lbl,
+            )
         elif style == "line":
             ax.plot(xs, ys, color=col, linewidth=width, linestyle=ls, label=lbl)
         elif style == "line+symbol" or style == "line_symbol":
-            ax.plot(xs, ys, color=col, linewidth=width, marker=marker or "o",
-                    markersize=ms, linestyle=ls, label=lbl)
+            ax.plot(
+                xs,
+                ys,
+                color=col,
+                linewidth=width,
+                marker=marker or "o",
+                markersize=ms,
+                linestyle=ls,
+                label=lbl,
+            )
         elif style == "bar":
             ax.bar(xs, ys, color=col, label=lbl)
         elif style == "area":
             ax.fill_between(xs, ys, alpha=0.3, color=col)
             ax.plot(xs, ys, color=col, linewidth=width, linestyle=ls, label=lbl)
         elif style == "step":
-            ax.step(xs, ys, where="mid", color=col, linewidth=width, linestyle=ls, label=lbl)
+            ax.step(
+                xs, ys, where="mid", color=col, linewidth=width, linestyle=ls, label=lbl
+            )
         elif style == "errorbar" or style == "error bar":
-            ax.errorbar(xs, ys, yerr=yerr, xerr=xerr, color=col,
-                        linewidth=width, linestyle=ls, marker=marker or "o",
-                        markersize=ms, capsize=3, label=lbl)
+            ax.errorbar(
+                xs,
+                ys,
+                yerr=yerr,
+                xerr=xerr,
+                color=col,
+                linewidth=width,
+                linestyle=ls,
+                marker=marker or "o",
+                markersize=ms,
+                capsize=3,
+                label=lbl,
+            )
         else:
             ax.plot(xs, ys, color=col, linewidth=width, linestyle=ls, label=lbl)
 
         if yerr is not None and style not in ("errorbar", "error bar"):
-            ax.errorbar(xs, ys, yerr=yerr, color=col, linestyle="none", marker=marker or "o",
-                        markersize=ms, capsize=3, label=None)
+            ax.errorbar(
+                xs,
+                ys,
+                yerr=yerr,
+                color=col,
+                linestyle="none",
+                marker=marker or "o",
+                markersize=ms,
+                capsize=3,
+                label=None,
+            )
 
         self._record_series_meta(xs_s, ys_s, rows_s, ax, ms)
         self._series.append((xs_s, ys_s, name or ""))
@@ -213,13 +281,15 @@ class MatplotlibCanvas(PlotCanvas):
     def _record_series_meta(self, xs, ys, rows, ax, marker_size: float) -> None:
         """Remember where each point lives so clicks and brush overlays can
         map back to worksheet rows."""
-        self._series_meta.append({
-            "xs": np.asarray(xs, dtype=float),
-            "ys": np.asarray(ys, dtype=float),
-            "rows": np.asarray(rows, dtype=int),
-            "ax": ax,
-            "size": max(8.0, float(marker_size) * 2.0),
-        })
+        self._series_meta.append(
+            {
+                "xs": np.asarray(xs, dtype=float),
+                "ys": np.asarray(ys, dtype=float),
+                "rows": np.asarray(rows, dtype=int),
+                "ax": ax,
+                "size": max(8.0, float(marker_size) * 2.0),
+            }
+        )
 
     def set_brush(self, selection: dict[int, list[int]] | None) -> None:
         for artist in self._brush_artists:
@@ -239,11 +309,15 @@ class MatplotlibCanvas(PlotCanvas):
             if not mask.any():
                 continue
             artist = series_meta["ax"].plot(
-                series_meta["xs"][mask], series_meta["ys"][mask],
-                linestyle="none", marker="o",
+                series_meta["xs"][mask],
+                series_meta["ys"][mask],
+                linestyle="none",
+                marker="o",
                 markersize=series_meta["size"],
-                markerfacecolor="none", markeredgecolor="#ff7f0e",
-                markeredgewidth=2.0, zorder=10,
+                markerfacecolor="none",
+                markeredgecolor="#ff7f0e",
+                markeredgewidth=2.0,
+                zorder=10,
             )[0]
             self._brush_artists.append(artist)
         self._canvas.draw_idle()
@@ -263,13 +337,25 @@ class MatplotlibCanvas(PlotCanvas):
             distance = np.hypot(display[:, 0] - px, display[:, 1] - py)
             idx = int(np.argmin(distance))
             if best is None or float(distance[idx]) < best[0]:
-                best = (float(distance[idx]), series_index, int(series_meta["rows"][idx]))
+                best = (
+                    float(distance[idx]),
+                    series_index,
+                    int(series_meta["rows"][idx]),
+                )
         if best is None or best[0] > 12.0:  # within 12 px of a point
             return None
         return best[1], best[2]
 
-    def add_reference_line(self, orientation, position, *, color="#888888",
-                           width=1.5, line_style="dash", label="") -> None:
+    def add_reference_line(
+        self,
+        orientation,
+        position,
+        *,
+        color="#888888",
+        width=1.5,
+        line_style="dash",
+        label="",
+    ) -> None:
         ax = self._ax_left
         ls = _ls(line_style)
         if orientation == "v":
@@ -284,17 +370,34 @@ class MatplotlibCanvas(PlotCanvas):
                 xmin, xmax, ymin, ymax = 0, 1, 0, 1
             pad = 0.01 * (ymax - ymin if ymax != ymin else 1.0)
             if orientation == "v":
-                ax.text(position, ymax - pad, label, color=color, fontsize=8,
-                        ha="left", va="top", rotation=90)
+                ax.text(
+                    position,
+                    ymax - pad,
+                    label,
+                    color=color,
+                    fontsize=8,
+                    ha="left",
+                    va="top",
+                    rotation=90,
+                )
             else:
-                ax.text(xmax, position, label, color=color, fontsize=8,
-                        ha="right", va="bottom")
+                ax.text(
+                    xmax,
+                    position,
+                    label,
+                    color=color,
+                    fontsize=8,
+                    ha="right",
+                    va="bottom",
+                )
         self._canvas.draw_idle()
 
     def set_hover(self, enabled: bool) -> None:
         self._hover_enabled = bool(enabled)
         if enabled and self._hover_cid is None:
-            self._hover_cid = self._canvas.mpl_connect("motion_notify_event", self._on_hover)
+            self._hover_cid = self._canvas.mpl_connect(
+                "motion_notify_event", self._on_hover
+            )
         elif (not enabled) and self._hover_cid is not None:
             self._canvas.mpl_disconnect(self._hover_cid)
             self._hover_cid = None
@@ -303,12 +406,26 @@ class MatplotlibCanvas(PlotCanvas):
 
     def add_annotation(self, text, x, y, *, color="#000000", size=11.0) -> None:
         ax = self._ax_left
-        ax.text(x, y, text, transform=ax.transAxes, color=color, fontsize=size,
-                ha="left", va="top")
+        ax.text(
+            x,
+            y,
+            text,
+            transform=ax.transAxes,
+            color=color,
+            fontsize=size,
+            ha="left",
+            va="top",
+        )
         self._canvas.draw_idle()
 
-    def set_title(self, text: str, *, fontfamily: str = "", fontsize: float = 14.0,
-                  color: str = "") -> None:
+    def set_title(
+        self,
+        text: str,
+        *,
+        fontfamily: str = "",
+        fontsize: float = 14.0,
+        color: str = "",
+    ) -> None:
         kwargs = {"fontsize": fontsize or 14.0}
         if fontfamily:
             kwargs["fontfamily"] = fontfamily
@@ -317,8 +434,16 @@ class MatplotlibCanvas(PlotCanvas):
         self._fig.suptitle(text, **kwargs)
         self._canvas.draw_idle()
 
-    def set_labels(self, *, bottom=None, left=None, right=None,
-                   fontfamily: str = "", fontsize: float = 12.0, color: str = "") -> None:
+    def set_labels(
+        self,
+        *,
+        bottom=None,
+        left=None,
+        right=None,
+        fontfamily: str = "",
+        fontsize: float = 12.0,
+        color: str = "",
+    ) -> None:
         kwargs = {"fontsize": fontsize or 12.0}
         if fontfamily:
             kwargs["fontfamily"] = fontfamily
@@ -396,17 +521,20 @@ class MatplotlibCanvas(PlotCanvas):
         else:
             bg, fg, grid_alpha = colors
         self._fig.patch.set_facecolor(bg)
-        self._ax_left.set_facecolor(bg)
-        if self._ax_right is not None:
-            self._ax_right.set_facecolor(bg)
-        for ax in (self._ax_left, self._ax_right):
+        axes = list(getattr(self, "_axes", []))
+        if self._ax_right is not None and self._ax_right not in axes:
+            axes.append(self._ax_right)
+        for ax in axes:
             if ax is None:
                 continue
+            ax.set_facecolor(bg)
             ax.tick_params(colors=fg)
             if ax.xaxis.label is not None:
                 ax.xaxis.label.set_color(fg)
             if ax.yaxis.label is not None:
                 ax.yaxis.label.set_color(fg)
+            if getattr(ax, "title", None) is not None:
+                ax.title.set_color(fg)
             for spine in ax.spines.values():
                 spine.set_color(fg)
             ax.grid(True, alpha=grid_alpha, color=fg)
@@ -420,8 +548,12 @@ class MatplotlibCanvas(PlotCanvas):
             return
         ax = self._ax_left
         if self._cross_v is None:
-            self._cross_v = ax.axvline(event.xdata, color="gray", linewidth=0.5, alpha=0.5)
-            self._cross_h = ax.axhline(event.ydata, color="gray", linewidth=0.5, alpha=0.5)
+            self._cross_v = ax.axvline(
+                event.xdata, color="gray", linewidth=0.5, alpha=0.5
+            )
+            self._cross_h = ax.axhline(
+                event.ydata, color="gray", linewidth=0.5, alpha=0.5
+            )
         else:
             self._cross_v.set_xdata([event.xdata, event.xdata])
             self._cross_h.set_ydata([event.ydata, event.ydata])
@@ -438,9 +570,16 @@ class MatplotlibCanvas(PlotCanvas):
                         best = (dist, float(xs[cand]), float(ys[cand]), name)
         if best is not None:
             if self._readout is None:
-                self._readout = ax.text(0.02, 0.98, "", transform=ax.transAxes,
-                                        va="top", ha="left", fontsize=9,
-                                        color=ax.xaxis.label.get_color())
+                self._readout = ax.text(
+                    0.02,
+                    0.98,
+                    "",
+                    transform=ax.transAxes,
+                    va="top",
+                    ha="left",
+                    fontsize=9,
+                    color=ax.xaxis.label.get_color(),
+                )
             self._readout.set_text(f"{best[3]}: x={best[1]:.4g}, y={best[2]:.4g}")
         self._canvas.draw_idle()
 
@@ -478,9 +617,11 @@ class MatplotlibCanvas(PlotCanvas):
         try:
             if event.inaxes is not None and callable(self.label_click_callback):
                 # Axis area (not a label) -> focus the axes property group.
-                for name, artist in (("title", getattr(self._fig, "_suptitle", None)),
-                                     ("xlabel", self._ax_left.xaxis.label),
-                                     ("ylabel", self._ax_left.yaxis.label)):
+                for name, artist in (
+                    ("title", getattr(self._fig, "_suptitle", None)),
+                    ("xlabel", self._ax_left.xaxis.label),
+                    ("ylabel", self._ax_left.yaxis.label),
+                ):
                     if artist is not None:
                         contains, _ = artist.contains(event)
                         if contains:

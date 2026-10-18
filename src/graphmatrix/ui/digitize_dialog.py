@@ -78,8 +78,11 @@ class _ImageCanvas(QLabel):
             return
         scale, offset_x, offset_y, drawn_w, drawn_h = self._placement()
         painter = QPainter(self)
-        painter.drawPixmap(QRectF(offset_x, offset_y, drawn_w, drawn_h), self._pixmap,
-                           QRectF(self._pixmap.rect()))
+        painter.drawPixmap(
+            QRectF(offset_x, offset_y, drawn_w, drawn_h),
+            self._pixmap,
+            QRectF(self._pixmap.rect()),
+        )
         for px, py, label, color in self._markers:
             cx = offset_x + px * scale
             cy = offset_y + py * scale
@@ -121,7 +124,9 @@ class DigitizeDialog(QDialog):
         self.load_button.clicked.connect(self._choose_image)
         self.reset_button = QPushButton("Reset Anchors")
         self.reset_button.clicked.connect(self._reset_anchors)
-        self.hint = QLabel("Load an image, then click the calibration points in order: X1, X2, Y1, Y2.")
+        self.hint = QLabel(
+            "Load an image, then click the calibration points in order: X1, X2, Y1, Y2."
+        )
         top.addWidget(self.load_button)
         top.addWidget(self.reset_button)
         top.addWidget(self.hint, 1)
@@ -181,7 +186,9 @@ class DigitizeDialog(QDialog):
         options.addRow("", color_row)
         layout.addLayout(options)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Extract")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -190,7 +197,10 @@ class DigitizeDialog(QDialog):
     # -- anchors -------------------------------------------------------------
     def _choose_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open Image", "", "Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp);;All files (*)"
+            self,
+            "Open Image",
+            "",
+            "Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp);;All files (*)",
         )
         if not path:
             return
@@ -245,10 +255,14 @@ class DigitizeDialog(QDialog):
     def run(self):
         if self._image_path is None:
             raise ValueError("Load an image before extracting.")
-        x_anchors = ((float(self._pixel_spins[0].value()), self._value_spins[0].value()),
-                     (float(self._pixel_spins[1].value()), self._value_spins[1].value()))
-        y_anchors = ((float(self._pixel_spins[2].value()), self._value_spins[2].value()),
-                     (float(self._pixel_spins[3].value()), self._value_spins[3].value()))
+        x_anchors = (
+            (float(self._pixel_spins[0].value()), self._value_spins[0].value()),
+            (float(self._pixel_spins[1].value()), self._value_spins[1].value()),
+        )
+        y_anchors = (
+            (float(self._pixel_spins[2].value()), self._value_spins[2].value()),
+            (float(self._pixel_spins[3].value()), self._value_spins[3].value()),
+        )
         return digitize_curve(
             self._image_path,
             x_anchors=x_anchors,

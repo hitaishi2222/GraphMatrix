@@ -63,7 +63,11 @@ def slope_between(
         residuals = ys - fit
         dof = n - 2
         sxx = float(np.sum((xs - xs.mean()) ** 2))
-        slope_err = float(np.sqrt(np.sum(residuals ** 2) / dof / sxx)) if sxx > 0 else float("nan")
+        slope_err = (
+            float(np.sqrt(np.sum(residuals**2) / dof / sxx))
+            if sxx > 0
+            else float("nan")
+        )
     else:
         slope_err = float("nan")
 

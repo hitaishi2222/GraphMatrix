@@ -56,8 +56,14 @@ def _linear(pixel: float, p_a: float, v_a: float, p_b: float, v_b: float) -> flo
     return v_a + (pixel - p_a) * (v_b - v_a) / (p_b - p_a)
 
 
-def _curve_mask(rgb: np.ndarray, *, threshold: float, invert: bool,
-                color: Sequence[float] | None, tolerance: float) -> np.ndarray:
+def _curve_mask(
+    rgb: np.ndarray,
+    *,
+    threshold: float,
+    invert: bool,
+    color: Sequence[float] | None,
+    tolerance: float,
+) -> np.ndarray:
     if color is not None:
         target = np.asarray(color, dtype=float)
         if target.max() > 1.0 + 1e-9:
@@ -103,7 +109,9 @@ def digitize_curve(
 
     rgb = _load_rgb(image)
     height, width = rgb.shape[:2]
-    mask = _curve_mask(rgb, threshold=threshold, invert=invert, color=color, tolerance=tolerance)
+    mask = _curve_mask(
+        rgb, threshold=threshold, invert=invert, color=color, tolerance=tolerance
+    )
 
     (px_a, vx_a), (px_b, vx_b) = x_anchors
     (py_a, vy_a), (py_b, vy_b) = y_anchors
@@ -112,20 +120,26 @@ def digitize_curve(
     col_lo = max(0, int(math.ceil(min(px_a, px_b))))
     col_hi = min(width - 1, int(math.floor(max(px_a, px_b))))
     if x_start is not None or x_end is not None:
-        xs = np.array([_linear(col_lo, px_a, vx_a, px_b, vx_b),
-                       _linear(col_hi, px_a, vx_a, px_b, vx_b)])
+        xs = np.array(
+            [
+                _linear(col_lo, px_a, vx_a, px_b, vx_b),
+                _linear(col_hi, px_a, vx_a, px_b, vx_b),
+            ]
+        )
         lo_val, hi_val = min(xs), max(xs)
         if x_start is not None:
             lo_val = max(lo_val, x_start)
         if x_end is not None:
             hi_val = min(hi_val, x_end)
         col_lo = max(col_lo, int(math.ceil(_pixel_for(lo_val, px_a, vx_a, px_b, vx_b))))
-        col_hi = min(col_hi, int(math.floor(_pixel_for(hi_val, px_a, vx_a, px_b, vx_b))))
+        col_hi = min(
+            col_hi, int(math.floor(_pixel_for(hi_val, px_a, vx_a, px_b, vx_b)))
+        )
 
     xs: list[float] = []
     ys: list[float] = []
     for col in range(col_lo, col_hi + 1):
-        rows = np.flatnonzero(mask[row_lo:row_hi + 1, col])
+        rows = np.flatnonzero(mask[row_lo : row_hi + 1, col])
         if rows.size == 0:
             continue
         rows = rows + row_lo
@@ -169,7 +183,9 @@ def _pixel_for(value: float, p_a: float, v_a: float, p_b: float, v_b: float) -> 
     return p_a + (value - v_a) * (p_b - p_a) / (v_b - v_a)
 
 
-def anchor_pairs(anchors: Iterable[tuple[float, float]]) -> AnchorPair:  # pragma: no cover - helper
+def anchor_pairs(
+    anchors: Iterable[tuple[float, float]],
+) -> AnchorPair:  # pragma: no cover - helper
     """Coerce a 2-element iterable of ``(pixel, value)`` into an :data:`AnchorPair`."""
     items = list(anchors)
     if len(items) != 2:

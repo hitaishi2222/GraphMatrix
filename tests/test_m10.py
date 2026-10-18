@@ -35,7 +35,7 @@ def make_project() -> tuple[Project, Worksheet]:
     book = Workbook("Book1")
     sheet = Worksheet("Sheet1")
     x = np.linspace(0.0, 10.0, 200)
-    y1 = 2.0 * x + 1.0            # segment of slope 2 below x = 5
+    y1 = 2.0 * x + 1.0  # segment of slope 2 below x = 5
     y2 = (-1.0) * (x - 5.0) + 2.0 * 5.0 + 1.0  # continuing line, slope -1 above
     y = np.where(x < 5.0, y1, y2)
     z = np.sin(x) ** 2
@@ -88,7 +88,7 @@ def test_nonlinear_fit_window():
 def test_peak_integration_single_gaussian_area():
     x = np.linspace(-6.0, 6.0, 400)
     sigma, amplitude = 0.8, 2.0
-    y = amplitude * np.exp(-(x ** 2) / (2 * sigma ** 2))
+    y = amplitude * np.exp(-(x**2) / (2 * sigma**2))
     result = peaks_module.find_peaks_result(x, y, integrate=True)
     row = result.tables["Peaks"][1]
     area = float(row[6])
@@ -99,7 +99,9 @@ def test_peak_integration_single_gaussian_area():
 
 def test_peak_integration_two_peaks():
     x = np.linspace(-6.0, 6.0, 600)
-    y = 2.0 * np.exp(-((x + 2.5) ** 2) / (2 * 0.5)) + 1.5 * np.exp(-((x - 2.5) ** 2) / (2 * 0.5))
+    y = 2.0 * np.exp(-((x + 2.5) ** 2) / (2 * 0.5)) + 1.5 * np.exp(
+        -((x - 2.5) ** 2) / (2 * 0.5)
+    )
     result = peaks_module.find_peaks_result(x, y, integrate=True, prominence=0.3)
     header = result.tables["Peaks"][0]
     assert header[-1] == "Area"
@@ -122,7 +124,18 @@ def test_batch_summary_rows():
     result = batch_summary(project)
     rows = result.tables["Columns"]
     header = rows[0]
-    assert header == ["Sheet", "Column", "Type", "N", "Missing", "Mean", "Std Dev", "Min", "Median", "Max"]
+    assert header == [
+        "Sheet",
+        "Column",
+        "Type",
+        "N",
+        "Missing",
+        "Mean",
+        "Std Dev",
+        "Min",
+        "Median",
+        "Max",
+    ]
     body = rows[1:]
     # Three numeric columns in Sheet1 (X1, Y1, Z1) + V in Sheet2; text excluded.
     assert len(body) == 4
@@ -206,7 +219,9 @@ def test_export_z_styles(tmp_path, style):
     from graphmatrix.core.io.export import export_graph
 
     for ext in ("png", "pdf"):
-        out = export_graph(graph, project, tmp_path / f"fig_{style.replace(' ', '_')}.{ext}")
+        out = export_graph(
+            graph, project, tmp_path / f"fig_{style.replace(' ', '_')}.{ext}"
+        )
         assert out.exists() and out.stat().st_size > 0
 
 
@@ -228,7 +243,9 @@ def test_export_without_z_column_still_renders(tmp_path):
 def test_set_attributes_command_updates_z():
     spec = PlotSpec("B/S", "X1", "Y1")
     stack = CommandStack()
-    stack.push(SetAttributesCommand(spec, "Edit Plot", z="Z1", style=PlotStyle.COLOR_SCATTER))
+    stack.push(
+        SetAttributesCommand(spec, "Edit Plot", z="Z1", style=PlotStyle.COLOR_SCATTER)
+    )
     assert spec.z == "Z1"
     stack.undo()
     assert spec.z == ""
@@ -251,10 +268,12 @@ def test_pyvista_canvas_renders_3d():
     except Exception:  # noqa: BLE001 - no GL in CI
         pytest.skip("PyVista/Qt interactor unavailable in this environment")
     try:
-        canvas.plot([0, 1, 2, 3], [0, 1, 4, 9], style="3d scatter",
-                    z=[1, 2, 3, 4], name="pts")
-        canvas.plot([0, 1, 2, 3], [0, 1, 4, 9], style="3d surface",
-                    z=[1, 2, 3, 4], name="srf")
+        canvas.plot(
+            [0, 1, 2, 3], [0, 1, 4, 9], style="3d scatter", z=[1, 2, 3, 4], name="pts"
+        )
+        canvas.plot(
+            [0, 1, 2, 3], [0, 1, 4, 9], style="3d surface", z=[1, 2, 3, 4], name="srf"
+        )
         canvas.add_reference_line("h", 0.5)
         canvas.set_labels(bottom="Alpha", left="Beta", right="Gamma")
         canvas.set_title("3D test")

@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from graphmatrix.core.model import ColumnType, Project, Workbook, Worksheet
-from graphmatrix.core.plotting import make_default_graph, make_plot_for_column, resolve_plot
+from graphmatrix.core.plotting import (
+    make_default_graph,
+    make_plot_for_column,
+    resolve_plot,
+)
 
 
 def _project() -> tuple[Project, Worksheet]:

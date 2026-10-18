@@ -5,15 +5,34 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from graphmatrix.core.model import Annotation, AxisScale, ColumnType, Graph, PlotSpec, PlotStyle, Project, Workbook, Worksheet
-from graphmatrix.core.templates import apply_template, graph_to_template, load_template, save_template
+from graphmatrix.core.model import (
+    Annotation,
+    AxisScale,
+    ColumnType,
+    Graph,
+    PlotSpec,
+    PlotStyle,
+    Project,
+    Workbook,
+    Worksheet,
+)
+from graphmatrix.core.templates import (
+    apply_template,
+    graph_to_template,
+    load_template,
+    save_template,
+)
 
 
 def _graph(style=PlotStyle.SCATTER, color="#112233", x_scale=AxisScale.LINEAR):
     graph = Graph("G", title="T")
     layer = graph.first_layer
     layer.x_scale = x_scale
-    layer.plots.append(PlotSpec("B/S", "X1", "Y1", style=style, color=color, legend="d", y_axis="right"))
+    layer.plots.append(
+        PlotSpec(
+            "B/S", "X1", "Y1", style=style, color=color, legend="d", y_axis="right"
+        )
+    )
     graph.annotations.append(Annotation("note", color="#ff0000", size=14))
     return graph
 
@@ -32,7 +51,9 @@ def test_apply_template_changes_style_not_data():
 
     target = Graph("G2")
     layer = target.first_layer
-    layer.plots.append(PlotSpec("B/S", "X2", "Y2", style=PlotStyle.LINE, color="#ffffff"))
+    layer.plots.append(
+        PlotSpec("B/S", "X2", "Y2", style=PlotStyle.LINE, color="#ffffff")
+    )
     target.annotations.append(Annotation("other"))
 
     apply_template(target, template)

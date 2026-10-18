@@ -28,6 +28,7 @@ def write(path, text: str) -> None:
 
 # -- LiveFileSource --------------------------------------------------------------
 
+
 def test_header_and_numeric_poll(tmp_path):
     path = tmp_path / "stream.csv"
     write(path, "t,sig\n0.0,1.0\n0.5,2.0\n")
@@ -59,8 +60,8 @@ def test_ragged_and_non_numeric_fields_become_nan(tmp_path):
     rows = src.poll()
     assert len(rows) == 2
     a, b = rows
-    assert a == [5.0, np.nan, np.nan]        # short row padded to header width
-    assert b[0] == 1.0 and np.isnan(b[1])    # non-numeric → NaN
+    assert a == [5.0, np.nan, np.nan]  # short row padded to header width
+    assert b[0] == 1.0 and np.isnan(b[1])  # non-numeric → NaN
     assert looks_numeric("1e-3") and not looks_numeric("NaN_text")
 
 
@@ -83,6 +84,7 @@ def test_blank_lines_skipped(tmp_path):
 
 
 # -- Controller wiring ------------------------------------------------------------
+
 
 class _WindowStub:
     """Minimal stand-in carrying a real project + command stack."""
@@ -143,6 +145,7 @@ def _make_feed() -> "os.PathLike":
 
 
 # -- MainWindow / dialog smoke -----------------------------------------------------
+
 
 def test_dialog_smoke(qapp, tmp_path):
     from graphmatrix.ui.main_window import MainWindow

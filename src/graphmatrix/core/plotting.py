@@ -57,8 +57,9 @@ def resolve_plot(project: Project, spec: PlotSpec) -> ResolvedSeries | None:
     z = zcol.float_data()[:n] if zcol is not None else None
 
     legend = spec.legend or ycol.name
-    return ResolvedSeries(x, y, yerr, xerr, _label(xcol), _label(ycol), legend,
-                          z=z, z_label=_label(zcol))
+    return ResolvedSeries(
+        x, y, yerr, xerr, _label(xcol), _label(ycol), legend, z=z, z_label=_label(zcol)
+    )
 
 
 def resolve_layer(project: Project, layer: Layer) -> list[ResolvedSeries]:
@@ -87,12 +88,20 @@ def first_xy(project: Project) -> tuple[np.ndarray, np.ndarray, str, str] | None
 
     for book in project.workbooks:
         for sheet in book.sheets:
-            xcol = next((c for c in sheet.columns if c.col_type == ColumnType.X and len(c)), None)
-            ycol = next((c for c in sheet.columns if c.col_type == ColumnType.Y and len(c)), None)
+            xcol = next(
+                (c for c in sheet.columns if c.col_type == ColumnType.X and len(c)),
+                None,
+            )
+            ycol = next(
+                (c for c in sheet.columns if c.col_type == ColumnType.Y and len(c)),
+                None,
+            )
             if xcol is not None and ycol is not None and xcol is not ycol:
                 return (
-                    xcol.float_data(), ycol.float_data(),
-                    _label(xcol), _label(ycol),
+                    xcol.float_data(),
+                    ycol.float_data(),
+                    _label(xcol),
+                    _label(ycol),
                 )
     return None
 
@@ -112,11 +121,21 @@ def make_plot_for_column(project: Project, source: str, name: str) -> PlotSpec |
     if column is None:
         return None
     if column.col_type == ColumnType.X:
-        partner = next((c for c in sheet.columns if c.col_type == ColumnType.Y and c is not column), None)
+        partner = next(
+            (
+                c
+                for c in sheet.columns
+                if c.col_type == ColumnType.Y and c is not column
+            ),
+            None,
+        )
         if partner is None:
             return None
         return PlotSpec(source=source, x=name, y=partner.name)
-    partner = next((c for c in sheet.columns if c.col_type == ColumnType.X and c is not column), None)
+    partner = next(
+        (c for c in sheet.columns if c.col_type == ColumnType.X and c is not column),
+        None,
+    )
     if partner is None:
         partner = next((c for c in sheet.columns if c is not column), None)
     if partner is None:
@@ -132,8 +151,14 @@ def make_default_graph(project: Project, name: str) -> Graph | None:
     pair = None
     for book in project.workbooks:
         for sheet in book.sheets:
-            xcol = next((c for c in sheet.columns if c.col_type == ColumnType.X and len(c)), None)
-            ycol = next((c for c in sheet.columns if c.col_type == ColumnType.Y and len(c)), None)
+            xcol = next(
+                (c for c in sheet.columns if c.col_type == ColumnType.X and len(c)),
+                None,
+            )
+            ycol = next(
+                (c for c in sheet.columns if c.col_type == ColumnType.Y and len(c)),
+                None,
+            )
             if xcol is not None and ycol is not None and xcol is not ycol:
                 pair = (f"{book.name}/{sheet.name}", xcol.name, ycol.name)
                 break
@@ -168,8 +193,16 @@ def grid_xyz(
     mask = np.isfinite(x) & np.isfinite(y) & np.isfinite(z)
     x, y, z = x[mask], y[mask], z[mask]
     if x.size < 4 or x.min() >= x.max() or y.min() >= y.max():
-        gx = np.linspace(0, 1, nx) if x.max() <= x.min() else np.linspace(x.min(), x.max(), nx)
-        gy = np.linspace(0, 1, ny) if y.max() <= y.min() else np.linspace(y.min(), y.max(), ny)
+        gx = (
+            np.linspace(0, 1, nx)
+            if x.max() <= x.min()
+            else np.linspace(x.min(), x.max(), nx)
+        )
+        gy = (
+            np.linspace(0, 1, ny)
+            if y.max() <= y.min()
+            else np.linspace(y.min(), y.max(), ny)
+        )
         grid = np.full((ny, nx), np.nan)
         return gx, gy, grid
 
@@ -188,5 +221,12 @@ def grid_xyz(
     return gx, gy, grid
 
 
-__all__ = ["resolve_plot", "resolve_layer", "auto_axis_labels", "first_xy",
-           "make_plot_for_column", "make_default_graph", "grid_xyz"]
+__all__ = [
+    "resolve_plot",
+    "resolve_layer",
+    "auto_axis_labels",
+    "first_xy",
+    "make_plot_for_column",
+    "make_default_graph",
+    "grid_xyz",
+]

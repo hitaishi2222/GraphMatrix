@@ -35,8 +35,16 @@ class Worksheet:
         index: int | None = None,
         mask: Sequence[bool] | None = None,
     ) -> Column:
-        column = Column(name, col_type, data, units=units, comment=comment, dtype=dtype,
-                        decimal=decimal, mask=mask)
+        column = Column(
+            name,
+            col_type,
+            data,
+            units=units,
+            comment=comment,
+            dtype=dtype,
+            decimal=decimal,
+            mask=mask,
+        )
         self.insert_column(column, index=index)
         return column
 
@@ -94,20 +102,16 @@ class Worksheet:
     def ensure_rows(self, count: int) -> None:
         for column in self.columns:
             if len(column) < count:
-                pad = np.full(count - len(column), np.nan, dtype=column.dtype)
-                column.data = np.concatenate([column.data, pad])
+                column.insert_blanks(len(column), count - len(column))
 
     def insert_rows(self, index: int, count: int = 1) -> None:
         for column in self.columns:
-            data = column.data
-            head, tail = data[:index], data[index:]
-            pad = np.full(count, np.nan, dtype=data.dtype if data.size else float)
-            column.data = np.concatenate([head, pad, tail])
+            column.insert_blanks(index, count)
 
     def delete_rows(self, index: int, count: int = 1) -> None:
         for column in self.columns:
             data = column.data
-            column.data = np.concatenate([data[:index], data[index + count:]])
+            column.data = np.concatenate([data[:index], data[index + count :]])
 
     def set_value(self, row: int, column_index: int, value: Any) -> None:
         column = self.columns[column_index]

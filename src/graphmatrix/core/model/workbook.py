@@ -15,8 +15,13 @@ class Workbook:
         self.sheets: list[Worksheet] = []
 
     # -- sheets --------------------------------------------------------------
-    def add_sheet(self, sheet: Worksheet | None = None, *, name: str | None = None,
-                  index: int | None = None) -> Worksheet:
+    def add_sheet(
+        self,
+        sheet: Worksheet | None = None,
+        *,
+        name: str | None = None,
+        index: int | None = None,
+    ) -> Worksheet:
         if sheet is None:
             sheet = Worksheet(name or self.next_sheet_name())
         if index is None:

@@ -23,9 +23,12 @@ def ttest_ind(a: Sequence[float], b: Sequence[float]) -> AnalysisResult:
         return result
     stat, p = stats.ttest_ind(a, b, equal_var=False)
     result.summary = {
-        "t statistic": float(stat), "p-value": float(p),
-        "Mean A": float(np.mean(a)), "Mean B": float(np.mean(b)),
-        "N A": float(a.size), "N B": float(b.size),
+        "t statistic": float(stat),
+        "p-value": float(p),
+        "Mean A": float(np.mean(a)),
+        "Mean B": float(np.mean(b)),
+        "N A": float(a.size),
+        "N B": float(b.size),
     }
     result.notes = "Significant at 0.05" if p < 0.05 else "Not significant at 0.05"
     return result
@@ -40,7 +43,11 @@ def ttest_rel(a: Sequence[float], b: Sequence[float]) -> AnalysisResult:
         result.notes = "Need at least 2 paired points."
         return result
     stat, p = stats.ttest_rel(a, b)
-    result.summary = {"t statistic": float(stat), "p-value": float(p), "N pairs": float(n)}
+    result.summary = {
+        "t statistic": float(stat),
+        "p-value": float(p),
+        "N pairs": float(n),
+    }
     return result
 
 
@@ -52,8 +59,11 @@ def ttest_1samp(a: Sequence[float], popmean: float = 0.0) -> AnalysisResult:
         return result
     stat, p = stats.ttest_1samp(a, popmean)
     result.summary = {
-        "t statistic": float(stat), "p-value": float(p),
-        "Sample mean": float(np.mean(a)), "Pop. mean": float(popmean), "N": float(a.size),
+        "t statistic": float(stat),
+        "p-value": float(p),
+        "Sample mean": float(np.mean(a)),
+        "Pop. mean": float(popmean),
+        "N": float(a.size),
     }
     return result
 
@@ -68,13 +78,26 @@ def anova_oneway(groups: Sequence[Sequence[float]]) -> AnalysisResult:
     stat, p = stats.f_oneway(*cleaned)
     table = [["Group", "N", "Mean", "Std Dev"]]
     for i, g in enumerate(cleaned):
-        table.append([str(i + 1), str(g.size), f"{np.mean(g):.6g}", f"{np.std(g, ddof=1) if g.size > 1 else 0:.6g}"])
+        table.append(
+            [
+                str(i + 1),
+                str(g.size),
+                f"{np.mean(g):.6g}",
+                f"{np.std(g, ddof=1) if g.size > 1 else 0:.6g}",
+            ]
+        )
     result.tables["Groups"] = table
-    result.summary = {"F statistic": float(stat), "p-value": float(p), "Groups": float(len(cleaned))}
+    result.summary = {
+        "F statistic": float(stat),
+        "p-value": float(p),
+        "Groups": float(len(cleaned)),
+    }
     return result
 
 
-def correlation(x: Sequence[float], y: Sequence[float], *, method: str = "pearson") -> AnalysisResult:
+def correlation(
+    x: Sequence[float], y: Sequence[float], *, method: str = "pearson"
+) -> AnalysisResult:
     x, y = np.asarray(x, float), np.asarray(y, float)
     mask = np.isfinite(x) & np.isfinite(y)
     x, y = x[mask], y[mask]
@@ -86,11 +109,18 @@ def correlation(x: Sequence[float], y: Sequence[float], *, method: str = "pearso
         r, p = stats.spearmanr(x, y)
     else:
         r, p = stats.pearsonr(x, y)
-    result.summary = {"r": float(r), "r²": float(r * r), "p-value": float(p), "N": float(x.size)}
+    result.summary = {
+        "r": float(r),
+        "r²": float(r * r),
+        "p-value": float(p),
+        "N": float(x.size),
+    }
     return result
 
 
-def correlation_matrix(names: Sequence[str], columns: Sequence[Sequence[float]]) -> AnalysisResult:
+def correlation_matrix(
+    names: Sequence[str], columns: Sequence[Sequence[float]]
+) -> AnalysisResult:
     data = np.column_stack([np.asarray(c, float) for c in columns])
     result = AnalysisResult(kind="correlation", title="Correlation Matrix")
     corr = np.corrcoef(data, rowvar=False)
@@ -118,6 +148,11 @@ def histogram(data: Sequence[float], *, bins: int = 10) -> AnalysisResult:
 
 
 __all__ = [
-    "ttest_ind", "ttest_rel", "ttest_1samp", "anova_oneway",
-    "correlation", "correlation_matrix", "histogram",
+    "ttest_ind",
+    "ttest_rel",
+    "ttest_1samp",
+    "anova_oneway",
+    "correlation",
+    "correlation_matrix",
+    "histogram",
 ]

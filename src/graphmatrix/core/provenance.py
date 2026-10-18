@@ -58,13 +58,19 @@ class ProvenanceLog:
         self._unsubscribe: Callable[[], None] | None = None
 
     # -- recording -----------------------------------------------------------
-    def record(self, kind: str, text: str, *, detail: str = "", source: str = "") -> ProvenanceEntry:
+    def record(
+        self, kind: str, text: str, *, detail: str = "", source: str = ""
+    ) -> ProvenanceEntry:
         entry = ProvenanceEntry(kind=kind, text=text, detail=detail, source=source)
         self.entries.append(entry)
         return entry
 
-    def record_import(self, path: str | Path, workbook_name: str = "") -> ProvenanceEntry:
-        return self.record("import", f"Imported {Path(path).name}", source=workbook_name)
+    def record_import(
+        self, path: str | Path, workbook_name: str = ""
+    ) -> ProvenanceEntry:
+        return self.record(
+            "import", f"Imported {Path(path).name}", source=workbook_name
+        )
 
     def record_analysis(self, result, source: str = "") -> ProvenanceEntry:
         title = getattr(result, "title", None) or getattr(result, "kind", "Analysis")
@@ -146,7 +152,10 @@ class ProvenanceLog:
 
     # -- serialization -------------------------------------------------------
     def to_dict(self) -> dict[str, Any]:
-        return {"format": "graphmatrix-provenance", "entries": [asdict(e) for e in self.entries]}
+        return {
+            "format": "graphmatrix-provenance",
+            "entries": [asdict(e) for e in self.entries],
+        }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "ProvenanceLog":

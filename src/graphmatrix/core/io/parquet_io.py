@@ -35,7 +35,10 @@ def write_sheet(sheet: Worksheet, path: str | Path) -> Path:
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    columns = {c.name: [c.get(i) if i < len(c) else None for i in range(sheet.num_rows)] for c in sheet.columns}
+    columns = {
+        c.name: [c.get(i) if i < len(c) else None for i in range(sheet.num_rows)]
+        for c in sheet.columns
+    }
     pq.write_table(pa.table(columns), path)
     return path
 

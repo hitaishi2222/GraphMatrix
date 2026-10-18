@@ -60,7 +60,9 @@ class ActionRegistry:
     def specs(self) -> list[ActionSpec]:
         return list(self._specs)
 
-    def build_menus(self, menubar: QMenuBar, *, order: list[str] | None = None) -> dict[str, QMenu]:
+    def build_menus(
+        self, menubar: QMenuBar, *, order: list[str] | None = None
+    ) -> dict[str, QMenu]:
         """Create menus for every spec.menu, in first-seen (or explicit) order."""
         menus: dict[str, QMenu] = {}
         if order:

@@ -35,9 +35,11 @@ def find_peaks_result(
         # (left_bases/right_bases) are always populated: bases are the valleys
         # the peak rises out of and define the integration bounds.
         _indices, props = find_peaks(
-            y, height=height,
+            y,
+            height=height,
             prominence=0.0 if prominence is None else prominence,
-            distance=distance, width=width,
+            distance=distance,
+            width=width,
         )
         if _indices.size:
             indices = _indices
@@ -59,8 +61,12 @@ def find_peaks_result(
 
     for i, idx in enumerate(indices):
         row = [
-            str(i + 1), f"{x[idx]:.6g}", f"{y[idx]:.6g}",
-            f"{heights[i]:.6g}", f"{prominences[i]:.6g}", f"{fwhm[i]:.6g}",
+            str(i + 1),
+            f"{x[idx]:.6g}",
+            f"{y[idx]:.6g}",
+            f"{heights[i]:.6g}",
+            f"{prominences[i]:.6g}",
+            f"{fwhm[i]:.6g}",
         ]
         if integrate:
             area = _area_for_peak(x, y, props, i, int(idx))
@@ -80,7 +86,9 @@ def find_peaks_result(
     return result
 
 
-def _area_for_peak(x: np.ndarray, y: np.ndarray, props: dict, j: int, idx: int) -> float:
+def _area_for_peak(
+    x: np.ndarray, y: np.ndarray, props: dict, j: int, idx: int
+) -> float:
     """Per-peak trapezoidal area between the peak's prominence bases.
 
     ``props`` may be empty (partial-match indices are unused in that path).
@@ -90,16 +98,20 @@ def _area_for_peak(x: np.ndarray, y: np.ndarray, props: dict, j: int, idx: int) 
     if not y.size:
         return 0.0
     left = int(props["left_bases"][j]) if "left_bases" in props else max(0, idx - 1)
-    right = int(props["right_bases"][j]) if "right_bases" in props else min(y.size - 1, idx + 1)
+    right = (
+        int(props["right_bases"][j])
+        if "right_bases" in props
+        else min(y.size - 1, idx + 1)
+    )
     left = max(0, min(left, len(y) - 1))
     right = max(left, min(right, len(y) - 1))
     left = min(left, idx)
     right = max(right, idx)
-    segment = y[left:right + 1]
+    segment = y[left : right + 1]
     if segment.size < 2:
         return 0.0
     segment = segment - float(np.min(segment))
-    return float(np.trapezoid(segment, x[left:right + 1]))
+    return float(np.trapezoid(segment, x[left : right + 1]))
 
 
 __all__ = ["find_peaks_result"]

@@ -20,16 +20,18 @@ from .regression import _window
 _MODEL_SPECS: dict[str, tuple[Callable[..., np.ndarray], list[str], list[float]]] = {}
 
 
-def _register(name: str, func: Callable[..., np.ndarray], params: list[str], defaults: list[float]) -> None:
+def _register(
+    name: str, func: Callable[..., np.ndarray], params: list[str], defaults: list[float]
+) -> None:
     _MODEL_SPECS[name] = (func, params, defaults)
 
 
 def _gaussian(x, amplitude, center, sigma):
-    return amplitude * np.exp(-((x - center) ** 2) / (2 * sigma ** 2))
+    return amplitude * np.exp(-((x - center) ** 2) / (2 * sigma**2))
 
 
 def _lorentzian(x, amplitude, center, gamma):
-    return amplitude * gamma ** 2 / ((x - center) ** 2 + gamma ** 2)
+    return amplitude * gamma**2 / ((x - center) ** 2 + gamma**2)
 
 
 def _exponential_decay(x, amplitude, decay, offset):
@@ -58,16 +60,36 @@ def _step(x, amplitude, center, sigma):
 
 def _log_normal(x, amplitude, center, sigma):
     x = np.where(x <= 0, 1e-12, x)
-    return amplitude * np.exp(-((np.log(x) - center) ** 2) / (2 * sigma ** 2))
+    return amplitude * np.exp(-((np.log(x) - center) ** 2) / (2 * sigma**2))
 
 
 _register("Gaussian", _gaussian, ["amplitude", "center", "sigma"], [1.0, 0.0, 1.0])
 _register("Lorentzian", _lorentzian, ["amplitude", "center", "gamma"], [1.0, 0.0, 1.0])
-_register("Exponential Decay", _exponential_decay, ["amplitude", "decay", "offset"], [1.0, 1.0, 0.0])
-_register("Exponential Growth", _exponential_growth, ["amplitude", "rate", "offset"], [1.0, 0.1, 0.0])
-_register("Sinusoid", _sinusoid, ["amplitude", "frequency", "phase", "offset"], [1.0, 1.0, 0.0, 0.0])
+_register(
+    "Exponential Decay",
+    _exponential_decay,
+    ["amplitude", "decay", "offset"],
+    [1.0, 1.0, 0.0],
+)
+_register(
+    "Exponential Growth",
+    _exponential_growth,
+    ["amplitude", "rate", "offset"],
+    [1.0, 0.1, 0.0],
+)
+_register(
+    "Sinusoid",
+    _sinusoid,
+    ["amplitude", "frequency", "phase", "offset"],
+    [1.0, 1.0, 0.0, 0.0],
+)
 _register("Power Law", _power_law, ["amplitude", "exponent"], [1.0, 1.0])
-_register("Sigmoid", _sigmoid, ["amplitude", "center", "width", "offset"], [1.0, 0.0, 1.0, 0.0])
+_register(
+    "Sigmoid",
+    _sigmoid,
+    ["amplitude", "center", "width", "offset"],
+    [1.0, 0.0, 1.0, 0.0],
+)
 _register("Step", _step, ["amplitude", "center", "sigma"], [1.0, 0.0, 1.0])
 _register("Log-Normal", _log_normal, ["amplitude", "center", "sigma"], [1.0, 0.0, 1.0])
 
@@ -109,7 +131,9 @@ def fit_model(
     result = AnalysisResult(kind="fit", title=f"Nonlinear Fit — {model_name}")
 
     if model_name not in _MODEL_SPECS:
-        result.notes = f"Unknown model {model_name!r}. Known: {', '.join(available_models())}"
+        result.notes = (
+            f"Unknown model {model_name!r}. Known: {', '.join(available_models())}"
+        )
         return result
 
     func, param_names, defaults = _MODEL_SPECS[model_name]
@@ -140,8 +164,11 @@ def fit_model(
 
     y_fit = fit.best_fit
     result.parameters = [
-        ParamRow(name, float(fit.params[name].value),
-                 None if fit.params[name].stderr is None else float(fit.params[name].stderr))
+        ParamRow(
+            name,
+            float(fit.params[name].value),
+            None if fit.params[name].stderr is None else float(fit.params[name].stderr),
+        )
         for name in param_names
     ]
     result.summary = {

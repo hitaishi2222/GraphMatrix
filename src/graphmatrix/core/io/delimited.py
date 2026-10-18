@@ -42,13 +42,20 @@ def _guess_header(rows: list[list[str]]) -> bool:
     if len(rows) < 2:
         return False
     first = rows[0]
-    rest_numeric = all(_is_number(cell) for row in rows[1:6] for cell in row if cell != "")
+    rest_numeric = all(
+        _is_number(cell) for row in rows[1:6] for cell in row if cell != ""
+    )
     first_has_text = any(not _is_number(cell) for cell in first if cell != "")
     return first_has_text and rest_numeric
 
 
-def read_sheet(path: str | Path, *, delimiter: str | None = None,
-               has_header: bool | None = None, sheet_name: str | None = None) -> Worksheet:
+def read_sheet(
+    path: str | Path,
+    *,
+    delimiter: str | None = None,
+    has_header: bool | None = None,
+    sheet_name: str | None = None,
+) -> Worksheet:
     path = Path(path)
     text = path.read_text(encoding="utf-8", errors="replace")
     lines = [ln for ln in text.splitlines() if ln.strip() != ""]
@@ -77,12 +84,16 @@ def write_sheet(sheet: Worksheet, path: str | Path, *, delimiter: str = ",") -> 
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle, delimiter=delimiter)
-        writer.writerow([f"{c.name} ({c.units})" if c.units else c.name for c in sheet.columns])
+        writer.writerow(
+            [f"{c.name} ({c.units})" if c.units else c.name for c in sheet.columns]
+        )
         for row in range(sheet.num_rows):
-            writer.writerow([
-                column.get(row) if row < len(column) else ""
-                for column in sheet.columns
-            ])
+            writer.writerow(
+                [
+                    column.get(row) if row < len(column) else ""
+                    for column in sheet.columns
+                ]
+            )
     return path
 
 

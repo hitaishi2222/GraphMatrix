@@ -24,9 +24,13 @@ def fill_sheet_combo(combo: QComboBox, project: Project) -> None:
             combo.addItem(f"{book.name}/{sheet.name}", sheet)
 
 
-def fill_column_combo(combo: QComboBox, sheet: Worksheet | None,
-                      *, types: tuple[ColumnType, ...] | None = None,
-                      include_none: bool = False) -> None:
+def fill_column_combo(
+    combo: QComboBox,
+    sheet: Worksheet | None,
+    *,
+    types: tuple[ColumnType, ...] | None = None,
+    include_none: bool = False,
+) -> None:
     combo.clear()
     if include_none:
         combo.addItem("(none)", None)

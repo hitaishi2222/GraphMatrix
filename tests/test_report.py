@@ -5,7 +5,15 @@ from __future__ import annotations
 import numpy as np
 
 from graphmatrix.core.analysis.result import AnalysisResult
-from graphmatrix.core.model import ColumnType, Graph, PlotSpec, PlotStyle, Project, Workbook, Worksheet
+from graphmatrix.core.model import (
+    ColumnType,
+    Graph,
+    PlotSpec,
+    PlotStyle,
+    Project,
+    Workbook,
+    Worksheet,
+)
 from graphmatrix.core.provenance import ProvenanceLog
 from graphmatrix.core.report import export_analysis_bundle
 from graphmatrix.core.scripting.api import GraphMatrixAPI, make_namespace
@@ -29,8 +37,13 @@ def test_bundle_writes_every_part(tmp_path):
     project, _ = _project()
     log = ProvenanceLog()
     log.record_import("run1.csv", "Book1")
-    log.record_analysis(AnalysisResult("fit", "Linear Fit", summary={"slope": 2.0}), source="Book1/Sheet1")
-    bundle = export_analysis_bundle(project, log, tmp_path / "out", figure_formats=("png",))
+    log.record_analysis(
+        AnalysisResult("fit", "Linear Fit", summary={"slope": 2.0}),
+        source="Book1/Sheet1",
+    )
+    bundle = export_analysis_bundle(
+        project, log, tmp_path / "out", figure_formats=("png",)
+    )
 
     root = bundle.root
     for name in ("project.rsproj", "reproduce.py", "methods.md", "provenance.json"):

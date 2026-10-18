@@ -45,7 +45,13 @@ def test_full_workflow(app, tmp_path):
         graph = graph_view.graph
         assert sum(len(layer.plots) for layer in graph.layers) >= 1
 
-        graph_view.commands.push(AddPlotCommand(graph, graph.first_layer, PlotSpec("Book1/Sheet1", "X1", "Y1", legend="extra")))
+        graph_view.commands.push(
+            AddPlotCommand(
+                graph,
+                graph.first_layer,
+                PlotSpec("Book1/Sheet1", "X1", "Y1", legend="extra"),
+            )
+        )
         graph_view.refresh()
         assert sum(len(layer.plots) for layer in graph.layers) >= 2
 
@@ -57,7 +63,9 @@ def test_full_workflow(app, tmp_path):
         assert result.kind == "fit"
 
         # console executes against the live project
-        window.console.run_script("api.add_column('Book1/Sheet1', 'Z1', 'Y', data=[1, 2, 3])")
+        window.console.run_script(
+            "api.add_column('Book1/Sheet1', 'Z1', 'Y', data=[1, 2, 3])"
+        )
         assert "Z1" in sheet.column_names
 
         # export
@@ -103,7 +111,9 @@ def test_graph_and_sheet_extras(app, tmp_path):
         assert graph.first_layer.plots[0].y_axis == "right"
 
         # Annotation add + render.
-        window.commands.push(AddAnnotationCommand(graph, Annotation("note", x=0.2, y=0.8)))
+        window.commands.push(
+            AddAnnotationCommand(graph, Annotation("note", x=0.2, y=0.8))
+        )
         graph_view.refresh()
         assert len(graph.annotations) == 1
 
@@ -166,7 +176,9 @@ def test_theme_preset_switching(app):
             assert window._theme_actions[preset.id].isChecked()
 
         # The action group stays exclusive: exactly one preset is checked.
-        checked = [pid for pid, action in window._theme_actions.items() if action.isChecked()]
+        checked = [
+            pid for pid, action in window._theme_actions.items() if action.isChecked()
+        ]
         assert checked == [theme.current_preset()]
     finally:
         theme.set_preset(original)
@@ -237,7 +249,8 @@ def test_plot_column_from_worksheet(app):
         from PySide6.QtWidgets import QTableWidgetSelectionRange
 
         view.table.setRangeSelected(
-            QTableWidgetSelectionRange(0, 1, max(sheet.num_rows - 1, 0), 1), True)
+            QTableWidgetSelectionRange(0, 1, max(sheet.num_rows - 1, 0), 1), True
+        )
         assert view._selected_column_indices() == [1]
 
         # What the worksheet context menu emits: plot the selected column.
@@ -303,8 +316,11 @@ def test_reference_lines_hover_and_slope(app):
 
         before_ann = len(graph.annotations)
         result_dialog = AnalysisResultDialog(
-            result, project=window.project, commands=window.commands,
-            add_annotation=window._add_annotation_to_active_graph)
+            result,
+            project=window.project,
+            commands=window.commands,
+            add_annotation=window._add_annotation_to_active_graph,
+        )
         result_dialog._annotate_on_graph()
         assert len(graph.annotations) == before_ann + 1
         assert "slope" in graph.annotations[-1].text
@@ -347,8 +363,9 @@ def test_provenance_journal_and_palette(app, tmp_path):
 
         # Figure-as-code and bundles write real files.
         assert "api.add_graph" in project_to_script(window.project)
-        bundle = export_analysis_bundle(window.project, window.provenance, tmp_path / "bundle",
-                                        figure_formats=())
+        bundle = export_analysis_bundle(
+            window.project, window.provenance, tmp_path / "bundle", figure_formats=()
+        )
         assert (bundle.root / "reproduce.py").exists()
         assert (bundle.root / "methods.md").exists()
     finally:
@@ -372,15 +389,17 @@ def test_digitize_dialog_extracts(app, tmp_path):
     dialog = DigitizeDialog()
     try:
         dialog._image_path = path
-        dialog._pixel_spins[0].setValue(20); dialog._value_spins[0].setValue(0.0)
-        dialog._pixel_spins[1].setValue(140); dialog._value_spins[1].setValue(12.0)
-        dialog._pixel_spins[2].setValue(100); dialog._value_spins[2].setValue(0.0)
-        dialog._pixel_spins[3].setValue(40); dialog._value_spins[3].setValue(6.0)
+        dialog._pixel_spins[0].setValue(20)
+        dialog._value_spins[0].setValue(0.0)
+        dialog._pixel_spins[1].setValue(140)
+        dialog._value_spins[1].setValue(12.0)
+        dialog._pixel_spins[2].setValue(100)
+        dialog._value_spins[2].setValue(0.0)
+        dialog._pixel_spins[3].setValue(40)
+        dialog._value_spins[3].setValue(6.0)
         result = dialog.run()
         assert result.kind == "digitize"
         x, _y = result.curves["Digitized"]
         assert x.size == 120
     finally:
         dialog.close()
-
-

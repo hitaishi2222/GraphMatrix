@@ -116,16 +116,36 @@ _MODERN_LIGHT = {
 
 PRESETS: dict[str, ThemePreset] = {
     "classic-dark": ThemePreset(
-        "classic-dark", "Classic Dark", "The default dark colour scheme.", True, "classic", _CLASSIC_DARK
+        "classic-dark",
+        "Classic Dark",
+        "The default dark colour scheme.",
+        True,
+        "classic",
+        _CLASSIC_DARK,
     ),
     "classic-light": ThemePreset(
-        "classic-light", "Classic Light", "A bright, neutral colour scheme.", False, "classic", _CLASSIC_LIGHT
+        "classic-light",
+        "Classic Light",
+        "A bright, neutral colour scheme.",
+        False,
+        "classic",
+        _CLASSIC_LIGHT,
     ),
     "modern-dark": ThemePreset(
-        "modern-dark", "Modern Dark", "Deeper surfaces, indigo accent, rounded and compact.", True, "modern", _MODERN_DARK
+        "modern-dark",
+        "Modern Dark",
+        "Deeper surfaces, indigo accent, rounded and compact.",
+        True,
+        "modern",
+        _MODERN_DARK,
     ),
     "modern-light": ThemePreset(
-        "modern-light", "Modern Light", "Airy surfaces, indigo accent, rounded and compact.", False, "modern", _MODERN_LIGHT
+        "modern-light",
+        "Modern Light",
+        "Airy surfaces, indigo accent, rounded and compact.",
+        False,
+        "modern",
+        _MODERN_LIGHT,
     ),
 }
 
@@ -232,6 +252,14 @@ QToolButton { background: transparent; color: $text; border: 1px solid transpare
 QToolButton:hover { background: $hover; }
 QToolButton:pressed, QToolButton:checked { background: $accent; color: $accent_text; }
 QToolButton:disabled { color: $disabled; }
+
+/* ---- worksheet header “add column” button ---- */
+QPushButton#headerAddButton {
+    background: $alt; color: $text; border: 1px solid $border;
+    border-radius: 4px; padding: 0; font-weight: 600;
+}
+QPushButton#headerAddButton:hover { background: $accent; color: $accent_text; border-color: $accent; }
+QPushButton#headerAddButton:pressed { background: $accent; color: $accent_text; border-color: $accent; }
 
 /* ---- status bar ---- */
 QStatusBar { background: $panel; color: $muted; border-top: 1px solid $border; }

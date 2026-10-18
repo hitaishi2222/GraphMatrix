@@ -55,7 +55,9 @@ def export_analysis_bundle(
     If ``out_dir`` is omitted, a ``<Project>-bundle`` folder is created next to the
     current working directory.
     """
-    root = Path(out_dir) if out_dir is not None else Path(f"{_safe(project.name)}-bundle")
+    root = (
+        Path(out_dir) if out_dir is not None else Path(f"{_safe(project.name)}-bundle")
+    )
     root = root.expanduser()
     (root / "data").mkdir(parents=True, exist_ok=True)
     (root / "figures").mkdir(parents=True, exist_ok=True)
@@ -88,7 +90,9 @@ def export_analysis_bundle(
         methods_path.write_text(provenance.methods_markdown(project), encoding="utf-8")
         result.files.setdefault("methods", []).append(str(methods_path))
         prov_path = root / "provenance.json"
-        prov_path.write_text(json.dumps(provenance.to_dict(), indent=2), encoding="utf-8")
+        prov_path.write_text(
+            json.dumps(provenance.to_dict(), indent=2), encoding="utf-8"
+        )
         result.files.setdefault("methods", []).append(str(prov_path))
 
     return result

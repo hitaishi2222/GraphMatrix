@@ -90,31 +90,63 @@ class GraphMatrixAPI:
         return sheet
 
     def add_column(
-        self, source: str, name: str, col_type: str = "Y",
-        data: Sequence[Any] | None = None, *, units: str = "", comment: str = "",
+        self,
+        source: str,
+        name: str,
+        col_type: str = "Y",
+        data: Sequence[Any] | None = None,
+        *,
+        units: str = "",
+        comment: str = "",
         mask: Sequence[bool] | None = None,
     ) -> Column:
         sheet = self.sheet(source)
-        column = Column(name, ColumnType(col_type), data, units=units, comment=comment, mask=mask)
+        column = Column(
+            name, ColumnType(col_type), data, units=units, comment=comment, mask=mask
+        )
         self._push(AddColumnCommand(sheet, column, source=source))
         return column
 
-    def add_graph(self, name: str = "Graph", source: str | None = None,
-                  x: str | None = None, y: str | None = None,
-                  *, style: str = "line+symbol", legend: str = "") -> Graph:
+    def add_graph(
+        self,
+        name: str = "Graph",
+        source: str | None = None,
+        x: str | None = None,
+        y: str | None = None,
+        *,
+        style: str = "line+symbol",
+        legend: str = "",
+    ) -> Graph:
         graph = Graph(self.project.unique_name(name))
         if source and x and y:
-            graph.first_layer.add_plot(PlotSpec(source=source, x=x, y=y,
-                                                style=PlotStyle(style), legend=legend))
+            graph.first_layer.add_plot(
+                PlotSpec(source=source, x=x, y=y, style=PlotStyle(style), legend=legend)
+            )
         self._push(AddGraphCommand(self.project, graph))
         return graph
 
-    def add_plot(self, graph_name: str, source: str, x: str, y: str,
-                 *, style: str = "line+symbol", legend: str = "",
-                 z: str = "", cmap: str = "viridis") -> PlotSpec:
+    def add_plot(
+        self,
+        graph_name: str,
+        source: str,
+        x: str,
+        y: str,
+        *,
+        style: str = "line+symbol",
+        legend: str = "",
+        z: str = "",
+        cmap: str = "viridis",
+    ) -> PlotSpec:
         graph = self.graph(graph_name)
-        spec = PlotSpec(source=source, x=x, y=y, style=PlotStyle(style), legend=legend,
-                        z=z, cmap=cmap)
+        spec = PlotSpec(
+            source=source,
+            x=x,
+            y=y,
+            style=PlotStyle(style),
+            legend=legend,
+            z=z,
+            cmap=cmap,
+        )
         self._push(AddPlotCommand(graph, graph.first_layer, spec))
         return spec
 
@@ -140,39 +172,79 @@ class GraphMatrixAPI:
 
         return descriptive.summarize(self.column(source, name).float_data(), name)
 
-    def fit(self, model: str, source: str, x: str, y: str, *, yerr: str | None = None,
-            p0: dict[str, float] | None = None, x_min: float | None = None,
-            x_max: float | None = None):
+    def fit(
+        self,
+        model: str,
+        source: str,
+        x: str,
+        y: str,
+        *,
+        yerr: str | None = None,
+        p0: dict[str, float] | None = None,
+        x_min: float | None = None,
+        x_max: float | None = None,
+    ):
         from ..analysis import fitting
 
         sheet = self.sheet(source)
         yerr_data = sheet.column(yerr).float_data() if yerr else None
-        return fitting.fit_model(model, sheet.column(x).float_data(),
-                                 sheet.column(y).float_data(), yerr=yerr_data, p0=p0,
-                                 x_min=x_min, x_max=x_max)
+        return fitting.fit_model(
+            model,
+            sheet.column(x).float_data(),
+            sheet.column(y).float_data(),
+            yerr=yerr_data,
+            p0=p0,
+            x_min=x_min,
+            x_max=x_max,
+        )
 
-    def linear_fit(self, source: str, x: str, y: str, *,
-                   x_min: float | None = None, x_max: float | None = None):
+    def linear_fit(
+        self,
+        source: str,
+        x: str,
+        y: str,
+        *,
+        x_min: float | None = None,
+        x_max: float | None = None,
+    ):
         from ..analysis import regression
 
         sheet = self.sheet(source)
-        return regression.linear_fit(sheet.column(x).float_data(), sheet.column(y).float_data(),
-                                     x_min=x_min, x_max=x_max)
+        return regression.linear_fit(
+            sheet.column(x).float_data(),
+            sheet.column(y).float_data(),
+            x_min=x_min,
+            x_max=x_max,
+        )
 
-    def polynomial_fit(self, source: str, x: str, y: str, degree: int = 2, *,
-                       x_min: float | None = None, x_max: float | None = None):
+    def polynomial_fit(
+        self,
+        source: str,
+        x: str,
+        y: str,
+        degree: int = 2,
+        *,
+        x_min: float | None = None,
+        x_max: float | None = None,
+    ):
         from ..analysis import regression
 
         sheet = self.sheet(source)
-        return regression.polynomial_fit(sheet.column(x).float_data(), sheet.column(y).float_data(),
-                                         degree, x_min=x_min, x_max=x_max)
+        return regression.polynomial_fit(
+            sheet.column(x).float_data(),
+            sheet.column(y).float_data(),
+            degree,
+            x_min=x_min,
+            x_max=x_max,
+        )
 
     def find_peaks(self, source: str, x: str, y: str, **kwargs):
         from ..analysis import peaks
 
         sheet = self.sheet(source)
-        return peaks.find_peaks_result(sheet.column(x).float_data(),
-                                       sheet.column(y).float_data(), **kwargs)
+        return peaks.find_peaks_result(
+            sheet.column(x).float_data(), sheet.column(y).float_data(), **kwargs
+        )
 
     def batch_stats(self):
         """Descriptive statistics over every numeric column in the project (M10)."""

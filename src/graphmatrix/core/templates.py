@@ -17,7 +17,15 @@ from .model import AxisScale, Graph, PlotStyle
 TEMPLATE_FORMAT = "graphmatrix-graph-template"
 TEMPLATE_VERSION = 1
 
-_PLOT_FIELDS = ("style", "color", "line_width", "symbol", "symbol_size", "y_axis", "line_style")
+_PLOT_FIELDS = (
+    "style",
+    "color",
+    "line_width",
+    "symbol",
+    "symbol_size",
+    "y_axis",
+    "line_style",
+)
 _LAYER_FIELDS = ("x_scale", "y_scale", "x_label", "y_label", "y2_label", "show_legend")
 _SEGMENT_FIELDS = ("x_min", "x_max", "y_min", "y_max")
 
@@ -41,7 +49,9 @@ def graph_to_template(graph: Graph, *, name: str = "") -> dict[str, Any]:
         "version": TEMPLATE_VERSION,
         "name": name or graph.name,
         "title": graph.title,
-        "annotation_style": [{"color": a.color, "size": a.size} for a in graph.annotations],
+        "annotation_style": [
+            {"color": a.color, "size": a.size} for a in graph.annotations
+        ],
         "layers": [
             {**_layer_style(layer), "plots": [_plot_style(p) for p in layer.plots]}
             for layer in graph.layers
@@ -93,14 +103,18 @@ def apply_template(graph: Graph, template: dict[str, Any]) -> None:
 
 def save_template(graph: Graph, path: str | Path, *, name: str = "") -> Path:
     path = Path(path)
-    path.write_text(json.dumps(graph_to_template(graph, name=name), indent=2), encoding="utf-8")
+    path.write_text(
+        json.dumps(graph_to_template(graph, name=name), indent=2), encoding="utf-8"
+    )
     return path
 
 
 def load_template(path: str | Path) -> dict[str, Any]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
     if payload.get("format") != TEMPLATE_FORMAT:
-        raise ValueError(f"not a GraphMatrix graph template (format={payload.get('format')!r})")
+        raise ValueError(
+            f"not a GraphMatrix graph template (format={payload.get('format')!r})"
+        )
     return payload
 
 

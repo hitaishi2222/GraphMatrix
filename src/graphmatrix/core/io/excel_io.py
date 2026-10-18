@@ -37,9 +37,16 @@ def write_workbook(book: Workbook, path: str | Path) -> Path:
     xl.remove(xl.active)
     for sheet in book.sheets:
         ws = xl.create_sheet(title=sheet.name[:31])
-        ws.append([f"{c.name} ({c.units})" if c.units else c.name for c in sheet.columns])
+        ws.append(
+            [f"{c.name} ({c.units})" if c.units else c.name for c in sheet.columns]
+        )
         for row in range(sheet.num_rows):
-            ws.append([column.get(row) if row < len(column) else None for column in sheet.columns])
+            ws.append(
+                [
+                    column.get(row) if row < len(column) else None
+                    for column in sheet.columns
+                ]
+            )
     if not book.sheets:
         xl.create_sheet(title="Sheet1")
     xl.save(path)

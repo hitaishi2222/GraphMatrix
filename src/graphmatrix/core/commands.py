@@ -66,11 +66,17 @@ class CommandStack:
     # -- notification --------------------------------------------------------
     def subscribe(self, callback: Callable[[], None]) -> Callable[[], None]:
         self._listeners.append(callback)
-        return lambda: self._listeners.remove(callback) if callback in self._listeners else None
+        return lambda: (
+            self._listeners.remove(callback) if callback in self._listeners else None
+        )
 
     def subscribe_push(self, callback: Callable[[Command], None]) -> Callable[[], None]:
         self._push_listeners.append(callback)
-        return lambda: self._push_listeners.remove(callback) if callback in self._push_listeners else None
+        return lambda: (
+            self._push_listeners.remove(callback)
+            if callback in self._push_listeners
+            else None
+        )
 
     def _notify(self) -> None:
         for callback in list(self._listeners):
@@ -208,8 +214,14 @@ class RemoveWorksheetCommand(Command):
 class AddColumnCommand(Command):
     label = "Add Column"
 
-    def __init__(self, sheet: Worksheet, column: Column, *, index: int | None = None,
-                 source: str | None = None) -> None:
+    def __init__(
+        self,
+        sheet: Worksheet,
+        column: Column,
+        *,
+        index: int | None = None,
+        source: str | None = None,
+    ) -> None:
         self._sheet, self._column, self._index = sheet, column, index
         self._source = source or sheet.name
 
@@ -246,7 +258,9 @@ class SetCellsCommand(Command):
 
     label = "Edit Cells"
 
-    def __init__(self, sheet: Worksheet, row: int, column: int, values: Sequence[Sequence[Any]]) -> None:
+    def __init__(
+        self, sheet: Worksheet, row: int, column: int, values: Sequence[Sequence[Any]]
+    ) -> None:
         self._sheet, self._row, self._column = sheet, row, column
         self._values = [list(r) for r in values]
         self._saved: list[np.ndarray] = []
@@ -284,8 +298,15 @@ class ReorderColumnsCommand(Command):
 class SetCellValueCommand(Command):
     label = "Edit Cell"
 
-    def __init__(self, sheet: Worksheet, row: int, column_index: int, value: Any) -> None:
-        self._sheet, self._row, self._column_index, self._value = sheet, row, column_index, value
+    def __init__(
+        self, sheet: Worksheet, row: int, column_index: int, value: Any
+    ) -> None:
+        self._sheet, self._row, self._column_index, self._value = (
+            sheet,
+            row,
+            column_index,
+            value,
+        )
         self._old: Any = None
         self._old_len = 0
 
@@ -342,7 +363,9 @@ class SetAttributesCommand(Command):
 class SetColumnDataCommand(Command):
     label = "Set Column Data"
 
-    def __init__(self, column: Column, data: Sequence[Any], label: str | None = None) -> None:
+    def __init__(
+        self, column: Column, data: Sequence[Any], label: str | None = None
+    ) -> None:
         self._column = column
         self._new = np.asarray(data)
         self._old = column.data.copy()
@@ -401,8 +424,9 @@ class RenameWorksheetCommand(Command):
 
     label = "Rename Worksheet"
 
-    def __init__(self, project: Project, workbook: Workbook, sheet: Worksheet,
-                 new_name: str) -> None:
+    def __init__(
+        self, project: Project, workbook: Workbook, sheet: Worksheet, new_name: str
+    ) -> None:
         self._project = project
         self._workbook = workbook
         self._sheet = sheet
@@ -444,12 +468,15 @@ class DeleteRowsCommand(Command):
         self._cache: list[np.ndarray] = []
 
     def execute(self) -> None:
-        self._cache = [c.data[self._index:self._index + self._count].copy() for c in self._sheet.columns]
+        self._cache = [
+            c.data[self._index : self._index + self._count].copy()
+            for c in self._sheet.columns
+        ]
         self._sheet.delete_rows(self._index, self._count)
 
     def undo(self) -> None:
         for column, saved in zip(self._sheet.columns, self._cache):
-            head, tail = column.data[:self._index], column.data[self._index:]
+            head, tail = column.data[: self._index], column.data[self._index :]
             column.data = np.concatenate([head, saved, tail])
 
 
@@ -501,6 +528,40 @@ class AddLayerCommand(Command):
         self._graph.remove_layer(self._layer)
 
 
+class SetGraphTypeCommand(Command):
+    """Switch a graph's layout template (simple/stack/2Y/x-twin/grid).
+
+    Only the graph type and its derived panel grid change; layers and plots are
+    left intact, so switching back and forth never loses data.
+    """
+
+    label = "Graph Type"
+
+    def __init__(self, graph: Graph, graph_type: str) -> None:
+        self._graph = graph
+        self._new = graph_type
+        self._old: str | None = None
+        self._old_rows: int | None = None
+        self._old_cols: int | None = None
+
+    def execute(self) -> None:
+        self._old = self._graph.graph_type
+        self._old_rows = self._graph.layout_rows
+        self._old_cols = self._graph.layout_cols
+        self._graph.graph_type = self._new
+        self._graph.sync_layout()
+
+    def undo(self) -> None:
+        self._graph.graph_type = self._old if self._old is not None else "simple"
+        if self._old_rows is not None:
+            self._graph.layout_rows = self._old_rows
+        if self._old_cols is not None:
+            self._graph.layout_cols = self._old_cols
+
+    def describe(self) -> str | None:
+        return f"Set '{self._graph.name}' to a {self._new} graph"
+
+
 class AddPlotCommand(Command):
     label = "Add Plot"
 
@@ -522,7 +583,9 @@ class AddPlotCommand(Command):
 
     def describe(self) -> str | None:
         s = self._spec
-        return f"Plotted '{s.y}' versus '{s.x}' from '{s.source}' on '{self._graph.name}'"
+        return (
+            f"Plotted '{s.y}' versus '{s.x}' from '{s.source}' on '{self._graph.name}'"
+        )
 
 
 class RemovePlotCommand(Command):
@@ -536,7 +599,10 @@ class RemovePlotCommand(Command):
         self._index = self._layer.remove_plot(self._spec)
 
     def undo(self) -> None:
-        self._layer.plots.insert(self._index if self._index is not None else len(self._layer.plots), self._spec)
+        self._layer.plots.insert(
+            self._index if self._index is not None else len(self._layer.plots),
+            self._spec,
+        )
 
 
 class AddAnnotationCommand(Command):
@@ -598,8 +664,10 @@ class RemoveReferenceLineCommand(Command):
         self._index = self._layer.remove_ref_line(self._line)
 
     def undo(self) -> None:
-        self._layer.ref_lines.insert(self._index if self._index is not None else len(self._layer.ref_lines),
-                                     self._line)
+        self._layer.ref_lines.insert(
+            self._index if self._index is not None else len(self._layer.ref_lines),
+            self._line,
+        )
 
 
 class MacroCommand(Command):

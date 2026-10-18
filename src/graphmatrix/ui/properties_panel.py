@@ -12,13 +12,33 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from graphmatrix.core.model import Column, Graph, Project, Workbook, Worksheet
+from graphmatrix.core.model import (
+    Column,
+    Graph,
+    GraphType,
+    Project,
+    Workbook,
+    Worksheet,
+    graph_type_label,
+)
+
+#: Graph layout rows that can be edited directly in the inspector.
+_GRAPH_EDITABLE_KEYS = {
+    "Graph type",
+    "Grid rows",
+    "Grid cols",
+    "Panel gap X (%)",
+    "Panel gap Y (%)",
+    "Y delta",
+}
 
 
 class PropertiesPanel(QWidget):
-    """A property grid with an editable Name field."""
+    """A property grid with editable Name and graph-layout fields."""
 
     rename_requested = Signal(object, str)  # (object, new_name)
+    #: (object, displayed property key, raw text) for an edited graph field.
+    property_changed = Signal(object, str, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -37,8 +57,12 @@ class PropertiesPanel(QWidget):
             | QAbstractItemView.EditTrigger.AnyKeyPressed
         )
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self._table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self._table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
+        )
         self._table.itemChanged.connect(self._on_item_changed)
         layout.addWidget(self._table)
 
@@ -52,10 +76,15 @@ class PropertiesPanel(QWidget):
                 key_item = QTableWidgetItem(key)
                 key_item.setFlags(key_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 value_item = QTableWidgetItem(str(value))
-                if key == "Name" and obj is not None:
+                editable = key == "Name" or (
+                    isinstance(obj, Graph) and key in _GRAPH_EDITABLE_KEYS
+                )
+                if editable:
                     value_item.setFlags(value_item.flags() | Qt.ItemFlag.ItemIsEditable)
                 else:
-                    value_item.setFlags(value_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    value_item.setFlags(
+                        value_item.flags() & ~Qt.ItemFlag.ItemIsEditable
+                    )
                 self._table.setItem(row, 0, key_item)
                 self._table.setItem(row, 1, value_item)
         finally:
@@ -66,8 +95,13 @@ class PropertiesPanel(QWidget):
         if self._loading or self._obj is None or item.column() != 1:
             return
         key_item = self._table.item(item.row(), 0)
-        if key_item is not None and key_item.text() == "Name":
+        if key_item is None:
+            return
+        key = key_item.text()
+        if key == "Name":
             self.rename_requested.emit(self._obj, item.text())
+        elif isinstance(self._obj, Graph) and key in _GRAPH_EDITABLE_KEYS:
+            self.property_changed.emit(self._obj, key, item.text())
 
     @staticmethod
     def _describe(obj) -> list[tuple[str, object]]:
@@ -82,7 +116,7 @@ class PropertiesPanel(QWidget):
         elif isinstance(obj, Worksheet):
             rows += [("Columns", obj.num_columns), ("Rows", obj.num_rows)]
         elif isinstance(obj, Graph):
-            rows += [("Layers", obj.num_layers)]
+            rows += PropertiesPanel._describe_graph(obj)
         elif isinstance(obj, Column):
             rows += [
                 ("Type", obj.col_type.value),
@@ -90,4 +124,41 @@ class PropertiesPanel(QWidget):
                 ("Comment", obj.comment),
                 ("Values", len(obj)),
             ]
+        return rows
+
+    @staticmethod
+    def _describe_graph(obj: Graph) -> list[tuple[str, object]]:
+        """Show only the layout properties that the current graph type uses."""
+        try:
+            gtype = GraphType(getattr(obj, "graph_type", GraphType.SIMPLE.value))
+        except ValueError:
+            gtype = GraphType.SIMPLE
+        plots = sum(len(layer.plots) for layer in obj.layers)
+        rows: list[tuple[str, object]] = [
+            ("Graph type", graph_type_label(gtype)),
+            ("Layers", obj.num_layers),
+            ("Plots", plots),
+        ]
+        if gtype == GraphType.STACK:
+            rows.append(("Y delta", f"{obj.y_delta:g}"))
+        elif gtype == GraphType.X_TWIN:
+            rows += [
+                ("Panel gap X (%)", f"{obj.panel_gap_x:g}"),
+                ("Y delta", f"{obj.y_delta:g}"),
+            ]
+        elif gtype == GraphType.GRID:
+            rows += [
+                ("Grid rows", obj.layout_rows),
+                ("Grid cols", obj.layout_cols),
+                ("Panel gap X (%)", f"{obj.panel_gap_x:g}"),
+                ("Panel gap Y (%)", f"{obj.panel_gap_y:g}"),
+            ]
+        elif gtype == GraphType.DOUBLE_Y:
+            right = sum(
+                1
+                for layer in obj.layers
+                for spec in layer.plots
+                if getattr(spec, "y_axis", "left") == "right"
+            )
+            rows.append(("Right-axis plots", right))
         return rows

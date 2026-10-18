@@ -47,30 +47,54 @@ def run_pipeline(path: str | Path) -> Project:
             api.import_data(info["path"], book_name=info.get("book"))
         elif "column" in step:
             info = step["column"]
-            api.add_column(info["source"], info["name"], info.get("type", "Y"),
-                           data=info.get("data"), units=info.get("units", ""),
-                           comment=info.get("comment", ""))
+            api.add_column(
+                info["source"],
+                info["name"],
+                info.get("type", "Y"),
+                data=info.get("data"),
+                units=info.get("units", ""),
+                comment=info.get("comment", ""),
+            )
         elif "graph" in step:
             info = step["graph"]
-            api.add_graph(info.get("name", "Graph"), source=info.get("source"),
-                          x=info.get("x"), y=info.get("y"),
-                          style=info.get("style", "line+symbol"),
-                          legend=info.get("legend", ""))
+            api.add_graph(
+                info.get("name", "Graph"),
+                source=info.get("source"),
+                x=info.get("x"),
+                y=info.get("y"),
+                style=info.get("style", "line+symbol"),
+                legend=info.get("legend", ""),
+            )
         elif "plot" in step:
             info = step["plot"]
-            api.add_plot(info["graph"], info["source"], info["x"], info["y"],
-                         style=info.get("style", "line+symbol"),
-                         legend=info.get("legend", ""))
+            api.add_plot(
+                info["graph"],
+                info["source"],
+                info["x"],
+                info["y"],
+                style=info.get("style", "line+symbol"),
+                legend=info.get("legend", ""),
+            )
         elif "fit" in step:
             info = step["fit"]
-            result = api.fit(info["model"], info["source"], info["x"], info["y"],
-                             yerr=info.get("yerr"))
+            result = api.fit(
+                info["model"],
+                info["source"],
+                info["x"],
+                info["y"],
+                yerr=info.get("yerr"),
+            )
             print(result.to_text())
         elif "analyze" in step:
             info = step["analyze"]
             kind = info.pop("kind", None)
             if kind == "peaks":
-                r = api.find_peaks(info["source"], info["x"], info["y"], **{k: v for k, v in info.items() if k not in ("source", "x", "y")})
+                r = api.find_peaks(
+                    info["source"],
+                    info["x"],
+                    info["y"],
+                    **{k: v for k, v in info.items() if k not in ("source", "x", "y")},
+                )
             elif kind == "describe":
                 r = api.describe(info["source"], info["name"])
             else:
@@ -90,11 +114,22 @@ def run_pipeline(path: str | Path) -> Project:
             fmt = info.get("format", "pdf")
             for idx in indices:
                 graph = project.graphs[idx]
-                safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in graph.name).strip("_") or "graph"
+                safe = (
+                    "".join(
+                        c if c.isalnum() or c in "-_." else "_" for c in graph.name
+                    ).strip("_")
+                    or "graph"
+                )
                 target = out_dir / f"{safe}.{fmt.lower()}"
-                export_graph(graph, project, target, width_mm=info.get("width", 100.0),
-                             height_mm=info.get("height", 75.0), dpi=info.get("dpi", 300),
-                             transparent=info.get("transparent", False))
+                export_graph(
+                    graph,
+                    project,
+                    target,
+                    width_mm=info.get("width", 100.0),
+                    height_mm=info.get("height", 75.0),
+                    dpi=info.get("dpi", 300),
+                    transparent=info.get("transparent", False),
+                )
                 print(f"exported: {target}")
         elif "save" in step:
             info = step["save"]
@@ -107,7 +142,9 @@ def run_pipeline(path: str | Path) -> Project:
         else:
             raise ValueError(f"unknown pipeline step: {list(step)}")
 
-    if out_project_path and not any(isinstance(s, dict) and "save" in s for s in spec.get("steps", [])):
+    if out_project_path and not any(
+        isinstance(s, dict) and "save" in s for s in spec.get("steps", [])
+    ):
         api.save(out_project_path)
         print(f"saved: {out_project_path}")
 

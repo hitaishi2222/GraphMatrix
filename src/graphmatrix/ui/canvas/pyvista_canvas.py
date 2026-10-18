@@ -53,7 +53,10 @@ class PyVistaCanvas(PlotCanvas):
 
         self.set_background()
         self._interactor.add_axes(
-            xlabel="X", ylabel="Y", zlabel="Z", line_width=1.5,
+            xlabel="X",
+            ylabel="Y",
+            zlabel="Z",
+            line_width=1.5,
         )
 
     # -- PlotCanvas ----------------------------------------------------------
@@ -68,14 +71,17 @@ class PyVistaCanvas(PlotCanvas):
 
     def plot(
         self,
-        x, y, *,
+        x,
+        y,
+        *,
         style: str = "line",
         color: str = "",
         width: float = 2.0,
         symbol: str = "o",
         symbol_size: float = 7.0,
         name: str | None = None,
-        yerr=None, xerr=None,
+        yerr=None,
+        xerr=None,
         y_axis: str = "left",
         line_style: str = "solid",
         z=None,
@@ -97,13 +103,17 @@ class PyVistaCanvas(PlotCanvas):
         line_width = max(1.5, float(width) * _LINE_WIDEN)
 
         if style == "3d surface":
-            grid = pv.PolyData(
-                np.column_stack([xs, ys, zs])
-            ).delaunay_2d()
-            z_rng = (float(np.min(zs)), float(np.max(zs))) if zs.size > 1 else (0.0, 1.0)
+            grid = pv.PolyData(np.column_stack([xs, ys, zs])).delaunay_2d()
+            z_rng = (
+                (float(np.min(zs)), float(np.max(zs))) if zs.size > 1 else (0.0, 1.0)
+            )
             self._interactor.add_mesh(
-                grid, scalars=grid.points[:, 2], cmap="viridis", show_edges=False,
-                show_scalar_bar=self._legend_on, clim=z_rng,
+                grid,
+                scalars=grid.points[:, 2],
+                cmap="viridis",
+                show_edges=False,
+                show_scalar_bar=self._legend_on,
+                clim=z_rng,
             )
             return
 
@@ -124,20 +134,38 @@ class PyVistaCanvas(PlotCanvas):
             return
 
         # 2D styles: draw in the z = 0 plane so a mixed graph still renders.
-        if xs.size >= 2 and style in ("line", "line+symbol", "line_symbol", "step", "area"):
+        if xs.size >= 2 and style in (
+            "line",
+            "line+symbol",
+            "line_symbol",
+            "step",
+            "area",
+        ):
             polyline = pv.lines_from_points(np.column_stack([xs, ys, zs]))
-            self._interactor.add_mesh(polyline, color=actor_color, line_width=line_width)
+            self._interactor.add_mesh(
+                polyline, color=actor_color, line_width=line_width
+            )
             if self._legend_on and name:
                 self._add_legend_entry(name, actor_color)
         if style in ("scatter", "line+symbol", "line_symbol"):
             points = pv.PolyData(np.column_stack([xs, ys, zs]))
             self._interactor.add_points(
-                points, color=actor_color, render_points_as_spheres=True,
+                points,
+                color=actor_color,
+                render_points_as_spheres=True,
                 point_size=max(3.0, float(symbol_size) * 2.5),
             )
 
-    def add_reference_line(self, orientation, position, *, color="#888888",
-                           width=1.5, line_style="dash", label="") -> None:
+    def add_reference_line(
+        self,
+        orientation,
+        position,
+        *,
+        color="#888888",
+        width=1.5,
+        line_style="dash",
+        label="",
+    ) -> None:
         """Approximate an h/v guide in the 3D scene: a line across the axes box."""
         import pyvista as pv
 
@@ -147,8 +175,12 @@ class PyVistaCanvas(PlotCanvas):
         else:
             span = ((bounds[0], position, 0.0), (bounds[1], position, 0.0))
         line = pv.lines_from_points(span)
-        self._interactor.add_mesh(line, color=self._color(color or "#888888"),
-                                  line_width=max(2.0, width * _LINE_WIDEN), opacity=0.75)
+        self._interactor.add_mesh(
+            line,
+            color=self._color(color or "#888888"),
+            line_width=max(2.0, width * _LINE_WIDEN),
+            opacity=0.75,
+        )
 
     def set_hover(self, enabled: bool) -> None:
         # The nearest-point readout is a per-2D-canvas interaction; in 3D the
@@ -157,12 +189,21 @@ class PyVistaCanvas(PlotCanvas):
 
     def add_annotation(self, text, x, y, *, color="#000000", size=11.0) -> None:
         self._interactor.add_text(
-            text, position=(max(0.0, min(float(x), 1.0)), max(0.0, min(float(y), 1.0))),
-            viewport=(0, 0), font_size=int(max(6, size)), color=self._color(color or self._theme_fg),
+            text,
+            position=(max(0.0, min(float(x), 1.0)), max(0.0, min(float(y), 1.0))),
+            viewport=(0, 0),
+            font_size=int(max(6, size)),
+            color=self._color(color or self._theme_fg),
         )
 
-    def set_title(self, text: str, *, fontfamily: str = "", fontsize: float = 14.0,
-                  color: str = "") -> None:
+    def set_title(
+        self,
+        text: str,
+        *,
+        fontfamily: str = "",
+        fontsize: float = 14.0,
+        color: str = "",
+    ) -> None:
         self._title_text, self._title_size = text, fontsize
         self._show_title()
 
@@ -174,8 +215,16 @@ class PyVistaCanvas(PlotCanvas):
     def set_current_panel(self, index: int) -> None:
         pass
 
-    def set_labels(self, *, bottom=None, left=None, right=None, fontfamily: str = "",
-                   fontsize: float = 12.0, color: str = "") -> None:
+    def set_labels(
+        self,
+        *,
+        bottom=None,
+        left=None,
+        right=None,
+        fontfamily: str = "",
+        fontsize: float = 12.0,
+        color: str = "",
+    ) -> None:
         if bottom:
             self._labels["x"] = str(bottom)
         if left:
@@ -191,7 +240,11 @@ class PyVistaCanvas(PlotCanvas):
         pass
 
     def set_limits(self, *, x=None, y=None, z=None) -> None:
-        self._limits = (x, y, z if (z is not None and hasattr(z, "__len__") and len(z) == 2) else None)
+        self._limits = (
+            x,
+            y,
+            z if (z is not None and hasattr(z, "__len__") and len(z) == 2) else None,
+        )
         self._apply_limits()
 
     def show_legend(self, flag: bool) -> None:
@@ -241,7 +294,9 @@ class PyVistaCanvas(PlotCanvas):
     def _show_title(self) -> None:
         if self._title_text:
             self._interactor.add_text(
-                self._title_text, position="upper_left", font_size=int(max(6, self._title_size)),
+                self._title_text,
+                position="upper_left",
+                font_size=int(max(6, self._title_size)),
                 color=self._theme_fg,
             )
 
@@ -251,8 +306,11 @@ class PyVistaCanvas(PlotCanvas):
                 xlabel=self._labels.get("x", "X"),
                 ylabel=self._labels.get("y", "Y"),
                 zlabel=self._labels.get("z", "Z"),
-                line_width=1.5, color=self._theme_fg, x_color=self._theme_fg,
-                y_color=self._theme_fg, z_color=self._theme_fg,
+                line_width=1.5,
+                color=self._theme_fg,
+                x_color=self._theme_fg,
+                y_color=self._theme_fg,
+                z_color=self._theme_fg,
             )
         except Exception:  # noqa: BLE001
             try:
@@ -297,7 +355,9 @@ class PyVistaCanvas(PlotCanvas):
         try:
             self._interactor.add_legend(
                 labels=self._legend_labels,
-                background=self._theme_bg, color=self._theme_fg, border=False,
+                background=self._theme_bg,
+                color=self._theme_fg,
+                border=False,
             )
         except Exception:  # noqa: BLE001 - legend is decorative
             pass

@@ -30,7 +30,9 @@ def _num_repr(value: Any) -> str:
 
 def array_literal(values: Iterable[Any]) -> str:
     """A Python list literal that round-trips NaN and infinities."""
-    return "[" + ", ".join(_num_repr(v) for v in np.asarray(list(values)).tolist()) + "]"
+    return (
+        "[" + ", ".join(_num_repr(v) for v in np.asarray(list(values)).tolist()) + "]"
+    )
 
 
 def _header(project: Project) -> list[str]:

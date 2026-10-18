@@ -12,14 +12,30 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
 
-from .analysis import deconvolution, descriptive, fitting, peaks, ranged, regression, signal
+from .analysis import (
+    deconvolution,
+    descriptive,
+    fitting,
+    peaks,
+    ranged,
+    regression,
+    signal,
+)
 from .analysis.result import AnalysisResult
 
 RECIPE_FORMAT = "graphmatrix-recipe"
 RECIPE_VERSION = 1
 
 # Operations that only need a single series (y) use x = None.
-OPERATIONS = ("descriptive", "regression", "fit", "peaks", "deconvolution", "signal", "slope")
+OPERATIONS = (
+    "descriptive",
+    "regression",
+    "fit",
+    "peaks",
+    "deconvolution",
+    "signal",
+    "slope",
+)
 
 
 @dataclass
@@ -30,14 +46,19 @@ class Recipe:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "format": RECIPE_FORMAT, "version": RECIPE_VERSION,
-            "operation": self.operation, "params": self.params, "label": self.label,
+            "format": RECIPE_FORMAT,
+            "version": RECIPE_VERSION,
+            "operation": self.operation,
+            "params": self.params,
+            "label": self.label,
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "Recipe":
         if payload.get("format") not in (None, RECIPE_FORMAT):
-            raise ValueError(f"not a GraphMatrix recipe (format={payload.get('format')!r})")
+            raise ValueError(
+                f"not a GraphMatrix recipe (format={payload.get('format')!r})"
+            )
         operation = payload.get("operation")
         if operation not in OPERATIONS:
             raise ValueError(f"unknown recipe operation {operation!r}")
@@ -48,7 +69,9 @@ class Recipe:
         return self.label or self.operation
 
 
-def run_recipe(recipe: Recipe, x: Sequence[float] | None, y: Sequence[float]) -> AnalysisResult:
+def run_recipe(
+    recipe: Recipe, x: Sequence[float] | None, y: Sequence[float]
+) -> AnalysisResult:
     op = recipe.operation
     p = recipe.params
     if op == "descriptive":
@@ -57,16 +80,22 @@ def run_recipe(recipe: Recipe, x: Sequence[float] | None, y: Sequence[float]) ->
         x_min = p.get("x_min", None)
         x_max = p.get("x_max", None)
         if p.get("mode", "linear") == "polynomial":
-            return regression.polynomial_fit(x, y, degree=int(p.get("degree", 2)),
-                                             x_min=x_min, x_max=x_max)
+            return regression.polynomial_fit(
+                x, y, degree=int(p.get("degree", 2)), x_min=x_min, x_max=x_max
+            )
         return regression.linear_fit(x, y, x_min=x_min, x_max=x_max)
     if op == "fit":
-        return fitting.fit_model(p.get("model", "Gaussian"), x, y,
-                                 x_min=p.get("x_min"), x_max=p.get("x_max"))
+        return fitting.fit_model(
+            p.get("model", "Gaussian"), x, y, x_min=p.get("x_min"), x_max=p.get("x_max")
+        )
     if op == "peaks":
-        return peaks.find_peaks_result(x, y, prominence=p.get("prominence"),
-                                       distance=p.get("distance"),
-                                       integrate=bool(p.get("integrate", False)))
+        return peaks.find_peaks_result(
+            x,
+            y,
+            prominence=p.get("prominence"),
+            distance=p.get("distance"),
+            integrate=bool(p.get("integrate", False)),
+        )
     if op == "deconvolution":
         kind = p.get("kind", "gaussian")
         centers = p.get("centers")
@@ -75,9 +104,13 @@ def run_recipe(recipe: Recipe, x: Sequence[float] | None, y: Sequence[float]) ->
         return deconvolution.deconvolve_auto(x, y, kind=kind)
     if op == "signal":
         return signal.run_operation(
-            p.get("operation", "FFT Spectrum"), x, y,
-            window=int(p.get("window", 11)), order=int(p.get("order", 3)),
-            cutoff=float(p.get("cutoff", 1.0)), points=int(p.get("points", 200)),
+            p.get("operation", "FFT Spectrum"),
+            x,
+            y,
+            window=int(p.get("window", 11)),
+            order=int(p.get("order", 3)),
+            cutoff=float(p.get("cutoff", 1.0)),
+            points=int(p.get("points", 200)),
             lam=float(p.get("lam", 1e5)),
             baseline_method=p.get("baseline_method"),
         )
@@ -96,4 +129,11 @@ def load_recipe(path: str | Path) -> Recipe:
     return Recipe.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
-__all__ = ["Recipe", "run_recipe", "save_recipe", "load_recipe", "OPERATIONS", "RECIPE_FORMAT"]
+__all__ = [
+    "Recipe",
+    "run_recipe",
+    "save_recipe",
+    "load_recipe",
+    "OPERATIONS",
+    "RECIPE_FORMAT",
+]

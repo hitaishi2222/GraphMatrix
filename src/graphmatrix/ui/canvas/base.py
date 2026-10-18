@@ -73,9 +73,14 @@ class PlotCanvas(ABC):
 
     @abstractmethod
     def add_reference_line(
-        self, orientation: str, position: float, *,
-        color: str = "#888888", width: float = 1.5,
-        line_style: str = "dash", label: str = "",
+        self,
+        orientation: str,
+        position: float,
+        *,
+        color: str = "#888888",
+        width: float = 1.5,
+        line_style: str = "dash",
+        label: str = "",
     ) -> None:
         """Draw a horizontal (``"h"``) or vertical (``"v"``) guide line."""
 
@@ -84,24 +89,51 @@ class PlotCanvas(ABC):
         """Turn the hover crosshair + nearest-point readout on or off."""
 
     @abstractmethod
-    def add_annotation(self, text: str, x: float, y: float, *, color: str = "#000000",
-                       size: float = 11.0) -> None:
+    def add_annotation(
+        self,
+        text: str,
+        x: float,
+        y: float,
+        *,
+        color: str = "#000000",
+        size: float = 11.0,
+    ) -> None:
         """Place a text annotation at axes-fraction coordinates (0-1)."""
 
     @abstractmethod
-    def set_title(self, text: str, *, fontfamily: str = "", fontsize: float = 14.0,
-                  color: str = "") -> None: ...
+    def set_title(
+        self,
+        text: str,
+        *,
+        fontfamily: str = "",
+        fontsize: float = 14.0,
+        color: str = "",
+    ) -> None: ...
 
     @abstractmethod
     def set_grid(self, rows: int = 1, cols: int = 1) -> None: ...
+
+    def set_panel_gaps(self, h_gap: float = 0.0, v_gap: float = 0.0) -> None:
+        """Set the space between panels, as a fraction of a panel's size.
+
+        Only multi-panel backends (matplotlib) honour this; single-panel
+        backends degrade to a no-op.
+        """
 
     @abstractmethod
     def set_current_panel(self, index: int) -> None: ...
 
     @abstractmethod
-    def set_labels(self, *, bottom: str | None = None, left: str | None = None,
-                   right: str | None = None, fontfamily: str = "",
-                   fontsize: float = 12.0, color: str = "") -> None: ...
+    def set_labels(
+        self,
+        *,
+        bottom: str | None = None,
+        left: str | None = None,
+        right: str | None = None,
+        fontfamily: str = "",
+        fontsize: float = 12.0,
+        color: str = "",
+    ) -> None: ...
 
     @abstractmethod
     def set_scales(self, *, x: str = "linear", y: str = "linear") -> None: ...
@@ -110,8 +142,12 @@ class PlotCanvas(ABC):
     def set_ticks(self, *, minor: bool = True, direction: str = "out") -> None: ...
 
     @abstractmethod
-    def set_limits(self, *, x: tuple[float | None, float | None] | None = None,
-                   y: tuple[float | None, float | None] | None = None) -> None: ...
+    def set_limits(
+        self,
+        *,
+        x: tuple[float | None, float | None] | None = None,
+        y: tuple[float | None, float | None] | None = None,
+    ) -> None: ...
 
     @abstractmethod
     def show_legend(self, flag: bool) -> None: ...
@@ -151,5 +187,9 @@ def create_canvas(backend: str = DEFAULT_BACKEND) -> PlotCanvas:
         return PyVistaCanvas()
     raise ValueError(
         f"unknown canvas backend: {backend!r} (known: {BACKENDS})"
-        + ("" if backend not in BACKEND_EXTRAS else f"; install it with: {BACKEND_EXTRAS[backend]}")
+        + (
+            ""
+            if backend not in BACKEND_EXTRAS
+            else f"; install it with: {BACKEND_EXTRAS[backend]}"
+        )
     )

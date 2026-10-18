@@ -61,7 +61,9 @@ class LiveController(QObject):
         self._timer.timeout.connect(self.tick)
         self.enabled = False
 
-    def start(self, source: LiveFileSource, book_name: str, interval_ms: int) -> Worksheet:
+    def start(
+        self, source: LiveFileSource, book_name: str, interval_ms: int
+    ) -> Worksheet:
         """Start tailing ``source`` into a (new or existing) worksheet of the
         workbook named ``book_name``; returns the bound worksheet."""
         project = self._window.project
@@ -96,7 +98,9 @@ class LiveController(QObject):
                 continue
             # First data on an empty sheet: create the columns the file names.
             if task.sheet.num_columns == 0:
-                names = task.source.columns() or [f"C{i + 1}" for i in range(len(rows[0]))]
+                names = task.source.columns() or [
+                    f"C{i + 1}" for i in range(len(rows[0]))
+                ]
                 for i, name in enumerate(names):
                     col_type = ColumnType.X if i == 0 else ColumnType.Y
                     commands.push(AddColumnCommand(task.sheet, Column(name, col_type)))
@@ -109,11 +113,14 @@ class LiveController(QObject):
 class LiveDataDialog(QDialog):
     """Configure and control live tails (Tools → Live Data…)."""
 
-    def __init__(self, window, controller: LiveController | None = None,
-                 parent=None) -> None:
+    def __init__(
+        self, window, controller: LiveController | None = None, parent=None
+    ) -> None:
         super().__init__(parent or window)
         self.setWindowTitle("Live Data")
-        self.controller = controller or getattr(window, "live", None) or LiveController(window)
+        self.controller = (
+            controller or getattr(window, "live", None) or LiveController(window)
+        )
         self._window = window
 
         layout = QVBoxLayout(self)
@@ -162,7 +169,11 @@ class LiveDataDialog(QDialog):
     # -- helpers -------------------------------------------------------------
     def _browse(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Choose a data file", "", "Data (*.csv *.tsv *.txt *.dat *.log);;All Files (*)")
+            self,
+            "Choose a data file",
+            "",
+            "Data (*.csv *.tsv *.txt *.dat *.log);;All Files (*)",
+        )
         if path:
             self.file_edit.setText(path)
             stem = Path(path).stem
@@ -203,7 +214,9 @@ class LiveDataDialog(QDialog):
             return
         columns = source.columns() or ["(empty file)"]
         rows = source.poll()
-        text = ", ".join(columns) + "\n" + "\n".join(
-            ", ".join(f"{v:g}" for v in row) for row in rows[:5])
-        QMessageBox.information(
-            self, "Preview", text or "No rows available yet.")
+        text = (
+            ", ".join(columns)
+            + "\n"
+            + "\n".join(", ".join(f"{v:g}" for v in row) for row in rows[:5])
+        )
+        QMessageBox.information(self, "Preview", text or "No rows available yet.")

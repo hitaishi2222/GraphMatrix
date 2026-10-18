@@ -15,7 +15,15 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from graphmatrix.core.model import LINE_STYLES, ColumnType, PlotSpec, PlotStyle, Project, ReferenceLine, Z_STYLES
+from graphmatrix.core.model import (
+    LINE_STYLES,
+    ColumnType,
+    PlotSpec,
+    PlotStyle,
+    Project,
+    ReferenceLine,
+    Z_STYLES,
+)
 from graphmatrix.ui.widgets import fill_column_combo, fill_sheet_combo, sheet_label
 
 
@@ -46,7 +54,9 @@ class AddPlotDialog(QDialog):
         form.addRow("Style:", self.style_combo)
         form.addRow("Legend label:", self.legend_edit)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
 
@@ -62,8 +72,12 @@ class AddPlotDialog(QDialog):
         sheet = self.sheet_combo.currentData()
         fill_column_combo(self.x_combo, sheet, types=(ColumnType.X,))
         fill_column_combo(self.y_combo, sheet, types=(ColumnType.Y,))
-        fill_column_combo(self.yerr_combo, sheet, types=(ColumnType.YERR,), include_none=True)
-        fill_column_combo(self.z_combo, sheet, types=(ColumnType.Z, ColumnType.Y), include_none=True)
+        fill_column_combo(
+            self.yerr_combo, sheet, types=(ColumnType.YERR,), include_none=True
+        )
+        fill_column_combo(
+            self.z_combo, sheet, types=(ColumnType.Z, ColumnType.Y), include_none=True
+        )
         self._sync_z_visibility()
 
     def _sync_z_visibility(self) -> None:
@@ -120,7 +134,9 @@ class ReferenceLineDialog(QDialog):
         form.addRow("Line style:", self.style_combo)
         form.addRow("Label:", self.label_edit)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
 
@@ -130,7 +146,9 @@ class ReferenceLineDialog(QDialog):
         self._update_color_button()
 
     def _pick_color(self) -> None:
-        color = QColorDialog.getColor(QColor(self._color), self, "Reference Line Colour")
+        color = QColorDialog.getColor(
+            QColor(self._color), self, "Reference Line Colour"
+        )
         if color.isValid():
             self._color = color.name()
             self._update_color_button()

@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import numpy as np
 
-from graphmatrix.core.model import Column, ColumnType, Graph, Project, Workbook, Worksheet
+from graphmatrix.core.model import (
+    Column,
+    ColumnType,
+    Graph,
+    Project,
+    Workbook,
+    Worksheet,
+)
 
 
 def _sample_project() -> Project:
@@ -12,7 +19,9 @@ def _sample_project() -> Project:
     book = project.add_workbook(Workbook("Book1"))
     sheet = book.add_sheet(Worksheet("Sheet1"))
     sheet.add_column("X1", ColumnType.X, np.linspace(0, 2 * np.pi, 50), units="rad")
-    sheet.add_column("Y1", ColumnType.Y, np.sin(np.linspace(0, 2 * np.pi, 50)), comment="sin(x)")
+    sheet.add_column(
+        "Y1", ColumnType.Y, np.sin(np.linspace(0, 2 * np.pi, 50)), comment="sin(x)"
+    )
     project.add_graph(Graph("Graph1"))
     return project
 
@@ -38,7 +47,9 @@ def test_roundtrip_preserves_everything(tmp_path):
     assert sheet.column("X1").units == "rad"
     assert sheet.column("Y1").comment == "sin(x)"
     assert sheet.num_rows == 50
-    np.testing.assert_allclose(sheet.column("Y1").data, np.sin(np.linspace(0, 2 * np.pi, 50)))
+    np.testing.assert_allclose(
+        sheet.column("Y1").data, np.sin(np.linspace(0, 2 * np.pi, 50))
+    )
     assert [g.name for g in reloaded.graphs] == ["Graph1"]
 
 

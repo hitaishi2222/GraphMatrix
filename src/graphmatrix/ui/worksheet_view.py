@@ -6,7 +6,7 @@ Cell edits and structural changes go through Commands, so every edit is undoable
 from __future__ import annotations
 
 import numpy as np
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QMenu,
     QMessageBox,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -25,6 +26,7 @@ from graphmatrix.core.commands import (
     CommandStack,
     DeleteRowsCommand,
     InsertRowsCommand,
+    MacroCommand,
     RemoveColumnCommand,
     RenameCommand,
     ReorderColumnsCommand,
@@ -58,8 +60,13 @@ class WorksheetView(QWidget):
     # Orange tint shared with the graph-canvas brush overlay.
     HIGHLIGHT_COLOR = "#ff7f0e"
 
-    def __init__(self, sheet: Worksheet, commands: CommandStack, source: str,
-                 parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        sheet: Worksheet,
+        commands: CommandStack,
+        source: str,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.sheet = sheet
         self.commands = commands
@@ -75,12 +82,39 @@ class WorksheetView(QWidget):
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._context_menu)
         self.table.itemChanged.connect(self._on_item_changed)
-        self.table.horizontalHeader().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.table.horizontalHeader().customContextMenuRequested.connect(self._header_menu)
+        self.table.horizontalHeader().setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.table.horizontalHeader().customContextMenuRequested.connect(
+            self._header_menu
+        )
+        self.table.verticalHeader().setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.table.verticalHeader().customContextMenuRequested.connect(
+            self._row_header_menu
+        )
         self.table.horizontalHeader().setSectionsMovable(True)
         self.table.horizontalHeader().sectionMoved.connect(self._on_section_moved)
         self.table.selectionModel().selectionChanged.connect(self._broadcast_selection)
         layout.addWidget(self.table)
+
+        # A single “+” that sits just after the last column header. It appends a
+        # column, mirroring the spreadsheet convention, and replaces the old
+        # header toolbar/dropdowns.
+        self.add_column_button = QPushButton("+", self.table.horizontalHeader())
+        self.add_column_button.setObjectName("headerAddButton")
+        self.add_column_button.setFixedSize(20, 20)
+        self.add_column_button.setToolTip("Add a column at the end")
+        self.add_column_button.clicked.connect(self.append_column)
+        header = self.table.horizontalHeader()
+        header.sectionResized.connect(lambda *_: self._position_add_column_button())
+        header.sectionMoved.connect(lambda *_: self._position_add_column_button())
+        header.geometriesChanged.connect(self._position_add_column_button)
+        header.installEventFilter(self)
+        self.table.horizontalScrollBar().valueChanged.connect(
+            self._position_add_column_button
+        )
 
         for keys, slot in (
             (QKeySequence.StandardKey.Copy, self._copy),
@@ -90,11 +124,16 @@ class WorksheetView(QWidget):
             shortcut = QShortcut(QKeySequence(keys), self)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             shortcut.activated.connect(slot)
+        f2 = QShortcut(QKeySequence("F2"), self)
+        f2.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        f2.activated.connect(self._rename_selected_column)
 
         self.populate()
 
     # -- rendering -----------------------------------------------------------
     def populate(self) -> None:
+        v_scroll = self.table.verticalScrollBar().value()
+        h_scroll = self.table.horizontalScrollBar().value()
         self._loading = True
         try:
             columns = self.sheet.columns
@@ -103,13 +142,19 @@ class WorksheetView(QWidget):
             self.table.setColumnCount(len(columns))
             self.table.setRowCount(max(rows, 1))
             self.table.setHorizontalHeaderLabels(
-                [f"{c.name}\n({c.col_type.value})" + (f"\n[{c.units}]" if c.units else "") for c in columns]
+                [
+                    f"{c.name}\n({c.col_type.value})"
+                    + (f"\n[{c.units}]" if c.units else "")
+                    for c in columns
+                ]
             )
             for col_index, column in enumerate(columns):
                 for row_index in range(rows):
                     value = column.get(row_index) if row_index < len(column) else ""
                     item = QTableWidgetItem(_fmt(value, column))
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                    item.setTextAlignment(
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+                    )
                     self.table.setItem(row_index, col_index, item)
             header = self.table.horizontalHeader()
             for i in range(self.table.columnCount()):
@@ -118,6 +163,132 @@ class WorksheetView(QWidget):
             self._loading = False
         self._apply_row_highlight()
         self.table.resizeColumnsToContents()
+        # Keep the user's place when a command (e.g. insert row) rebuilds.
+        self.table.verticalScrollBar().setValue(v_scroll)
+        self.table.horizontalScrollBar().setValue(h_scroll)
+        self._position_add_column_button()
+
+    # -- header “+”: add a column at the end --------------------------------
+    def _position_add_column_button(self) -> None:
+        """Place the header “+” just after the last visible column header."""
+        button = getattr(self, "add_column_button", None)
+        if button is None:
+            return
+        header = self.table.horizontalHeader()
+        count = self.sheet.num_columns
+        if count <= 0:
+            x = 2
+        else:
+            last = count - 1
+            x = (
+                header.sectionViewportPosition(last)
+                + header.sectionSize(last)
+                + 4
+            )
+        y = max(0, (header.height() - button.height()) // 2)
+        button.move(int(x), int(y))
+        fits = x + button.width() <= header.width()
+        button.setVisible(fits)
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 - Qt override
+        if obj is self.table.horizontalHeader() and event.type() == QEvent.Type.Resize:
+            self._position_add_column_button()
+        return super().eventFilter(obj, event)
+
+    # -- row / column controls ----------------------------------------------
+    def _selection_rows(self) -> tuple[int, int, int]:
+        """Return (first, last, span) for the selected rows (or the current one)."""
+        rows = sorted({index.row() for index in self.table.selectedIndexes()})
+        if not rows:
+            rows = [max(self.table.currentRow(), 0)]
+        return rows[0], rows[-1], rows[-1] - rows[0] + 1
+
+    def _selection_columns(self) -> tuple[int, int, int]:
+        """Return (first, last, span) for selected columns (or the current one)."""
+        columns = sorted({index.column() for index in self.table.selectedIndexes()})
+        if not columns:
+            current = self.table.currentColumn()
+            columns = [current] if current >= 0 else []
+        if not columns:
+            return 0, -1, 0
+        return columns[0], columns[-1], columns[-1] - columns[0] + 1
+
+    def _insert_rows(self, index: int, count: int = 1) -> None:
+        index = max(0, int(index))
+        count = max(1, int(count))
+        self.commands.push(InsertRowsCommand(self.sheet, index, count))
+        self.table.setCurrentCell(
+            min(index, max(0, self.table.rowCount() - 1)),
+            max(0, self.table.currentColumn()),
+        )
+
+    def append_row(self) -> None:
+        self._insert_rows(self.sheet.num_rows, 1)
+
+    def insert_rows_above(self) -> None:
+        first, _last, span = self._selection_rows()
+        self._insert_rows(first, span)
+
+    def insert_rows_below(self) -> None:
+        _first, last, span = self._selection_rows()
+        self._insert_rows(last + 1, span)
+
+    def insert_multiple_rows(self) -> None:
+        first, _last, _span = self._selection_rows()
+        count, ok = QInputDialog.getInt(
+            self, "Insert Multiple Rows", "Number of rows:", 10, 1, 100000, 1
+        )
+        if ok:
+            self._insert_rows(first, count)
+
+    def delete_selected_rows(self) -> None:
+        first, _last, span = self._selection_rows()
+        span = min(span, max(0, self.sheet.num_rows - first))
+        if span <= 0:
+            return
+        self.commands.push(DeleteRowsCommand(self.sheet, first, span))
+        self.table.setCurrentCell(
+            min(first, max(0, self.table.rowCount() - 1)),
+            max(0, self.table.currentColumn()),
+        )
+
+    def _add_column(self, index: int | None = None) -> None:
+        """Insert a new Y column immediately, with an auto-generated name."""
+        column = Column(self.sheet.next_column_name(ColumnType.Y), ColumnType.Y, [])
+        self.commands.push(
+            AddColumnCommand(self.sheet, column, index=index, source=self.source)
+        )
+
+    def append_column(self) -> None:
+        self._add_column(None)
+
+    def insert_column_left(self) -> None:
+        first, _last, _span = self._selection_columns()
+        self._add_column(first)
+
+    def insert_column_right(self) -> None:
+        _first, last, _span = self._selection_columns()
+        self._add_column(last + 1)
+
+    def _insert_column_dialog(self) -> None:
+        first, _last, _span = self._selection_columns()
+        self._insert_column(first)
+
+    def delete_selected_columns(self) -> None:
+        first, last, span = self._selection_columns()
+        if span <= 0:
+            return
+        columns = self.sheet.columns[first : last + 1]
+        if not columns:
+            return
+        commands = [RemoveColumnCommand(self.sheet, column) for column in reversed(columns)]
+        if len(commands) == 1:
+            self.commands.push(commands[0])
+        else:
+            self.commands.push(MacroCommand(commands, "Delete Columns"))
+        self.table.setCurrentCell(
+            max(0, self.table.currentRow()), max(0, first - 1)
+        )
 
     # -- linked brushing -----------------------------------------------------
     def _apply_row_highlight(self) -> None:
@@ -136,7 +307,9 @@ class WorksheetView(QWidget):
                 for col in range(self.table.columnCount()):
                     item = self.table.item(row, col)
                     if item is not None:
-                        item.setBackground(tint if row in on else Qt.GlobalColor.transparent)
+                        item.setBackground(
+                            tint if row in on else Qt.GlobalColor.transparent
+                        )
         finally:
             self.table.blockSignals(False)
 
@@ -168,7 +341,6 @@ class WorksheetView(QWidget):
         row, col = item.row(), item.column()
         if col >= self.sheet.num_columns:
             return
-        column = self.sheet.columns[col]
         text = item.text().strip()
         if text == "":
             value = np.nan
@@ -195,19 +367,50 @@ class WorksheetView(QWidget):
 
     def _context_menu(self, pos) -> None:
         menu = QMenu(self)
-        row = self.table.currentRow()
         columns = self._selected_column_indices()
         if len(columns) == 1:
             column = self.sheet.columns[columns[0]]
-            menu.addAction(f"Plot \u201c{column.name}\u201d", lambda: self._plot_column(column))
+            menu.addAction(
+                f"Plot \u201c{column.name}\u201d", lambda: self._plot_column(column)
+            )
             menu.addSeparator()
         menu.addAction("Copy", self._copy)
         menu.addAction("Cut", self._cut)
         menu.addAction("Paste", self._paste)
         menu.addSeparator()
-        menu.addAction("Insert Row Above", lambda: self.commands.push(InsertRowsCommand(self.sheet, max(row, 0))))
-        menu.addAction("Delete Row", lambda: self.commands.push(DeleteRowsCommand(self.sheet, max(row, 0))))
+
+        rows_menu = menu.addMenu("Rows")
+        rows_menu.addAction("Insert Row(s) Above", self.insert_rows_above)
+        rows_menu.addAction("Insert Row(s) Below", self.insert_rows_below)
+        rows_menu.addAction("Add Row at End", self.append_row)
+        rows_menu.addAction("Insert Multiple Rows…", self.insert_multiple_rows)
+        rows_menu.addSeparator()
+        rows_menu.addAction("Delete Selected Row(s)", self.delete_selected_rows)
+
+        cols_menu = menu.addMenu("Columns")
+        cols_menu.addAction("Insert Column Left", self.insert_column_left)
+        cols_menu.addAction("Insert Column Right", self.insert_column_right)
+        cols_menu.addAction("Add Column at End", self.append_column)
+        cols_menu.addAction("Insert Column with Name…", self._insert_column_dialog)
+        cols_menu.addSeparator()
+        cols_menu.addAction("Delete Selected Column(s)", self.delete_selected_columns)
         menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _row_header_menu(self, pos) -> None:
+        """Right-click on the row numbers: insert/delete rows."""
+        row = self.table.verticalHeader().logicalIndexAt(pos)
+        if row >= 0:
+            if row not in self.selected_rows():
+                self.table.selectRow(row)
+            self.table.setCurrentCell(row, max(0, self.table.currentColumn()))
+        menu = QMenu(self)
+        menu.addAction("Insert Row(s) Above", self.insert_rows_above)
+        menu.addAction("Insert Row(s) Below", self.insert_rows_below)
+        menu.addAction("Add Row at End", self.append_row)
+        menu.addAction("Insert Multiple Rows…", self.insert_multiple_rows)
+        menu.addSeparator()
+        menu.addAction("Delete Selected Row(s)", self.delete_selected_rows)
+        menu.exec(self.table.verticalHeader().mapToGlobal(pos))
 
     # -- clipboard -----------------------------------------------------------
     def _selection_bounds(self) -> tuple[int, int, int, int] | None:
@@ -256,7 +459,9 @@ class WorksheetView(QWidget):
             for col in range(left, right + 1):
                 if col < self.sheet.num_columns:
                     column = self.sheet.columns[col]
-                    self.commands.push(SetCellValueCommand(self.sheet, row, col, self._blank(column)))
+                    self.commands.push(
+                        SetCellValueCommand(self.sheet, row, col, self._blank(column))
+                    )
 
     def _cell_from_text(self, column: Column, text: str):
         if column.col_type == ColumnType.TEXT:
@@ -281,9 +486,11 @@ class WorksheetView(QWidget):
         if col0 >= self.sheet.num_columns:
             return
         values = [
-            [self._cell_from_text(self.sheet.columns[col0 + dc], raw)
-             for dc, raw in enumerate(line.split("\t"))
-             if col0 + dc < self.sheet.num_columns]
+            [
+                self._cell_from_text(self.sheet.columns[col0 + dc], raw)
+                for dc, raw in enumerate(line.split("\t"))
+                if col0 + dc < self.sheet.num_columns
+            ]
             for line in rows
         ]
         self.commands.push(SetCellsCommand(self.sheet, row0, col0, values))
@@ -292,10 +499,20 @@ class WorksheetView(QWidget):
         if self._loading or self.sheet.num_columns == 0:
             return
         header = self.table.horizontalHeader()
-        order = [self.sheet.columns[header.logicalIndex(v)] for v in range(self.sheet.num_columns)]
+        order = [
+            self.sheet.columns[header.logicalIndex(v)]
+            for v in range(self.sheet.num_columns)
+        ]
         if [c.name for c in order] == self.sheet.column_names:
             return
         self.commands.push(ReorderColumnsCommand(self.sheet, order))
+
+    def _rename_selected_column(self) -> None:
+        cols = self._selected_column_indices()
+        if not cols:
+            return
+        column = self.sheet.columns[cols[0]]
+        self._rename_column(column)
 
     def _header_menu(self, pos) -> None:
         col = self.table.horizontalHeader().logicalIndexAt(pos)
@@ -303,43 +520,71 @@ class WorksheetView(QWidget):
             return
         column = self.sheet.columns[col]
         menu = QMenu(self)
-        menu.addAction(f"Plot \u201c{column.name}\u201d", lambda: self._plot_column(column))
+        menu.addAction(
+            f"Plot \u201c{column.name}\u201d", lambda: self._plot_column(column)
+        )
         menu.addSeparator()
         menu.addAction("Rename Column…", lambda: self._rename_column(column))
         menu.addAction("Set Units…", lambda: self._edit_field(column, "units", "Units"))
-        menu.addAction("Set Comment…", lambda: self._edit_field(column, "comment", "Comment"))
+        menu.addAction(
+            "Set Comment…", lambda: self._edit_field(column, "comment", "Comment")
+        )
         menu.addAction("Set Type…", lambda: self._set_type(column))
         menu.addAction("Set Decimal Places…", lambda: self._set_decimal(column))
         menu.addSeparator()
         menu.addAction("Set Formula…", lambda: self._set_formula(column))
-        menu.addAction("Insert Column", lambda: self._insert_column(col))
-        menu.addAction("Delete Column", lambda: self.commands.push(RemoveColumnCommand(self.sheet, column)))
+        menu.addAction("Insert Column Left", lambda: self._add_column(col))
+        menu.addAction("Insert Column Right", lambda: self._add_column(col + 1))
+        menu.addAction("Add Column at End", self.append_column)
+        menu.addAction("Insert Column with Name…", lambda: self._insert_column(col))
+        menu.addAction(
+            "Delete Column",
+            lambda: self.commands.push(RemoveColumnCommand(self.sheet, column)),
+        )
         menu.exec(self.table.horizontalHeader().mapToGlobal(pos))
 
     def _rename_column(self, column: Column) -> None:
-        name, ok = QInputDialog.getText(self, "Rename Column", "Name:", text=column.name)
+        name, ok = QInputDialog.getText(
+            self, "Rename Column", "Name:", text=column.name
+        )
         if ok and name:
             self.commands.push(RenameCommand(column, name))
 
     def _edit_field(self, column: Column, field: str, label: str) -> None:
-        value, ok = QInputDialog.getText(self, label, f"{label}:", text=getattr(column, field))
+        value, ok = QInputDialog.getText(
+            self, label, f"{label}:", text=getattr(column, field)
+        )
         if ok:
-            self.commands.push(SetColumnInfoCommand(self.sheet, column, **{field: value}))
+            self.commands.push(
+                SetColumnInfoCommand(self.sheet, column, **{field: value})
+            )
 
     def _set_type(self, column: Column) -> None:
         types = [t.value for t in ColumnType]
-        value, ok = QInputDialog.getItem(self, "Column Type", "Type:", types, types.index(column.col_type.value), False)
+        value, ok = QInputDialog.getItem(
+            self,
+            "Column Type",
+            "Type:",
+            types,
+            types.index(column.col_type.value),
+            False,
+        )
         if ok:
-            self.commands.push(SetColumnInfoCommand(self.sheet, column, col_type=ColumnType(value)))
+            self.commands.push(
+                SetColumnInfoCommand(self.sheet, column, col_type=ColumnType(value))
+            )
 
     def _set_decimal(self, column: Column) -> None:
-        value, ok = QInputDialog.getInt(self, "Decimal Places", "Decimals:", column.decimal or 6, 0, 12)
+        value, ok = QInputDialog.getInt(
+            self, "Decimal Places", "Decimals:", column.decimal or 6, 0, 12
+        )
         if ok:
             self.commands.push(SetColumnInfoCommand(self.sheet, column, decimal=value))
 
     def _set_formula(self, column: Column) -> None:
         text, ok = QInputDialog.getText(
-            self, "Set Formula",
+            self,
+            "Set Formula",
             "Formula (use column names, e.g. sin(X1)+2):",
             text="",
         )
@@ -347,16 +592,27 @@ class WorksheetView(QWidget):
             return
         try:
             values = np.asarray(
-                __import__("graphmatrix.core.model.formula", fromlist=["evaluate_column_formula"])
-                .evaluate_column_formula(self.sheet, text, max(self.sheet.num_rows, 1))
+                __import__(
+                    "graphmatrix.core.model.formula",
+                    fromlist=["evaluate_column_formula"],
+                ).evaluate_column_formula(self.sheet, text, max(self.sheet.num_rows, 1))
             )
         except FormulaError as exc:
             QMessageBox.warning(self, "Formula error", str(exc))
             return
-        self.commands.push(SetColumnDataCommand(column, values, label=f"Formula {column.name}"))
+        self.commands.push(
+            SetColumnDataCommand(column, values, label=f"Formula {column.name}")
+        )
 
     def _insert_column(self, index: int) -> None:
-        name, ok = QInputDialog.getText(self, "Insert Column", "Name:", text=self.sheet.next_column_name(ColumnType.Y))
+        name, ok = QInputDialog.getText(
+            self,
+            "Insert Column",
+            "Name:",
+            text=self.sheet.next_column_name(ColumnType.Y),
+        )
         if ok and name:
             column = Column(name, ColumnType.Y, [])
-            self.commands.push(AddColumnCommand(self.sheet, column, index=index, source=self.source))
+            self.commands.push(
+                AddColumnCommand(self.sheet, column, index=index, source=self.source)
+            )

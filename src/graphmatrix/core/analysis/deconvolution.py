@@ -23,8 +23,8 @@ _AREA_FACTOR = {"gaussian": np.sqrt(2 * np.pi), "lorentzian": np.pi}
 
 def _peak(x, kind: str, amplitude: float, center: float, width: float) -> np.ndarray:
     if kind == "lorentzian":
-        return amplitude * width ** 2 / ((x - center) ** 2 + width ** 2)
-    return amplitude * np.exp(-((x - center) ** 2) / (2 * width ** 2))
+        return amplitude * width**2 / ((x - center) ** 2 + width**2)
+    return amplitude * np.exp(-((x - center) ** 2) / (2 * width**2))
 
 
 def deconvolve(
@@ -41,7 +41,9 @@ def deconvolve(
 
     kind = kind.lower()
     n_peaks = len(centers)
-    result = AnalysisResult(kind="deconvolution", title=f"Peak Deconvolution — {n_peaks}× {kind.title()}")
+    result = AnalysisResult(
+        kind="deconvolution", title=f"Peak Deconvolution — {n_peaks}× {kind.title()}"
+    )
     if kind not in _KINDS:
         result.notes = f"Unknown peak kind {kind!r}. Known: {', '.join(_KINDS)}"
         return result
@@ -58,14 +60,20 @@ def deconvolve(
         result.notes = "Not enough data points for the requested number of peaks."
         return result
 
-    spacing = float(np.min(np.diff(sorted(centers)))) if n_peaks > 1 else (x.max() - x.min()) / 6.0
+    spacing = (
+        float(np.min(np.diff(sorted(centers))))
+        if n_peaks > 1
+        else (x.max() - x.min()) / 6.0
+    )
     default_width = width_guess or max(spacing / 2.5, (x.max() - x.min()) / 100.0)
     y_min = float(np.min(y))
 
     def model(xx, *p):
         total = np.zeros_like(np.asarray(xx, dtype=float))
         for index in range(n_peaks):
-            total = total + _peak(xx, kind, p[3 * index], p[3 * index + 1], p[3 * index + 2])
+            total = total + _peak(
+                xx, kind, p[3 * index], p[3 * index + 1], p[3 * index + 2]
+            )
         if baseline:
             total = total + p[3 * n_peaks]
         return total
@@ -89,21 +97,35 @@ def deconvolve(
         result.notes = f"Fit failed: {exc}"
         return result
 
-    perr = np.sqrt(np.abs(np.diag(pcov))) if pcov is not None else np.full(len(p0), np.nan)
+    perr = (
+        np.sqrt(np.abs(np.diag(pcov))) if pcov is not None else np.full(len(p0), np.nan)
+    )
     y_fit = model(x, *popt)
 
     rows: list[ParamRow] = []
     xs = np.linspace(x.min(), x.max(), 400)
     area_factor = _AREA_FACTOR[kind]
     for index in range(n_peaks):
-        amp, ctr, wid = float(popt[3 * index]), float(popt[3 * index + 1]), float(popt[3 * index + 2])
-        rows.append(ParamRow(f"Peak {index + 1} amplitude", amp, float(perr[3 * index])))
-        rows.append(ParamRow(f"Peak {index + 1} center", ctr, float(perr[3 * index + 1])))
-        rows.append(ParamRow(f"Peak {index + 1} width", wid, float(perr[3 * index + 2])))
+        amp, ctr, wid = (
+            float(popt[3 * index]),
+            float(popt[3 * index + 1]),
+            float(popt[3 * index + 2]),
+        )
+        rows.append(
+            ParamRow(f"Peak {index + 1} amplitude", amp, float(perr[3 * index]))
+        )
+        rows.append(
+            ParamRow(f"Peak {index + 1} center", ctr, float(perr[3 * index + 1]))
+        )
+        rows.append(
+            ParamRow(f"Peak {index + 1} width", wid, float(perr[3 * index + 2]))
+        )
         rows.append(ParamRow(f"Peak {index + 1} area", amp * area_factor * wid))
         result.curves[f"Peak {index + 1}"] = (xs, _peak(xs, kind, amp, ctr, wid))
     if baseline:
-        rows.append(ParamRow("Baseline", float(popt[3 * n_peaks]), float(perr[3 * n_peaks])))
+        rows.append(
+            ParamRow("Baseline", float(popt[3 * n_peaks]), float(perr[3 * n_peaks]))
+        )
 
     result.parameters = rows
     result.summary = {
@@ -120,8 +142,13 @@ def deconvolve(
     return result
 
 
-def deconvolve_auto(x: Sequence[float], y: Sequence[float], *, max_peaks: int = 4,
-                    kind: str = "gaussian") -> AnalysisResult:
+def deconvolve_auto(
+    x: Sequence[float],
+    y: Sequence[float],
+    *,
+    max_peaks: int = 4,
+    kind: str = "gaussian",
+) -> AnalysisResult:
     """Detect peaks, then deconvolve the most prominent ``max_peaks`` of them."""
     from . import peaks as peaks_module
 

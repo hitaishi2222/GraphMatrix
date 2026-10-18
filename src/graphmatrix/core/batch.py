@@ -36,7 +36,9 @@ def process_files(
             result = operation(book, path)
             items.append(BatchItem(path=path, ok=True, result=result))
         except Exception as exc:  # noqa: BLE001 - per-file isolation
-            items.append(BatchItem(path=path, ok=False, error=f"{type(exc).__name__}: {exc}"))
+            items.append(
+                BatchItem(path=path, ok=False, error=f"{type(exc).__name__}: {exc}")
+            )
     return items
 
 
@@ -93,15 +95,33 @@ def run_recipe_over_files(
                     cy_name = sheet.unique_column_name(f"{name}_Y")
                     sheet.add_column(cx_name, ColumnType.X, cx)
                     sheet.add_column(cy_name, ColumnType.Y, cy)
-                    graph.first_layer.add_plot(PlotSpec(source=source, x=cx_name, y=cy_name, legend=name))
+                    graph.first_layer.add_plot(
+                        PlotSpec(source=source, x=cx_name, y=cy_name, legend=name)
+                    )
                 figure_path = Path(export_dir) / f"{path.stem}.pdf"
                 figure_path.parent.mkdir(parents=True, exist_ok=True)
-                export_graph(graph, project, figure_path, width_mm=width_mm, height_mm=height_mm, dpi=dpi)
+                export_graph(
+                    graph,
+                    project,
+                    figure_path,
+                    width_mm=width_mm,
+                    height_mm=height_mm,
+                    dpi=dpi,
+                )
 
-            items.append(BatchItem(path=path, ok=True, result=result,
-                                   report_path=report_path, figure_path=figure_path))
+            items.append(
+                BatchItem(
+                    path=path,
+                    ok=True,
+                    result=result,
+                    report_path=report_path,
+                    figure_path=figure_path,
+                )
+            )
         except Exception as exc:  # noqa: BLE001 - per-file isolation
-            items.append(BatchItem(path=path, ok=False, error=f"{type(exc).__name__}: {exc}"))
+            items.append(
+                BatchItem(path=path, ok=False, error=f"{type(exc).__name__}: {exc}")
+            )
     return items
 
 

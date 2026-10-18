@@ -49,7 +49,14 @@ def test_formula_rejects_unknown_names():
 
 
 def test_plot_spec_and_layer_roundtrip():
-    spec = PlotSpec(source="Book1/Sheet1", x="X1", y="Y1", style=PlotStyle.BAR, color="#ff0000", legend="data")
+    spec = PlotSpec(
+        source="Book1/Sheet1",
+        x="X1",
+        y="Y1",
+        style=PlotStyle.BAR,
+        color="#ff0000",
+        legend="data",
+    )
     layer = Layer("Layer 1", x_scale=AxisScale.LOG)
     layer.add_plot(spec)
     graph = Graph("Graph1", title="T")

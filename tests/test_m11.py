@@ -60,6 +60,7 @@ def make_graph(source: str = "Book1/Sheet1") -> Graph:
 
 # -- BrushSelection state -------------------------------------------------------
 
+
 def test_brush_set_get_and_signal():
     from graphmatrix.ui.brushing import BrushSelection
 
@@ -94,6 +95,7 @@ def test_brush_moves_between_sheets():
 
 # -- matplotlib canvas overlay + click-to-pick ----------------------------------
 
+
 def test_mpl_canvas_brush_overlay_and_pick():
     pytest.importorskip("matplotlib")
     from types import SimpleNamespace
@@ -121,8 +123,9 @@ def test_mpl_canvas_brush_overlay_and_pick():
     inv = ax.transData.inverted()
     # a tiny data-space offset so the click lands within 12 px of the marker
     dx, dy = inv.transform((px + 6, py))
-    event = SimpleNamespace(inaxes=ax, xdata=dx, ydata=dy, dblclick=False,
-                            button=1, x=px, y=py)
+    event = SimpleNamespace(
+        inaxes=ax, xdata=dx, ydata=dy, dblclick=False, button=1, x=px, y=py
+    )
     picked: list[tuple[int, int]] = []
     canvas.point_picked = lambda series_index, row: picked.append((series_index, row))
     canvas._on_button_press(event)
@@ -130,8 +133,9 @@ def test_mpl_canvas_brush_overlay_and_pick():
 
     # A far-away click picks nothing.
     dx, dy = inv.transform((px + 400, py + 400))
-    far = SimpleNamespace(inaxes=ax, xdata=dx, ydata=dy, dblclick=False,
-                          button=1, x=px + 400, y=py + 400)
+    far = SimpleNamespace(
+        inaxes=ax, xdata=dx, ydata=dy, dblclick=False, button=1, x=px + 400, y=py + 400
+    )
     picked.clear()
     canvas._on_button_press(far)
     assert picked == []
@@ -154,6 +158,7 @@ def test_mpl_canvas_rows_follow_sort_order():
 
 
 # -- WorksheetView highlighting --------------------------------------------------
+
 
 def test_worksheet_row_highlight(qapp):
     from graphmatrix.ui.worksheet_view import WorksheetView
@@ -189,13 +194,16 @@ def test_worksheet_selected_rows_broadcast(qapp):
     view.rows_selected.connect(lambda s, r: received.append((s, list(r))))
 
     model = view.table.selectionModel()
-    model.select(view.table.model().index(2, 0),
-                 QItemSelectionModel.SelectionFlag.Select |
-                 QItemSelectionModel.SelectionFlag.Rows)
+    model.select(
+        view.table.model().index(2, 0),
+        QItemSelectionModel.SelectionFlag.Select
+        | QItemSelectionModel.SelectionFlag.Rows,
+    )
     assert received and received[-1] == ("Book1/Sheet1", [2])
 
 
 # -- GraphView wiring -------------------------------------------------------------
+
 
 def test_graphview_brush_roundtrip(qapp):
     from PySide6.QtCore import Signal
@@ -268,9 +276,11 @@ def test_main_window_brush_links_sheet_and_graph(qapp):
     from PySide6.QtCore import QItemSelectionModel
 
     model = sheet_view.table.selectionModel()
-    model.select(sheet_view.table.model().index(2, 0),
-                 QItemSelectionModel.SelectionFlag.Select |
-                 QItemSelectionModel.SelectionFlag.Rows)
+    model.select(
+        sheet_view.table.model().index(2, 0),
+        QItemSelectionModel.SelectionFlag.Select
+        | QItemSelectionModel.SelectionFlag.Rows,
+    )
     assert window.brush.get("BrushBook/Data") == [2]
     offsets = graph_view.canvas._brush_artists[0].get_xydata()
     assert np.allclose(offsets, [[2.0, 4.0]])

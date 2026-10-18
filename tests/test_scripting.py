@@ -142,7 +142,9 @@ def test_macro_replays_populated_workbook():
     namespace = {"api": GraphMatrixAPI(fresh)}
     exec(compile(recorder.script(), "<macro>", "exec"), namespace)  # noqa: S102
     assert fresh.sheet("Imported/Sheet1").column("Y1") is not None
-    np.testing.assert_allclose(fresh.sheet("Imported/Sheet1").column("Y1").data, [2.0, 3.0])
+    np.testing.assert_allclose(
+        fresh.sheet("Imported/Sheet1").column("Y1").data, [2.0, 3.0]
+    )
 
 
 def test_batch_processing(tmp_path):

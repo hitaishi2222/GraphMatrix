@@ -31,8 +31,11 @@ class PlotStyle(str, Enum):
 
 #: Styles that need a third value (colour or height) flowing with the series.
 Z_STYLES = (
-    PlotStyle.COLOR_SCATTER, PlotStyle.HEATMAP, PlotStyle.CONTOUR,
-    PlotStyle.SCATTER3D, PlotStyle.SURFACE3D,
+    PlotStyle.COLOR_SCATTER,
+    PlotStyle.HEATMAP,
+    PlotStyle.CONTOUR,
+    PlotStyle.SCATTER3D,
+    PlotStyle.SURFACE3D,
 )
 
 
@@ -49,6 +52,52 @@ class AxisScale(str, Enum):
         return self.value
 
 
+class GraphType(str, Enum):
+    """Origin-style figure templates: how a graph arranges its layers.
+
+    The type is a *preset* over ``layout_rows`` / ``layout_cols`` and the panel
+    spacing: it does not itself create or delete plots, so switching type never
+    loses data.
+    """
+
+    SIMPLE = "simple"        # one panel, one plot frame
+    STACK = "stack"          # panels stacked vertically, sharing X
+    DOUBLE_Y = "double-y"    # one panel with a secondary (right) Y axis
+    X_TWIN = "x-twin"        # panels side by side, sharing Y
+    GRID = "grid"            # an R x C grid of panels
+
+    def __str__(self) -> str:  # pragma: no cover - cosmetic
+        return self.value
+
+
+#: Every graph type, in the order they appear in menus and combos.
+GRAPH_TYPES = (
+    GraphType.SIMPLE,
+    GraphType.STACK,
+    GraphType.DOUBLE_Y,
+    GraphType.X_TWIN,
+    GraphType.GRID,
+)
+
+#: Human-readable labels for the graph types.
+GRAPH_TYPE_LABELS = {
+    GraphType.SIMPLE.value: "Simple",
+    GraphType.STACK.value: "Stack (vertical panels)",
+    GraphType.DOUBLE_Y.value: "Double Y (2Y)",
+    GraphType.X_TWIN.value: "X-Twin (side-by-side panels)",
+    GraphType.GRID.value: "Grid (multi-panel)",
+}
+
+
+def graph_type_label(value: GraphType | str | None) -> str:
+    """Return the display label for a graph type value (tolerant of junk)."""
+    try:
+        key = GraphType(value or GraphType.SIMPLE).value
+    except ValueError:
+        key = GraphType.SIMPLE.value
+    return GRAPH_TYPE_LABELS.get(key, "Simple")
+
+
 #: Line-dash presets accepted by every backend (canvas + matplotlib export).
 LINE_STYLES = ("solid", "dash", "dot", "dashdot", "longdash")
 
@@ -57,8 +106,14 @@ REFERENCE_ORIENTATIONS = ("h", "v")
 
 
 _PALETTE = (
-    "#1f77b4", "#d62728", "#2ca02c", "#9467bd",
-    "#ff7f0e", "#17becf", "#8c564b", "#e377c2",
+    "#1f77b4",
+    "#d62728",
+    "#2ca02c",
+    "#9467bd",
+    "#ff7f0e",
+    "#17becf",
+    "#8c564b",
+    "#e377c2",
 )
 
 
@@ -84,23 +139,36 @@ class PlotSpec:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "source": self.source, "x": self.x, "y": self.y,
-            "yerr": self.yerr, "xerr": self.xerr,
-            "style": PlotStyle(self.style).value, "color": self.color,
-            "line_width": self.line_width, "symbol": self.symbol,
-            "symbol_size": self.symbol_size, "legend": self.legend,
-            "y_axis": self.y_axis, "line_style": self.line_style,
-            "z": self.z, "cmap": self.cmap,
+            "source": self.source,
+            "x": self.x,
+            "y": self.y,
+            "yerr": self.yerr,
+            "xerr": self.xerr,
+            "style": PlotStyle(self.style).value,
+            "color": self.color,
+            "line_width": self.line_width,
+            "symbol": self.symbol,
+            "symbol_size": self.symbol_size,
+            "legend": self.legend,
+            "y_axis": self.y_axis,
+            "line_style": self.line_style,
+            "z": self.z,
+            "cmap": self.cmap,
         }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "PlotSpec":
         return cls(
-            source=payload["source"], x=payload["x"], y=payload["y"],
-            yerr=payload.get("yerr"), xerr=payload.get("xerr"),
+            source=payload["source"],
+            x=payload["x"],
+            y=payload["y"],
+            yerr=payload.get("yerr"),
+            xerr=payload.get("xerr"),
             style=PlotStyle(payload.get("style", PlotStyle.LINE_SYMBOL)),
-            color=payload.get("color", ""), line_width=payload.get("line_width", 2.0),
-            symbol=payload.get("symbol", "o"), symbol_size=payload.get("symbol_size", 7.0),
+            color=payload.get("color", ""),
+            line_width=payload.get("line_width", 2.0),
+            symbol=payload.get("symbol", "o"),
+            symbol_size=payload.get("symbol_size", 7.0),
             legend=payload.get("legend", ""),
             y_axis=payload.get("y_axis", "left"),
             line_style=payload.get("line_style", "solid"),
@@ -120,13 +188,22 @@ class Annotation:
     size: float = 11.0
 
     def to_dict(self) -> dict[str, Any]:
-        return {"text": self.text, "x": self.x, "y": self.y, "color": self.color, "size": self.size}
+        return {
+            "text": self.text,
+            "x": self.x,
+            "y": self.y,
+            "color": self.color,
+            "size": self.size,
+        }
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "Annotation":
         return cls(
-            text=payload.get("text", ""), x=payload.get("x", 0.05), y=payload.get("y", 0.95),
-            color=payload.get("color", "#000000"), size=payload.get("size", 11.0),
+            text=payload.get("text", ""),
+            x=payload.get("x", 0.05),
+            y=payload.get("y", 0.95),
+            color=payload.get("color", "#000000"),
+            size=payload.get("size", 11.0),
         )
 
 
@@ -148,9 +225,12 @@ class ReferenceLine:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "orientation": self.orientation, "position": self.position,
-            "color": self.color, "width": self.width,
-            "line_style": self.line_style, "label": self.label,
+            "orientation": self.orientation,
+            "position": self.position,
+            "color": self.color,
+            "width": self.width,
+            "line_style": self.line_style,
+            "label": self.label,
         }
 
     @classmethod
@@ -214,9 +294,13 @@ class Layer:
             "ref_lines": [r.to_dict() for r in self.ref_lines],
             "x_scale": AxisScale(self.x_scale).value,
             "y_scale": AxisScale(self.y_scale).value,
-            "x_label": self.x_label, "y_label": self.y_label, "y2_label": self.y2_label,
-            "x_min": self.x_min, "x_max": self.x_max,
-            "y_min": self.y_min, "y_max": self.y_max,
+            "x_label": self.x_label,
+            "y_label": self.y_label,
+            "y2_label": self.y2_label,
+            "x_min": self.x_min,
+            "x_max": self.x_max,
+            "y_min": self.y_min,
+            "y_max": self.y_max,
             "show_legend": self.show_legend,
             "minor_ticks": self.minor_ticks,
             "tick_direction": self.tick_direction,
@@ -230,7 +314,9 @@ class Layer:
     def from_dict(cls, payload: dict[str, Any]) -> "Layer":
         layer = cls(payload.get("name", "Layer 1"))
         layer.plots = [PlotSpec.from_dict(p) for p in payload.get("plots", [])]
-        layer.ref_lines = [ReferenceLine.from_dict(r) for r in payload.get("ref_lines", [])]
+        layer.ref_lines = [
+            ReferenceLine.from_dict(r) for r in payload.get("ref_lines", [])
+        ]
         layer.x_scale = AxisScale(payload.get("x_scale", "linear"))
         layer.y_scale = AxisScale(payload.get("y_scale", "linear"))
         layer.x_label = payload.get("x_label", "")
@@ -265,8 +351,14 @@ class Graph:
         self.title_font_family: str = ""
         self.title_font_size: float = 14.0
         self.title_color: str = ""
+        self.graph_type: str = GraphType.SIMPLE.value
         self.layout_rows: int = 1
         self.layout_cols: int = 1
+        #: Space between panels, as a percentage of a panel's size (grid/x-twin).
+        self.panel_gap_x: float = 12.0
+        self.panel_gap_y: float = 12.0
+        #: Vertical offset between stacked panels (the "Y delta" of a stack).
+        self.y_delta: float = 0.0
         self.layers: list[Layer] = [Layer()]
         self.annotations: list[Annotation] = []
         self.journal_preset: str = ""
@@ -275,12 +367,37 @@ class Graph:
     def add_layer(self, layer: Layer | None = None) -> Layer:
         layer = layer or Layer(f"Layer {len(self.layers) + 1}")
         self.layers.append(layer)
+        self.sync_layout()
         return layer
 
     def remove_layer(self, layer: Layer) -> int:
         index = self.layers.index(layer)
         del self.layers[index]
+        self.sync_layout()
         return index
+
+    def sync_layout(self) -> None:
+        """Recompute ``layout_rows``/``layout_cols`` from the graph type.
+
+        Simple and Double-Y graphs use a single panel; a Stack lays its layers
+        out in one column; an X-Twin lays them out in one row; a Grid keeps the
+        user's explicit rows/columns. This keeps the number of panels in step
+        with the number of layers as layers are added or removed.
+        """
+        try:
+            gtype = GraphType(getattr(self, "graph_type", GraphType.SIMPLE.value))
+        except ValueError:
+            gtype = GraphType.SIMPLE
+        layers = max(1, len(self.layers))
+        if gtype == GraphType.STACK:
+            self.layout_rows, self.layout_cols = layers, 1
+        elif gtype == GraphType.X_TWIN:
+            self.layout_rows, self.layout_cols = 1, layers
+        elif gtype == GraphType.GRID:
+            self.layout_rows = max(1, int(self.layout_rows or 1))
+            self.layout_cols = max(1, int(self.layout_cols or 1))
+        else:
+            self.layout_rows, self.layout_cols = 1, 1
 
     @property
     def first_layer(self) -> Layer:
@@ -294,12 +411,17 @@ class Graph:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "name": self.name, "title": self.title,
+            "name": self.name,
+            "title": self.title,
             "title_font_family": self.title_font_family,
             "title_font_size": self.title_font_size,
             "title_color": self.title_color,
+            "graph_type": self.graph_type,
             "layout_rows": self.layout_rows,
             "layout_cols": self.layout_cols,
+            "panel_gap_x": self.panel_gap_x,
+            "panel_gap_y": self.panel_gap_y,
+            "y_delta": self.y_delta,
             "layers": [l.to_dict() for l in self.layers],
             "annotations": [a.to_dict() for a in self.annotations],
             "journal_preset": self.journal_preset,
@@ -312,12 +434,18 @@ class Graph:
         graph.title_font_family = payload.get("title_font_family", "")
         graph.title_font_size = payload.get("title_font_size", 14.0)
         graph.title_color = payload.get("title_color", "")
+        graph.graph_type = payload.get("graph_type", GraphType.SIMPLE.value)
         graph.layout_rows = int(payload.get("layout_rows", 1) or 1)
         graph.layout_cols = int(payload.get("layout_cols", 1) or 1)
+        graph.panel_gap_x = float(payload.get("panel_gap_x", 12.0))
+        graph.panel_gap_y = float(payload.get("panel_gap_y", 12.0))
+        graph.y_delta = float(payload.get("y_delta", 0.0))
         layers = [Layer.from_dict(l) for l in payload.get("layers", [])]
         if layers:
             graph.layers = layers
-        graph.annotations = [Annotation.from_dict(a) for a in payload.get("annotations", [])]
+        graph.annotations = [
+            Annotation.from_dict(a) for a in payload.get("annotations", [])
+        ]
         graph.journal_preset = payload.get("journal_preset", "")
         graph.plot_theme = payload.get("plot_theme", "")
         return graph

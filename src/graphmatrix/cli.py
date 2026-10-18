@@ -59,7 +59,9 @@ def _parse_graph_selection(spec: str | None, total: int) -> list[int]:
     out: list[int] = []
     for idx in result:
         if idx < 0 or idx >= total:
-            raise click.ClickException(f"graph index {idx + 1} out of range (1..{total})")
+            raise click.ClickException(
+                f"graph index {idx + 1} out of range (1..{total})"
+            )
         if idx not in seen:
             seen.add(idx)
             out.append(idx)
@@ -67,7 +69,10 @@ def _parse_graph_selection(spec: str | None, total: int) -> list[int]:
 
 
 def _sanitize(name: str) -> str:
-    return "".join(c if c.isalnum() or c in "-_." else "_" for c in name).strip("_") or "graph"
+    return (
+        "".join(c if c.isalnum() or c in "-_." else "_" for c in name).strip("_")
+        or "graph"
+    )
 
 
 @click.group(invoke_without_command=True)
@@ -83,7 +88,9 @@ def cli(ctx: click.Context) -> None:
 
 @cli.command("run")
 @click.argument("paths", nargs=-1, type=click.Path(exists=True))
-@click.option("-g", "--graph", "open_graph", default=None, help="Open a graph tab by name.")
+@click.option(
+    "-g", "--graph", "open_graph", default=None, help="Open a graph tab by name."
+)
 def run_cmd(paths: tuple[str, ...], open_graph: str | None) -> None:
     """Open project file(s) in the GUI, or run a YAML pipeline headlessly."""
     pipelines = [p for p in paths if str(p).lower().endswith((".yaml", ".yml"))]
@@ -105,10 +112,23 @@ def run_cmd(paths: tuple[str, ...], open_graph: str | None) -> None:
 
 @cli.command("export")
 @click.argument("project", type=click.Path(exists=True, dir_okay=False))
-@click.option("-g", "--graphs", default=None, help="Graph selection, e.g. 1,3-5 or (1,3).")
-@click.option("--format", "fmt", default="pdf",
-              type=click.Choice(["pdf", "svg", "eps", "png", "tif", "tiff", "jpg", "jpeg"], case_sensitive=False))
-@click.option("--out", "out_dir", default=None, help="Output directory (default: <project>_export).")
+@click.option(
+    "-g", "--graphs", default=None, help="Graph selection, e.g. 1,3-5 or (1,3)."
+)
+@click.option(
+    "--format",
+    "fmt",
+    default="pdf",
+    type=click.Choice(
+        ["pdf", "svg", "eps", "png", "tif", "tiff", "jpg", "jpeg"], case_sensitive=False
+    ),
+)
+@click.option(
+    "--out",
+    "out_dir",
+    default=None,
+    help="Output directory (default: <project>_export).",
+)
 @click.option("--dpi", default=300, type=int)
 @click.option("--width", default=100.0, type=float, help="Figure width in mm.")
 @click.option("--height", default=75.0, type=float, help="Figure height in mm.")
@@ -131,8 +151,15 @@ def export_cmd(project, graphs, fmt, out_dir, dpi, width, height, transparent) -
     for idx in indices:
         graph = proj.graphs[idx]
         target = out_path / f"{_sanitize(graph.name)}.{fmt.lower()}"
-        export_graph(graph, proj, target, width_mm=width, height_mm=height,
-                     dpi=dpi, transparent=transparent)
+        export_graph(
+            graph,
+            proj,
+            target,
+            width_mm=width,
+            height_mm=height,
+            dpi=dpi,
+            transparent=transparent,
+        )
         click.echo(f"exported: {target}")
 
     click.echo(f"done: {len(indices)} graph(s) -> {out_path}")
@@ -151,7 +178,9 @@ def list_cmd(project: str) -> None:
     click.echo(f"{proj.name}: {len(proj.graphs)} graph(s)")
     for i, graph in enumerate(proj.graphs, 1):
         nplots = sum(len(layer.plots) for layer in graph.layers)
-        click.echo(f"  {i}. {graph.name}  ({len(graph.layers)} layer(s), {nplots} plot(s))")
+        click.echo(
+            f"  {i}. {graph.name}  ({len(graph.layers)} layer(s), {nplots} plot(s))"
+        )
 
 
 @cli.command("doctor")
@@ -195,7 +224,12 @@ def doctor_cmd() -> None:
     click.echo("Environment:")
     import os
 
-    for key in ("XDG_SESSION_TYPE", "WAYLAND_DISPLAY", "QT_QPA_PLATFORM", "HYPRLAND_INSTANCE_SIGNATURE"):
+    for key in (
+        "XDG_SESSION_TYPE",
+        "WAYLAND_DISPLAY",
+        "QT_QPA_PLATFORM",
+        "HYPRLAND_INSTANCE_SIGNATURE",
+    ):
         click.echo(f"  {key}={os.environ.get(key, '')}")
 
     # matplotlib backend sanity
@@ -216,7 +250,9 @@ def doctor_cmd() -> None:
     if ok:
         click.echo("All required components are available.")
     else:
-        click.echo("Some required components are missing; install the project dependencies.")
+        click.echo(
+            "Some required components are missing; install the project dependencies."
+        )
         raise SystemExit(1)
 
 

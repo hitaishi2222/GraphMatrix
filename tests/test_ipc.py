@@ -62,7 +62,9 @@ def _rpc(app, op, timeout=10.0, **payload):
     from PySide6.QtCore import QDeadlineTimer, QCoreApplication
 
     out = {}
-    t = threading.Thread(target=lambda: out.update(res=request(op, timeout=timeout, **payload)))
+    t = threading.Thread(
+        target=lambda: out.update(res=request(op, timeout=timeout, **payload))
+    )
     t.start()
     deadline = QDeadlineTimer()
     deadline.setRemainingTime(int(timeout * 1000) + 5000)
@@ -91,16 +93,20 @@ def test_run_executes_against_live_project_and_is_undoable(app, bridge):
     before = len(window.project.workbooks)
     undo_before = window.commands.can_undo
 
-    res = _rpc(app, "run", code=(
-        "import numpy as np\n"
-        "t = np.linspace(0, 1, 10)\n"
-        "api.add_workbook('Agent')\n"
-        "api.add_worksheet('Agent', 'Sheet1')\n"
-        "api.add_column('Agent/Sheet1', 'X', 'X', t)\n"
-        "api.add_column('Agent/Sheet1', 'Y', 'Y', np.sin(t))\n"
-        "api.add_graph('AgentPlot', source='Agent/Sheet1', x='X', y='Y', style='line')\n"
-        "print('hello from agent')"
-    ))
+    res = _rpc(
+        app,
+        "run",
+        code=(
+            "import numpy as np\n"
+            "t = np.linspace(0, 1, 10)\n"
+            "api.add_workbook('Agent')\n"
+            "api.add_worksheet('Agent', 'Sheet1')\n"
+            "api.add_column('Agent/Sheet1', 'X', 'X', t)\n"
+            "api.add_column('Agent/Sheet1', 'Y', 'Y', np.sin(t))\n"
+            "api.add_graph('AgentPlot', source='Agent/Sheet1', x='X', y='Y', style='line')\n"
+            "print('hello from agent')"
+        ),
+    )
     _pump(app, bridge)
 
     assert res["ok"] is True, res
@@ -154,14 +160,19 @@ def test_unknown_op_reports_error(app, bridge):
 
 
 def test_run_open_graphs_flag_opens_new_tabs(app, bridge):
-    res = _rpc(app, "run", open_graphs=True, code="""
+    res = _rpc(
+        app,
+        "run",
+        open_graphs=True,
+        code="""
 api.add_workbook('Tabbed')
 api.add_worksheet('Tabbed', 'Sheet1')
 import numpy as np
 api.add_column('Tabbed/Sheet1', 'X', 'X', np.linspace(0, 1, 5))
 api.add_column('Tabbed/Sheet1', 'Y', 'Y', np.arange(5.0))
 api.add_graph('TabPlot', source='Tabbed/Sheet1', x='X', y='Y', style='line')
-""")
+""",
+    )
     assert res["ok"] is True, res
     assert res["opened_graphs"] == ["TabPlot"]
     # running again without the flag must not re-open or duplicate tabs

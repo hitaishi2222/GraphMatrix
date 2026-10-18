@@ -14,10 +14,14 @@ APP_NAME = "GraphMatrix"
 ORG_NAME = "GraphMatrix"
 
 
-def run(argv: list[str] | None = None, project_paths: list[str] | None = None,
-        open_graph: str | None = None) -> int:
+def run(
+    argv: list[str] | None = None,
+    project_paths: list[str] | None = None,
+    open_graph: str | None = None,
+) -> int:
     argv = list(sys.argv if argv is None else argv)
     import os
+
     # On Wayland compositors (e.g. Hyprland) prefer the native wayland platform
     # plugin so windows tile instead of opening as floating XWayland windows.
     if "WAYLAND_DISPLAY" in os.environ:

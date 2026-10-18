@@ -20,7 +20,10 @@ def _state_path() -> Path:
 
 
 def register(project_path: str | Path | None) -> None:
-    payload = {"pid": os.getpid(), "project": str(project_path) if project_path else None}
+    payload = {
+        "pid": os.getpid(),
+        "project": str(project_path) if project_path else None,
+    }
     _state_path().write_text(json.dumps(payload), encoding="utf-8")
 
 

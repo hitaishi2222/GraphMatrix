@@ -11,7 +11,14 @@ from graphmatrix.core.journals import (
     journal_names,
     preset,
 )
-from graphmatrix.core.model import ColumnType, Graph, PlotSpec, Project, Workbook, Worksheet
+from graphmatrix.core.model import (
+    ColumnType,
+    Graph,
+    PlotSpec,
+    Project,
+    Workbook,
+    Worksheet,
+)
 
 
 def _graph() -> Graph:

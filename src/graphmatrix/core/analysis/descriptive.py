@@ -10,11 +10,15 @@ from scipy import stats
 from .result import AnalysisResult
 
 
-def summarize(data: Sequence[float], name: str = "Data", *, cl: float = 0.95) -> AnalysisResult:
+def summarize(
+    data: Sequence[float], name: str = "Data", *, cl: float = 0.95
+) -> AnalysisResult:
     values = np.asarray(data, dtype=float)
     values = values[np.isfinite(values)]
     n = values.size
-    result = AnalysisResult(kind="descriptive", title=f"Descriptive Statistics — {name}")
+    result = AnalysisResult(
+        kind="descriptive", title=f"Descriptive Statistics — {name}"
+    )
     if n == 0:
         result.notes = "No finite data."
         return result
@@ -53,7 +57,18 @@ def batch_summary(project) -> AnalysisResult:
     is the M10 standings report — Sheet, Column, Type, N, Missing, Mean, SD,
     Min, Median, Max.
     """
-    header = ["Sheet", "Column", "Type", "N", "Missing", "Mean", "Std Dev", "Min", "Median", "Max"]
+    header = [
+        "Sheet",
+        "Column",
+        "Type",
+        "N",
+        "Missing",
+        "Mean",
+        "Std Dev",
+        "Min",
+        "Median",
+        "Max",
+    ]
     rows = [header]
     for book in project.workbooks:
         for sheet in book.sheets:
@@ -66,21 +81,42 @@ def batch_summary(project) -> AnalysisResult:
                 name = f"{sheet.name}"
                 col_name = column.name
                 if values.size == 0:
-                    rows.append([name, col_name, str(column.col_type), "0", str(missing), "", "", "", "", ""])
+                    rows.append(
+                        [
+                            name,
+                            col_name,
+                            str(column.col_type),
+                            "0",
+                            str(missing),
+                            "",
+                            "",
+                            "",
+                            "",
+                            "",
+                        ]
+                    )
                     continue
-                rows.append([
-                    name, col_name, str(column.col_type), str(values.size), str(missing),
-                    f"{float(np.mean(values)):.6g}",
-                    f"{float(np.std(values, ddof=1)) if values.size > 1 else 0:.6g}",
-                    f"{float(np.min(values)):.6g}",
-                    f"{float(np.median(values)):.6g}",
-                    f"{float(np.max(values)):.6g}",
-                ])
+                rows.append(
+                    [
+                        name,
+                        col_name,
+                        str(column.col_type),
+                        str(values.size),
+                        str(missing),
+                        f"{float(np.mean(values)):.6g}",
+                        f"{float(np.std(values, ddof=1)) if values.size > 1 else 0:.6g}",
+                        f"{float(np.min(values)):.6g}",
+                        f"{float(np.median(values)):.6g}",
+                        f"{float(np.max(values)):.6g}",
+                    ]
+                )
     result = AnalysisResult(kind="batch-stats", title="Batch Statistics")
     result.tables["Columns"] = rows
     n_columns = max(len(rows) - 1, 0)
-    result.summary = {"Sheets": float(sum(len(b.sheets) for b in project.workbooks)),
-                      "Columns": float(n_columns)}
+    result.summary = {
+        "Sheets": float(sum(len(b.sheets) for b in project.workbooks)),
+        "Columns": float(n_columns),
+    }
     if n_columns == 0:
         result.notes = "No numeric columns in the project."
     return result
@@ -97,12 +133,19 @@ def summarize_columns(sheet, names: Sequence[str]) -> AnalysisResult:
         if values.size == 0:
             rows.append([name, "0", "", "", "", ""])
             continue
-        rows.append([
-            name, str(values.size),
-            f"{np.mean(values):.6g}", f"{np.std(values, ddof=1) if values.size > 1 else 0:.6g}",
-            f"{np.min(values):.6g}", f"{np.max(values):.6g}",
-        ])
-    result = AnalysisResult(kind="descriptive", title="Descriptive Statistics — Columns")
+        rows.append(
+            [
+                name,
+                str(values.size),
+                f"{np.mean(values):.6g}",
+                f"{np.std(values, ddof=1) if values.size > 1 else 0:.6g}",
+                f"{np.min(values):.6g}",
+                f"{np.max(values):.6g}",
+            ]
+        )
+    result = AnalysisResult(
+        kind="descriptive", title="Descriptive Statistics — Columns"
+    )
     result.tables["Summary"] = rows
     return result
 

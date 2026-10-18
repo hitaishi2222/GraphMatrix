@@ -123,7 +123,9 @@ def test_paste_block_is_one_undoable_step():
     sheet.add_column("Y1", ColumnType.Y, [0.0, 1.0])
     stack = CommandStack()
 
-    stack.push(SetCellsCommand(sheet, 2, 0, [[2.0, 4.0], [3.0, 9.0]]))  # grows to 4 rows
+    stack.push(
+        SetCellsCommand(sheet, 2, 0, [[2.0, 4.0], [3.0, 9.0]])
+    )  # grows to 4 rows
     assert sheet.num_rows == 4
     assert sheet.column("Y1").data[3] == 9.0
 
@@ -140,7 +142,11 @@ def test_reorder_columns_undo_redo():
     sheet.add_column("Y2", ColumnType.Y, [2.0])
     stack = CommandStack()
 
-    stack.push(ReorderColumnsCommand(sheet, [sheet.columns[2], sheet.columns[0], sheet.columns[1]]))
+    stack.push(
+        ReorderColumnsCommand(
+            sheet, [sheet.columns[2], sheet.columns[0], sheet.columns[1]]
+        )
+    )
     assert sheet.column_names == ["Y2", "X1", "Y1"]
 
     stack.undo()
@@ -211,4 +217,3 @@ def test_generic_rename_is_undoable():
     assert project.name == "New"
     stack.undo()
     assert project.name == "Old"
-

@@ -12,6 +12,7 @@ python -m PyInstaller packaging/graphmatrix.spec --noconfirm --clean
 ```
 
 Output:
+
 - Linux/Windows: `dist/graphmatrix/` (a directory bundle; run `dist/graphmatrix/graphmatrix`)
 - macOS: `dist/GraphMatrix.app`
 
@@ -26,17 +27,20 @@ antivirus false positives than `--onefile`. If you need a single file, add
 ## Platform notes
 
 ### Windows
+
 - Code-sign the executable with Authenticode (an EV certificate avoids SmartScreen
   warnings). `signtool sign /fd sha256 /tr <timestamp-url> /td sha256 dist\graphmatrix\graphmatrix.exe`.
 - Build on the oldest Windows you intend to support.
 
 ### macOS
+
 - The spec builds a `.app`. Notarize (not just sign) for Gatekeeper:
   `codesign --deep --force --options runtime --sign "Developer ID Application: …" dist/GraphMatrix.app`
   then `xcrun notarytool submit … --wait` and `xcrun stapler staple dist/GraphMatrix.app`.
 - Build per-architecture (arm64, x86_64) or produce a universal2 build.
 
 ### Linux
+
 - Bundle as AppImage or ship a `.deb`/`.rpm`. The frozen binary still needs system
   EGL/XKB libraries (the CI installs `libegl1 libxkbcommon0 libdbus-1-3 libglib2.0-0`).
 
@@ -50,6 +54,7 @@ is missing. PyInstaller's PySide6 hooks usually handle this; if you hit
 ## CI
 
 `.github/workflows/ci.yml`:
+
 - **test** job: matrix of Ubuntu / macOS / Windows × Python 3.11 / 3.13, runs the
   headless test suite (`QT_QPA_PLATFORM=offscreen`).
 - **build** job: on `v*` tags, produces bundles for all three platforms as artifacts.

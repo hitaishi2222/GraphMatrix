@@ -11,7 +11,7 @@ import json
 import numpy as np
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFont, QFontDatabase
+from PySide6.QtGui import QColor, QFontDatabase
 from PySide6.QtWidgets import (
     QColorDialog,
     QComboBox,
@@ -20,12 +20,12 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QInputDialog,
+    QLabel,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
     QSpinBox,
-    QSplitter,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -40,12 +40,16 @@ from graphmatrix.core.commands import (
     RemovePlotCommand,
     RemoveReferenceLineCommand,
     SetAttributesCommand,
+    SetGraphTypeCommand,
 )
 from graphmatrix.core.model import (
     LINE_STYLES,
+    GRAPH_TYPES,
+    GRAPH_TYPE_LABELS,
     Annotation,
     AxisScale,
     Graph,
+    GraphType,
     Layer,
     PlotSpec,
     PlotStyle,
@@ -54,7 +58,11 @@ from graphmatrix.core.model import (
     Z_STYLES,
     is_3d_style,
 )
-from graphmatrix.core.plotting import auto_axis_labels, make_plot_for_column, resolve_plot
+from graphmatrix.core.plotting import (
+    auto_axis_labels,
+    make_plot_for_column,
+    resolve_plot,
+)
 from graphmatrix.ui import theme
 from graphmatrix.ui import plot_themes
 from graphmatrix.ui.canvas import create_canvas
@@ -69,8 +77,14 @@ class GraphView(QWidget):
     #: (source, rows) emitted when a plotted point is clicked
     brush_requested = Signal(str, list)
 
-    def __init__(self, graph: Graph, project: Project, commands: CommandStack,
-                 on_change=None, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        graph: Graph,
+        project: Project,
+        commands: CommandStack,
+        on_change=None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self.graph = graph
         self.project = project
@@ -105,7 +119,11 @@ class GraphView(QWidget):
         plot_layout = QVBoxLayout(self._plot_group)
         plot_layout.addWidget(self.plot_list)
         buttons = QHBoxLayout()
-        for text, slot in (("Add Plot", self.add_plot), ("Remove", self.remove_plot), ("Add Layer", self.add_layer)):
+        for text, slot in (
+            ("Add Plot", self.add_plot),
+            ("Remove", self.remove_plot),
+            ("Add Layer", self.add_layer),
+        ):
             button = QPushButton(text)
             button.clicked.connect(slot)
             buttons.addWidget(button)
@@ -120,6 +138,7 @@ class GraphView(QWidget):
         side.addWidget(self._build_ref_group())
         side.addStretch(1)
         return panel
+
     def _build_plot_group(self) -> QGroupBox:
         self.group_plot = QGroupBox("Plot Properties")
         form = QFormLayout(self.group_plot)
@@ -220,8 +239,53 @@ class GraphView(QWidget):
         form.addRow("Y max:", self.ymax_edit)
         form.addRow("Legend:", self.legend_check)
         form.addRow("Plot theme:", self.plot_theme_combo)
-        form.addRow("Layout rows:", self.layout_rows_spin)
-        form.addRow("Layout cols:", self.layout_cols_spin)
+
+        # -- Layout tab: graph type + type-specific panel spacing ------------
+        layout_tab = QWidget()
+        plform = QFormLayout(layout_tab)
+        self.graphtype_combo = QComboBox()
+        self.graphtype_combo.setToolTip(
+            "Figure template: simple, vertical stack, double-Y, side-by-side, or grid."
+        )
+        for gtype in GRAPH_TYPES:
+            self.graphtype_combo.addItem(GRAPH_TYPE_LABELS[gtype.value], gtype.value)
+        self.panel_gapx_spin = QDoubleSpinBox()
+        self.panel_gapx_spin.setRange(0.0, 100.0)
+        self.panel_gapx_spin.setSingleStep(1.0)
+        self.panel_gapx_spin.setSuffix(" %")
+        self.panel_gapx_spin.setToolTip(
+            "Horizontal space between panels, as a percentage of a panel's width."
+        )
+        self.panel_gapy_spin = QDoubleSpinBox()
+        self.panel_gapy_spin.setRange(0.0, 100.0)
+        self.panel_gapy_spin.setSingleStep(1.0)
+        self.panel_gapy_spin.setSuffix(" %")
+        self.panel_gapy_spin.setToolTip(
+            "Vertical space between panels, as a percentage of a panel's height."
+        )
+        self.ydelta_spin = QDoubleSpinBox()
+        self.ydelta_spin.setRange(-1e6, 1e6)
+        self.ydelta_spin.setDecimals(3)
+        self.ydelta_spin.setSingleStep(0.1)
+        self.ydelta_spin.setToolTip(
+            "Vertical offset added to each successive stacked/twin panel's data "
+            "(a waterfall-style stack)."
+        )
+        self.graphtype_hint = QLabel("")
+        self.graphtype_hint.setWordWrap(True)
+        self.graphtype_hint.setStyleSheet("color: palette(mid);")
+        plform.addRow("Graph type:", self.graphtype_combo)
+        plform.addRow("Grid columns:", self.layout_cols_spin)
+        plform.addRow("Grid rows:", self.layout_rows_spin)
+        plform.addRow("Panel gap X:", self.panel_gapx_spin)
+        plform.addRow("Panel gap Y:", self.panel_gapy_spin)
+        plform.addRow("Y delta:", self.ydelta_spin)
+        plform.addRow(self.graphtype_hint)
+
+        self.group_axis.addTab(scales_tab, "Scales/Range")
+        self.group_axis.addTab(labels_tab, "Labels/Fonts")
+        self.group_axis.addTab(ticks_tab, "Ticks")
+        self.group_axis.addTab(layout_tab, "Layout")
 
         lform.addRow("Title:", self.title_edit)
         lform.addRow("X label:", self.xlabel_edit)
@@ -237,14 +301,33 @@ class GraphView(QWidget):
         tform.addRow("Minor ticks:", self.minor_ticks_check)
         tform.addRow("Tick direction:", self.tick_direction_combo)
 
-        self.group_axis.addTab(scales_tab, "Scales/Range")
-        self.group_axis.addTab(labels_tab, "Labels/Fonts")
-        self.group_axis.addTab(ticks_tab, "Ticks")
-
-        for widget in (self.xscale_combo, self.yscale_combo, self.legend_check, self.minor_ticks_check, self.tick_direction_combo):
+        for widget in (
+            self.xscale_combo,
+            self.yscale_combo,
+            self.legend_check,
+            self.minor_ticks_check,
+            self.tick_direction_combo,
+        ):
             widget.currentIndexChanged.connect(self._apply_axis_props)
+        self.graphtype_combo.currentIndexChanged.connect(self._apply_graph_type)
+        for gap_widget in (
+            self.panel_gapx_spin,
+            self.panel_gapy_spin,
+            self.ydelta_spin,
+        ):
+            gap_widget.valueChanged.connect(self._apply_axis_props)
         self.plot_theme_combo.currentIndexChanged.connect(self._apply_plot_theme)
-        for widget in (self.title_edit, self.xlabel_edit, self.ylabel_edit, self.y2label_edit, self.zlabel_edit, self.xmin_edit, self.xmax_edit, self.ymin_edit, self.ymax_edit):
+        for widget in (
+            self.title_edit,
+            self.xlabel_edit,
+            self.ylabel_edit,
+            self.y2label_edit,
+            self.zlabel_edit,
+            self.xmin_edit,
+            self.xmax_edit,
+            self.ymin_edit,
+            self.ymax_edit,
+        ):
             widget.editingFinished.connect(self._apply_axis_props)
         self.font_family_combo.currentIndexChanged.connect(self._apply_axis_props)
         self.label_font_size_spin.valueChanged.connect(self._apply_axis_props)
@@ -277,7 +360,9 @@ class GraphView(QWidget):
 
         self.hover_check = QPushButton("Data readout: off")
         self.hover_check.setCheckable(True)
-        self.hover_check.setToolTip("Show a crosshair and the nearest data point under the mouse")
+        self.hover_check.setToolTip(
+            "Show a crosshair and the nearest data point under the mouse"
+        )
         self.hover_check.toggled.connect(self.set_hover)
         layout.addWidget(self.hover_check)
         return self.group_ref
@@ -298,14 +383,20 @@ class GraphView(QWidget):
 
     def _active_layer(self) -> Layer:
         spec = self._selected_spec()
-        return self._layer_for_spec(spec) if spec is not None else self.graph.first_layer
+        return (
+            self._layer_for_spec(spec) if spec is not None else self.graph.first_layer
+        )
 
     # -- actions -------------------------------------------------------------
     def add_plot(self) -> None:
         if not self.project.workbooks:
             return
         dialog = AddPlotDialog(self.project, self)
-        if dialog.exec() and dialog.x_combo.currentData() and dialog.y_combo.currentData():
+        if (
+            dialog.exec()
+            and dialog.x_combo.currentData()
+            and dialog.y_combo.currentData()
+        ):
             spec = dialog.spec()
             self.commands.push(AddPlotCommand(self.graph, self.graph.first_layer, spec))
             self.refresh(select=spec)
@@ -314,13 +405,34 @@ class GraphView(QWidget):
         spec = self._selected_spec()
         if spec is None:
             return
-        self.commands.push(RemovePlotCommand(self.graph, self._layer_for_spec(spec), spec))
+        self.commands.push(
+            RemovePlotCommand(self.graph, self._layer_for_spec(spec), spec)
+        )
         self.refresh()
 
     def add_layer(self) -> None:
         layer = Layer(f"Layer {self.graph.num_layers + 1}")
         self.commands.push(AddLayerCommand(self.graph, layer))
         self.refresh()
+
+    def set_graph_type(self, graph_type: str) -> None:
+        """Apply a graph layout template (undoable) and refresh the tab."""
+        if graph_type == getattr(self.graph, "graph_type", ""):
+            return
+        self.commands.push(SetGraphTypeCommand(self.graph, graph_type))
+        self.refresh()
+        self._changed()
+
+    def _apply_graph_type(self) -> None:
+        if self._loading:
+            return
+        graph_type = self.graphtype_combo.currentData()
+        if not graph_type or graph_type == getattr(self.graph, "graph_type", ""):
+            self._sync_type_fields()
+            return
+        self.commands.push(SetGraphTypeCommand(self.graph, graph_type))
+        self.refresh()
+        self._changed()
 
     def add_annotation(self) -> None:
         text, ok = QInputDialog.getText(self, "Add Annotation", "Text:")
@@ -340,7 +452,9 @@ class GraphView(QWidget):
                 return layer
         return self.graph.first_layer
 
-    def add_reference_line(self, orientation: str = "h", line: ReferenceLine | None = None) -> None:
+    def add_reference_line(
+        self, orientation: str = "h", line: ReferenceLine | None = None
+    ) -> None:
         if line is None:
             dialog = ReferenceLineDialog(self, orientation=orientation)
             if not dialog.exec():
@@ -353,7 +467,9 @@ class GraphView(QWidget):
         line = self._selected_ref_line()
         if line is None:
             return
-        self.commands.push(RemoveReferenceLineCommand(self._layer_for_ref_line(line), line))
+        self.commands.push(
+            RemoveReferenceLineCommand(self._layer_for_ref_line(line), line)
+        )
         self.refresh()
 
     def set_hover(self, enabled: bool) -> None:
@@ -362,7 +478,9 @@ class GraphView(QWidget):
             self.hover_check.blockSignals(True)
             self.hover_check.setChecked(self.hover_enabled)
             self.hover_check.blockSignals(False)
-        self.hover_check.setText(f"Data readout: {'on' if self.hover_enabled else 'off'}")
+        self.hover_check.setText(
+            f"Data readout: {'on' if self.hover_enabled else 'off'}"
+        )
         self.canvas.set_hover(self.hover_enabled)
         self.hover_changed.emit(self.hover_enabled)
 
@@ -391,20 +509,26 @@ class GraphView(QWidget):
         event.acceptProposedAction()
 
     def _pick_color(self) -> None:
-        color = QColorDialog.getColor(QColor(self._color or "#1f77b4"), self, "Plot Color")
+        color = QColorDialog.getColor(
+            QColor(self._color or "#1f77b4"), self, "Plot Color"
+        )
         if color.isValid():
             self._color = color.name()
             self._update_color_button()
             self._apply_plot_props()
 
     def _pick_label_color(self) -> None:
-        color = QColorDialog.getColor(QColor(getattr(self, "_label_color", "") or "#000000"), self, "Label Color")
+        color = QColorDialog.getColor(
+            QColor(getattr(self, "_label_color", "") or "#000000"), self, "Label Color"
+        )
         if color.isValid():
             self._label_color = color.name()
             self._apply_axis_props()
 
     def _pick_title_color(self) -> None:
-        color = QColorDialog.getColor(QColor(getattr(self, "_title_color", "") or "#000000"), self, "Title Color")
+        color = QColorDialog.getColor(
+            QColor(getattr(self, "_title_color", "") or "#000000"), self, "Title Color"
+        )
         if color.isValid():
             self._title_color = color.name()
             self._apply_axis_props()
@@ -431,18 +555,25 @@ class GraphView(QWidget):
         spec = self._selected_spec()
         if spec is None:
             return
-        self.commands.push(SetAttributesCommand(
-            spec, "Edit Plot",
-            style=self.style_combo.currentData(),
-            line_style=self.linestyle_combo.currentData(),
-            color=self._color,
-            z=(self.z_combo.currentData() or "" if self.z_combo.count() else getattr(spec, "z", "")),
-            line_width=self.width_spin.value(),
-            symbol=self.symbol_combo.currentText(),
-            symbol_size=self.symbol_size_spin.value(),
-            legend=self.legend_edit.text().strip(),
-            y_axis=self.yaxis_combo.currentData(),
-        ))
+        self.commands.push(
+            SetAttributesCommand(
+                spec,
+                "Edit Plot",
+                style=self.style_combo.currentData(),
+                line_style=self.linestyle_combo.currentData(),
+                color=self._color,
+                z=(
+                    self.z_combo.currentData() or ""
+                    if self.z_combo.count()
+                    else getattr(spec, "z", "")
+                ),
+                line_width=self.width_spin.value(),
+                symbol=self.symbol_combo.currentText(),
+                symbol_size=self.symbol_size_spin.value(),
+                legend=self.legend_edit.text().strip(),
+                y_axis=self.yaxis_combo.currentData(),
+            )
+        )
         self._refresh_list_labels()
         self.render()
         self._changed()
@@ -451,45 +582,59 @@ class GraphView(QWidget):
         if self._loading:
             return
         layer = self._active_layer()
-        self.commands.push(SetAttributesCommand(
-            layer, "Edit Axes",
-            x_scale=self.xscale_combo.currentData(),
-            y_scale=self.yscale_combo.currentData(),
-            x_label=self.xlabel_edit.text(),
-            y_label=self.ylabel_edit.text(),
-            y2_label=self.y2label_edit.text(),
-            z_label=self.zlabel_edit.text(),
-            x_min=_float_or_none(self.xmin_edit.text()),
-            x_max=_float_or_none(self.xmax_edit.text()),
-            y_min=_float_or_none(self.ymin_edit.text()),
-            y_max=_float_or_none(self.ymax_edit.text()),
-            show_legend=self.legend_check.currentData(),
-            minor_ticks=self.minor_ticks_check.currentData(),
-            tick_direction=self.tick_direction_combo.currentText(),
-            label_font_family=self.font_family_combo.currentText(),
-            label_font_size=float(self.label_font_size_spin.value()),
-            label_color=getattr(self, "_label_color", ""),
-        ))
-        self.commands.push(SetAttributesCommand(
-            self.graph, "Edit Title/Fonts",
-            title=self.title_edit.text(),
-            title_font_family=self.font_family_combo.currentText(),
-            title_font_size=float(self.title_font_size_spin.value()),
-            title_color=getattr(self, "_title_color", ""),
-            layout_rows=int(self.layout_rows_spin.value()),
-            layout_cols=int(self.layout_cols_spin.value()),
-        ))
-        self.canvas.set_grid(int(self.layout_rows_spin.value()), int(self.layout_cols_spin.value()))
+        self.commands.push(
+            SetAttributesCommand(
+                layer,
+                "Edit Axes",
+                x_scale=self.xscale_combo.currentData(),
+                y_scale=self.yscale_combo.currentData(),
+                x_label=self.xlabel_edit.text(),
+                y_label=self.ylabel_edit.text(),
+                y2_label=self.y2label_edit.text(),
+                z_label=self.zlabel_edit.text(),
+                x_min=_float_or_none(self.xmin_edit.text()),
+                x_max=_float_or_none(self.xmax_edit.text()),
+                y_min=_float_or_none(self.ymin_edit.text()),
+                y_max=_float_or_none(self.ymax_edit.text()),
+                show_legend=self.legend_check.currentData(),
+                minor_ticks=self.minor_ticks_check.currentData(),
+                tick_direction=self.tick_direction_combo.currentText(),
+                label_font_family=self.font_family_combo.currentText(),
+                label_font_size=float(self.label_font_size_spin.value()),
+                label_color=getattr(self, "_label_color", ""),
+            )
+        )
+        self.commands.push(
+            SetAttributesCommand(
+                self.graph,
+                "Edit Title/Fonts",
+                title=self.title_edit.text(),
+                title_font_family=self.font_family_combo.currentText(),
+                title_font_size=float(self.title_font_size_spin.value()),
+                title_color=getattr(self, "_title_color", ""),
+                layout_rows=int(self.layout_rows_spin.value()),
+                layout_cols=int(self.layout_cols_spin.value()),
+                panel_gap_x=float(self.panel_gapx_spin.value()),
+                panel_gap_y=float(self.panel_gapy_spin.value()),
+                y_delta=float(self.ydelta_spin.value()),
+            )
+        )
+        self.canvas.set_grid(
+            int(self.layout_rows_spin.value()), int(self.layout_cols_spin.value())
+        )
         self.render()
         self._changed()
 
     def _apply_plot_theme(self) -> None:
         if self._loading:
             return
-        self.commands.push(SetAttributesCommand(
-            self.graph, "Plot theme",
-            plot_theme=self.plot_theme_combo.currentData() or "",
-        ))
+        self.commands.push(
+            SetAttributesCommand(
+                self.graph,
+                "Plot theme",
+                plot_theme=self.plot_theme_combo.currentData() or "",
+            )
+        )
         self.render()
         self._changed()
 
@@ -593,7 +738,9 @@ class GraphView(QWidget):
         self.ylabel_edit.setText(layer.y_label)
         self.y2label_edit.setText(layer.y2_label)
         self.zlabel_edit.setText(getattr(layer, "z_label", ""))
-        self.font_family_combo.setCurrentText(layer.label_font_family or self.font_family_combo.itemText(0))
+        self.font_family_combo.setCurrentText(
+            layer.label_font_family or self.font_family_combo.itemText(0)
+        )
         self.label_font_size_spin.setValue(layer.label_font_size)
         self.title_font_size_spin.setValue(self.graph.title_font_size)
         self._label_color = layer.label_color
@@ -604,17 +751,38 @@ class GraphView(QWidget):
         self.layout_cols_spin.blockSignals(True)
         self.layout_cols_spin.setValue(getattr(self.graph, "layout_cols", 1))
         self.layout_cols_spin.blockSignals(False)
+        gt_index = self.graphtype_combo.findData(
+            getattr(self.graph, "graph_type", GraphType.SIMPLE.value)
+        )
+        self.graphtype_combo.blockSignals(True)
+        self.graphtype_combo.setCurrentIndex(gt_index if gt_index >= 0 else 0)
+        self.graphtype_combo.blockSignals(False)
+        for widget, value in (
+            (self.panel_gapx_spin, getattr(self.graph, "panel_gap_x", 12.0)),
+            (self.panel_gapy_spin, getattr(self.graph, "panel_gap_y", 12.0)),
+            (self.ydelta_spin, getattr(self.graph, "y_delta", 0.0)),
+        ):
+            widget.blockSignals(True)
+            widget.setValue(float(value or 0.0))
+            widget.blockSignals(False)
+        self._sync_type_fields()
         self.xmin_edit.setText("" if layer.x_min is None else str(layer.x_min))
         self.xmax_edit.setText("" if layer.x_max is None else str(layer.x_max))
         self.ymin_edit.setText("" if layer.y_min is None else str(layer.y_min))
         self.ymax_edit.setText("" if layer.y_max is None else str(layer.y_max))
         self.legend_check.setCurrentIndex(0 if layer.show_legend else 1)
-        self.minor_ticks_check.setCurrentIndex(0 if getattr(layer, "minor_ticks", True) else 1)
-        idx = self.tick_direction_combo.findText(getattr(layer, "tick_direction", "out"))
+        self.minor_ticks_check.setCurrentIndex(
+            0 if getattr(layer, "minor_ticks", True) else 1
+        )
+        idx = self.tick_direction_combo.findText(
+            getattr(layer, "tick_direction", "out")
+        )
         if idx >= 0:
             self.tick_direction_combo.setCurrentIndex(idx)
         # plot theme lives on the graph, not the layer
-        theme_idx = self.plot_theme_combo.findData(getattr(self.graph, "plot_theme", ""))
+        theme_idx = self.plot_theme_combo.findData(
+            getattr(self.graph, "plot_theme", "")
+        )
         if theme_idx >= 0:
             self.plot_theme_combo.blockSignals(True)
             self.plot_theme_combo.setCurrentIndex(theme_idx)
@@ -624,6 +792,35 @@ class GraphView(QWidget):
         self._loading = True
         self.legend_edit.clear()
         self._loading = False
+
+    def _sync_type_fields(self) -> None:
+        """Enable only the layout fields that apply to the current graph type."""
+        try:
+            gtype = GraphType(self.graphtype_combo.currentData() or GraphType.SIMPLE.value)
+        except ValueError:
+            gtype = GraphType.SIMPLE
+        show_grid_size = gtype == GraphType.GRID
+        show_gaps = gtype in (GraphType.GRID, GraphType.X_TWIN)
+        show_delta = gtype in (GraphType.STACK, GraphType.X_TWIN)
+        self.layout_rows_spin.setEnabled(show_grid_size)
+        self.layout_cols_spin.setEnabled(show_grid_size)
+        self.panel_gapx_spin.setEnabled(show_gaps)
+        self.panel_gapy_spin.setEnabled(show_gaps)
+        self.ydelta_spin.setEnabled(show_delta)
+        hints = {
+            GraphType.SIMPLE: "One plot frame.",
+            GraphType.STACK: (
+                "Layers are stacked in a single column (add layers to add panels)."
+            ),
+            GraphType.DOUBLE_Y: (
+                "One frame with a secondary (right) Y axis — set a plot's Y axis to Right."
+            ),
+            GraphType.X_TWIN: (
+                "Layers sit side by side, sharing Y (add layers to add panels)."
+            ),
+            GraphType.GRID: "An R x C grid of panels — set the rows and columns below.",
+        }
+        self.graphtype_hint.setText(hints.get(gtype, ""))
 
     def _preferred_backend(self) -> str:
         """matplotlib by default; the PyVista 3D scene when the graph asks for it."""
@@ -641,8 +838,10 @@ class GraphView(QWidget):
         """
         wanted = self._preferred_backend()
         klass = type(self.canvas).__name__
-        current = "pyvista" if klass == "PyVistaCanvas" else (
-            "pyqtgraph" if klass == "PyQtGraphCanvas" else "matplotlib"
+        current = (
+            "pyvista"
+            if klass == "PyVistaCanvas"
+            else ("pyqtgraph" if klass == "PyQtGraphCanvas" else "matplotlib")
         )
         if wanted == current:
             return
@@ -667,69 +866,122 @@ class GraphView(QWidget):
     def render(self) -> None:
         self._ensure_backend()
         self._series_sources = []
-        self.canvas.set_grid(getattr(self.graph, "layout_rows", 1), getattr(self.graph, "layout_cols", 1))
+        self.canvas.set_grid(
+            getattr(self.graph, "layout_rows", 1), getattr(self.graph, "layout_cols", 1)
+        )
+        self.canvas.set_panel_gaps(
+            getattr(self.graph, "panel_gap_x", 0.0) / 100.0,
+            getattr(self.graph, "panel_gap_y", 0.0) / 100.0,
+        )
         self.canvas.set_theme(self.graph.plot_theme or theme.current_preset())
-        layer = self._active_layer()
-        three_d = any(is_3d_style(spec.style) for each in self.graph.layers for spec in each.plots)
-        self.canvas.set_scales(x=AxisScale(layer.x_scale).value, y=AxisScale(layer.y_scale).value)
-        self.canvas.show_legend(layer.show_legend)
+        three_d = any(
+            is_3d_style(spec.style) for each in self.graph.layers for spec in each.plots
+        )
+        try:
+            gtype = GraphType(getattr(self.graph, "graph_type", GraphType.SIMPLE.value))
+        except ValueError:
+            gtype = GraphType.SIMPLE
+        # A stack / x-twin can shift each successive panel vertically, producing
+        # the classic waterfall arrangement without changing the worksheet data.
+        y_delta = float(getattr(self.graph, "y_delta", 0.0) or 0.0)
+        offset_panels = gtype in (GraphType.STACK, GraphType.X_TWIN)
 
         for panel_index, each in enumerate(self.graph.layers):
             self.canvas.set_current_panel(panel_index)
+            offset = panel_index * y_delta if offset_panels else 0.0
+            self.canvas.set_scales(
+                x=AxisScale(each.x_scale).value, y=AxisScale(each.y_scale).value
+            )
+            self.canvas.show_legend(each.show_legend)
             for spec in each.plots:
                 data = resolve_plot(self.project, spec)
                 if data is None:
                     continue
+                y = data.y if not offset else np.asarray(data.y, dtype=float) + offset
                 self._series_sources.append(spec.source)
                 self.canvas.plot(
-                    data.x, data.y,
-                    style=PlotStyle(spec.style).value, color=spec.color,
-                    width=spec.line_width, symbol=spec.symbol,
-                    symbol_size=spec.symbol_size, name=data.legend,
-                    yerr=data.yerr, xerr=data.xerr,
-                    y_axis=spec.y_axis, line_style=spec.line_style,
+                    data.x,
+                    y,
+                    style=PlotStyle(spec.style).value,
+                    color=spec.color,
+                    width=spec.line_width,
+                    symbol=spec.symbol,
+                    symbol_size=spec.symbol_size,
+                    name=data.legend,
+                    yerr=data.yerr,
+                    xerr=data.xerr,
+                    y_axis=spec.y_axis,
+                    line_style=spec.line_style,
                     z=data.z if PlotStyle(spec.style) in Z_STYLES else None,
                     rows=np.arange(0, min(len(data.x), len(data.y))),
                 )
 
-        for each in self.graph.layers:
             for ref in each.ref_lines:
                 color = ref.color
-                if theme.is_dark() and color.strip().lower() in ("", "#888888", "gray", "grey"):
+                if theme.is_dark() and color.strip().lower() in (
+                    "",
+                    "#888888",
+                    "gray",
+                    "grey",
+                ):
                     color = theme.canvas_colors()[1]
+                position = (
+                    ref.position + offset
+                    if ref.orientation == "h" and offset
+                    else ref.position
+                )
                 self.canvas.add_reference_line(
-                    ref.orientation, ref.position, color=color, width=ref.width,
-                    line_style=ref.line_style, label=ref.label,
+                    ref.orientation,
+                    position,
+                    color=color,
+                    width=ref.width,
+                    line_style=ref.line_style,
+                    label=ref.label,
                 )
 
+            x_label, y_label = auto_axis_labels(self.project, each)
+            # Shared axes are only labelled once in a stack / x-twin.
+            show_x = not (
+                gtype == GraphType.STACK and panel_index != len(self.graph.layers) - 1
+            )
+            show_y = not (gtype == GraphType.X_TWIN and panel_index != 0)
+            self.canvas.set_labels(
+                bottom=(x_label if show_x else None) or None,
+                left=(y_label if show_y else None) or None,
+                right=(each.z_label if three_d else each.y2_label) or None,
+                fontfamily=each.label_font_family,
+                fontsize=each.label_font_size,
+                color=each.label_color,
+            )
+            self.canvas.set_limits(
+                x=(each.x_min, each.x_max), y=(each.y_min, each.y_max)
+            )
+            self.canvas.set_ticks(
+                minor=getattr(each, "minor_ticks", True),
+                direction=getattr(each, "tick_direction", "out"),
+            )
+
         self.canvas.set_current_panel(0)
-        x_label, y_label = auto_axis_labels(self.project, layer)
-        if three_d:
-            self.canvas.set_labels(bottom=x_label or None, left=y_label or None,
-                                   right=layer.z_label or None,
-                                   fontfamily=layer.label_font_family,
-                                   fontsize=layer.label_font_size,
-                                   color=layer.label_color)
-        else:
-            self.canvas.set_labels(bottom=x_label or None, left=y_label or None,
-                                   right=layer.y2_label or None,
-                                   fontfamily=layer.label_font_family,
-                                   fontsize=layer.label_font_size,
-                                   color=layer.label_color)
-        self.canvas.set_limits(x=(layer.x_min, layer.x_max), y=(layer.y_min, layer.y_max))
-        self.canvas.set_ticks(minor=getattr(layer, "minor_ticks", True),
-                             direction=getattr(layer, "tick_direction", "out"))
         if self.graph.title:
-            self.canvas.set_title(self.graph.title, fontfamily=self.graph.title_font_family,
-                                 fontsize=self.graph.title_font_size, color=self.graph.title_color)
+            self.canvas.set_title(
+                self.graph.title,
+                fontfamily=self.graph.title_font_family,
+                fontsize=self.graph.title_font_size,
+                color=self.graph.title_color,
+            )
         self.canvas.set_hover(self.hover_enabled)
 
         for annotation in self.graph.annotations:
             color = annotation.color
             if theme.is_dark() and color.strip().lower() in ("", "#000000", "black"):
                 color = theme.canvas_colors()[1]
-            self.canvas.add_annotation(annotation.text, annotation.x, annotation.y,
-                                       color=color, size=annotation.size)
+            self.canvas.add_annotation(
+                annotation.text,
+                annotation.x,
+                annotation.y,
+                color=color,
+                size=annotation.size,
+            )
 
         # Re-apply the linked-brush overlay: rendering rebuilt the canvas.
         self._apply_last_brush()
@@ -739,7 +991,8 @@ class GraphView(QWidget):
         """A plotted point was clicked: broadcast the row to the linked views."""
         source = (
             self._series_sources[series_index]
-            if 0 <= series_index < len(self._series_sources) else ""
+            if 0 <= series_index < len(self._series_sources)
+            else ""
         )
         if source:
             self.brush_requested.emit(source, [int(row)])

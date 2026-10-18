@@ -47,7 +47,11 @@ def test_layer_reference_lines_roundtrip():
     restored = Graph.from_dict(graph.to_dict())
     lines = restored.first_layer.ref_lines
     assert len(lines) == 2
-    assert (lines[0].orientation, lines[0].position, lines[0].label) == ("v", 3.0, "edge")
+    assert (lines[0].orientation, lines[0].position, lines[0].label) == (
+        "v",
+        3.0,
+        "edge",
+    )
     assert lines[1].line_style == "dot"
 
 
