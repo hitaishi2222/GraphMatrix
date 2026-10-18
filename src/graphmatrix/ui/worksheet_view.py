@@ -52,6 +52,11 @@ class WorksheetView(QWidget):
     """Displays and edits a worksheet."""
 
     plot_column_requested = Signal(str)  # column name to plot against its partner
+    #: (source, rows) emitted when the user changes the row selection
+    rows_selected = Signal(str, list)
+
+    # Orange tint shared with the graph-canvas brush overlay.
+    HIGHLIGHT_COLOR = "#ff7f0e"
 
     def __init__(self, sheet: Worksheet, commands: CommandStack, source: str,
                  parent: QWidget | None = None) -> None:
@@ -60,6 +65,7 @@ class WorksheetView(QWidget):
         self.commands = commands
         self.source = source  # "Book/Sheet", for row labels and commands
         self._loading = False
+        self._highlighted_rows: set[int] = set()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -73,6 +79,7 @@ class WorksheetView(QWidget):
         self.table.horizontalHeader().customContextMenuRequested.connect(self._header_menu)
         self.table.horizontalHeader().setSectionsMovable(True)
         self.table.horizontalHeader().sectionMoved.connect(self._on_section_moved)
+        self.table.selectionModel().selectionChanged.connect(self._broadcast_selection)
         layout.addWidget(self.table)
 
         for keys, slot in (
@@ -109,7 +116,43 @@ class WorksheetView(QWidget):
                 header.moveSection(header.visualIndex(i), i)
         finally:
             self._loading = False
+        self._apply_row_highlight()
         self.table.resizeColumnsToContents()
+
+    # -- linked brushing -----------------------------------------------------
+    def _apply_row_highlight(self) -> None:
+        """Tint the brush-selected rows, resetting everything else."""
+        from PySide6.QtGui import QColor
+
+        tint = QColor(self.HIGHLIGHT_COLOR)
+        tint.setAlpha(40)
+        on = self._highlighted_rows
+        for row in range(self.table.rowCount()):
+            for col in range(self.table.columnCount()):
+                item = self.table.item(row, col)
+                if item is not None:
+                    item.setBackground(tint if row in on else Qt.GlobalColor.transparent)
+
+    def set_row_highlight(self, rows: list[int]) -> None:
+        """Highlight the given worksheet rows (linked brush from graph or sheet)."""
+        self._highlighted_rows = {int(r) for r in rows}
+        self._apply_row_highlight()
+
+    def selected_rows(self) -> list[int]:
+        return sorted({index.row() for index in self.table.selectedIndexes()})
+
+    def clear_row_highlight(self) -> None:
+        self.set_row_highlight([])
+
+    def _broadcast_selection(self, *_args, **_kwargs) -> None:
+        """Emit the user's row selection for linked brushing.
+
+        Guarded so programmatic highlights, table rebuilds (``populate``), and
+        the brush itself don't feed back into the shared selection.
+        """
+        if self._loading or getattr(self, "_broadcasting", False):
+            return
+        self.rows_selected.emit(self.source, self.selected_rows())
 
     # -- editing -------------------------------------------------------------
     def _on_item_changed(self, item: QTableWidgetItem) -> None:

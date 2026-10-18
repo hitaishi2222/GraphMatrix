@@ -12,7 +12,8 @@ Status legend: ✅ shipped · 🔨 building now · 📋 planned · 💭 idea / n
 ## 0. How to read this
 
 - **Milestones M0–M6** in `PLAN.md` are done. This roadmap starts at **M7** and runs
-  forward; **M7, M8, M9, and M10 are shipped** (M10 landed 2026-10-18, see §5).
+  forward; **M7, M8, M9, and M10 are shipped**, and the M11 **linked-brushing v1**
+  increment landed 2026-10-18 (see §6).
 - Every item carries a **value / cost** guess and a **depends-on** note, so the order
   is arguable from the table alone.
 - Shipped increments (§2–§4) keep their acceptance tests as a record; preview
@@ -22,16 +23,14 @@ Status legend: ✅ shipped · 🔨 building now · 📋 planned · 💭 idea / n
 
 ---
 
-## 1. Backlog (core)
-
-## 2. Next-level features (make it genuinely great)
+## 1. Backlog — next-level features (make it genuinely great)
 
 | Idea | Value | Cost | Status | Notes |
 |------|-------|------|--------|-------|
 | Multi-panel figure layouts (grid of graphs, shared axes) | High | L | 📋 | Single most-requested Origin feature. |
 | Graph insets / picture-in-picture axes | High | M | 📋 | Nested axes box on a graph. |
 | Interactive fit region (drag X window on canvas) | High | M | 📋 | Reuses slope_between; drives fit/slope. |
-| Linked brushing across graphs & sheet | High | L | 💭 | Shared selection highlight. |
+| Linked brushing across graphs & sheet | High | L | ✅ M11 (v1) | Shared `BrushSelection`; orange tint on sheet rows + ring highlights on every affected canvas; click-a-point on a graph selects the row. Drag-window brushing still open. |
 | Time machine (scrub undo history) | Low | M | 💭 | Replay commands to a point. |
 | Column formulas with auto-recalculate | Medium | M | 📋 | Set Column Values that update on input change. |
 | NetCDF import/export | Medium | M | 📋 | xarray optional extra. |
@@ -150,7 +149,7 @@ first five; the rest are queued and scheduled in §6–§7.
 | Natural-language command grammar | Medium | M | 📋 | "plot Y1 vs X1", "baseline ALS" → API calls. Builds on the palette. |
 | Interactive fit region | High | M | 📋 | Drag an X window on the canvas → fit/slope. Numeric regions shipped in M10; the gesture would fill the same fields. |
 | Live / streaming data board | Medium | L | 💭 | Tail a file or serial port and auto-refresh a graph (`QFileSystemWatcher`). |
-| Linked brushing across graphs & sheet | High | L | 💭 | Shared selection; highlight a point in every view at once. |
+| Linked brushing across graphs & sheet | High | L | ✅ M11 (v1) | Shared selection; highlight a point in every view at once. Drag-window brushing still open. |
 | Time machine (scrub the undo history) | Low | M | 💭 | The undo stack as a slider; replay commands to a point. |
 | Figure diff (before / after) | Low | M | 💭 | Render two graphs and diff them; useful for review and regressions. |
 | Units engine | Medium | L | 💭 | Dimensional tracking + conversion on display; invasive to the model. |
@@ -459,7 +458,7 @@ X–Y–Z matrix — both need a `Z`/colour value flowing from the worksheet int
 3D stays deferred behind `PlotCanvas` and ships only when a GPU backend (Vispy/PyVista)
 is actually wired.
 
-## 6. M11 — interactive superpowers (preview)
+## 6. M11 — interactive superpowers (preview → partially shipped)
 
 The differentiation tier. **Interactive fit region** (drag an X window on the canvas →
 run a fit or slope, reusing `slope_between`; with numeric regions now shipped in M10,
@@ -467,6 +466,18 @@ the gesture would simply fill those same fields); **linked brushing** (a shared 
 highlighted across every open graph and worksheet); **live data** (watch a file or
 serial source and auto-refresh a graph). These share a need for a small selection/cursor
 model on top of the command stack, so they are sequenced together.
+
+**Shipped 2026-10-18 — linked brushing v1.** A non-persisted, non-undoable
+`ui.brushing.BrushSelection` (source → row indices) drives every view: worksheet rows
+are tinted orange (`WorksheetView.set_row_highlight`), and each canvas overlays ring
+markers on the affected points of every series whose source matches
+(`PlotCanvas.set_brush` — matplotlib implements it; pyqtgraph/PyVista degrade to
+no-op). Clicking near a plotted point picks the nearest point within 12 px and
+broadcasts its worksheet row (`canvas.point_picked` → `GraphView.brush_requested` →
+MainWindow hub), so canvas→sheet and sheet→canvas are both live, including across
+multiple graphs of the same sheet. The overlay survives re-renders. Not yet:
+drag-window brushing, value-range brushing, highlighting across *derived* series
+(fit curves) mapped back to rows.
 
 ## 7. M12 — worksheet, data & units (preview)
 

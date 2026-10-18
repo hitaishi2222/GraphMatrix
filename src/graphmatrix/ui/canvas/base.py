@@ -45,6 +45,7 @@ class PlotCanvas(ABC):
         y_axis: str = "left",
         line_style: str = "solid",
         z: Sequence[float] | None = None,
+        rows: Sequence[int] | None = None,
     ) -> Any:
         """Plot a series and return the backend's plot item.
 
@@ -52,7 +53,23 @@ class PlotCanvas(ABC):
         ``line_style`` is one of :data:`graphmatrix.core.model.graph.LINE_STYLES`.
         ``z`` is the colour/height series for the Z-carrying styles
         (color-mapped scatter, heatmap, contour, 3D scatter/surface).
+        ``rows`` maps each point to its worksheet row for linked brushing.
         """
+
+    def set_brush(self, selection: dict[int, list[int]] | None) -> None:
+        """Highlight linked-brush selections per plotted series.
+
+        ``selection`` maps this canvas's series index -> worksheet row indices;
+        ``None`` or an empty mapping clears the overlay. Default: no-op —
+        backends without brush support degrade silently.
+        """
+
+    def clear_brush(self) -> None:
+        self.set_brush(None)  # pragma: no cover - trivial delegation
+
+    #: Set to a callable ``(series_index, row) -> None`` to receive clicks on
+    #: plotted points (linked brushing: graph -> sheet).
+    point_picked = None
 
     @abstractmethod
     def add_reference_line(

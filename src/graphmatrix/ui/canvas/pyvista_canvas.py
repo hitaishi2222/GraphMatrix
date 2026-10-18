@@ -79,6 +79,7 @@ class PyVistaCanvas(PlotCanvas):
         y_axis: str = "left",
         line_style: str = "solid",
         z=None,
+        rows=None,
     ) -> None:
         import pyvista as pv
 

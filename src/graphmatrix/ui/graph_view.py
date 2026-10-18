@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 
+import numpy as np
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase
 from PySide6.QtWidgets import (
@@ -64,6 +66,8 @@ _SYMBOLS = ["o", "s", "^", "v", "d", "+", "x", "*", ""]
 
 class GraphView(QWidget):
     hover_changed = Signal(bool)
+    #: (source, rows) emitted when a plotted point is clicked
+    brush_requested = Signal(str, list)
 
     def __init__(self, graph: Graph, project: Project, commands: CommandStack,
                  on_change=None, parent: QWidget | None = None) -> None:
@@ -77,6 +81,8 @@ class GraphView(QWidget):
 
         self.canvas = create_canvas(self._preferred_backend())
         self.canvas.label_click_callback = self._on_label_click
+        self.canvas.point_picked = self._on_canvas_point_picked
+        self._series_sources: list[str] = []  # per canvas series, for brushing
         self.plot_list = QListWidget()
         self.plot_list.currentRowChanged.connect(self._on_plot_selected)
         self.hover_enabled = False
@@ -655,6 +661,7 @@ class GraphView(QWidget):
         old_widget = self.canvas.widget()
         old_canvas, self.canvas = self.canvas, new_canvas
         self.canvas.label_click_callback = self._on_label_click
+        self.canvas.point_picked = self._on_canvas_point_picked
         index = self.splitter.indexOf(old_widget)
         if index < 0:
             index = 1
@@ -667,6 +674,7 @@ class GraphView(QWidget):
 
     def render(self) -> None:
         self._ensure_backend()
+        self._series_sources = []
         self.canvas.set_grid(getattr(self.graph, "layout_rows", 1), getattr(self.graph, "layout_cols", 1))
         self.canvas.set_theme(self.graph.plot_theme or theme.current_preset())
         layer = self._active_layer()
@@ -680,6 +688,7 @@ class GraphView(QWidget):
                 data = resolve_plot(self.project, spec)
                 if data is None:
                     continue
+                self._series_sources.append(spec.source)
                 self.canvas.plot(
                     data.x, data.y,
                     style=PlotStyle(spec.style).value, color=spec.color,
@@ -688,6 +697,7 @@ class GraphView(QWidget):
                     yerr=data.yerr, xerr=data.xerr,
                     y_axis=spec.y_axis, line_style=spec.line_style,
                     z=data.z if PlotStyle(spec.style) in Z_STYLES else None,
+                    rows=np.arange(0, min(len(data.x), len(data.y))),
                 )
 
         for each in self.graph.layers:
@@ -728,6 +738,32 @@ class GraphView(QWidget):
                 color = theme.canvas_colors()[1]
             self.canvas.add_annotation(annotation.text, annotation.x, annotation.y,
                                        color=color, size=annotation.size)
+
+        # Re-apply the linked-brush overlay: rendering rebuilt the canvas.
+        self._apply_last_brush()
+
+    # -- linked brushing -----------------------------------------------------
+    def _on_canvas_point_picked(self, series_index: int, row: int) -> None:
+        """A plotted point was clicked: broadcast the row to the linked views."""
+        source = (
+            self._series_sources[series_index]
+            if 0 <= series_index < len(self._series_sources) else ""
+        )
+        if source:
+            self.brush_requested.emit(source, [int(row)])
+
+    def apply_brush(self, source: str, rows: list[int]) -> None:
+        """Highlight this graph's series whose source matches the brush."""
+        self._last_brush = (source, list(rows))
+        self._apply_last_brush()
+
+    def _apply_last_brush(self) -> None:
+        source, rows = getattr(self, "_last_brush", ("", []))
+        selection: dict[int, list[int]] = {}
+        for series_index, series_source in enumerate(self._series_sources):
+            if series_source == source:
+                selection[series_index] = list(rows)
+        self.canvas.set_brush(selection)
 
 
 def _float_or_none(text: str) -> float | None:

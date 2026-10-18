@@ -11,7 +11,8 @@ and scriptable automation. It targets Windows, macOS, and Linux from a single co
 > Status: **M1–M10 functionally implemented** (M0 skeleton + worksheets, 2D graphs,
 > analysis, export, scripting, M7 graph-interaction, M8 provenance/journal output,
 > M9 digitizer + command palette, and M10 analysis-depth + colour-mapped/heatmap/
-> contour plots + 3D scatter/surface on **PyVista**). See [`PLAN.md`](PLAN.md) §0
+> contour plots + 3D scatter/surface on **PyVista**) plus the M11 start —
+> **linked brushing** between worksheets and graphs. See [`PLAN.md`](PLAN.md) §0
 > for an honest per-milestone status, and [`ROADMAP.md`](ROADMAP.md) for what
 > comes next.
 >

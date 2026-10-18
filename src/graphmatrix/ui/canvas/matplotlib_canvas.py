@@ -54,6 +54,8 @@ class MatplotlibCanvas(PlotCanvas):
         self._current_panel = 0
         self._ax_right = None
         self._series: list[tuple[np.ndarray, np.ndarray, str]] = []
+        self._series_meta: list[dict] = []  # brush/click bookkeeping per series
+        self._brush_artists: list = []
         self._hover_enabled = False
         self._hover_cid = None
         self._canvas.mpl_connect("button_press_event", self._on_button_press)
@@ -79,6 +81,8 @@ class MatplotlibCanvas(PlotCanvas):
         self._ax_left = self._axes[0]
         self._ax_right = None
         self._series = []
+        self._series_meta = []
+        self._brush_artists = []
         self._cross_v = None
         self._cross_h = None
         self._readout = None
@@ -113,6 +117,7 @@ class MatplotlibCanvas(PlotCanvas):
         y_axis: str = "left",
         line_style: str = "solid",
         z=None,
+        rows=None,
     ) -> None:
         from types import SimpleNamespace
 
@@ -127,9 +132,15 @@ class MatplotlibCanvas(PlotCanvas):
 
         xs = np.asarray(x, dtype=float)
         ys = np.asarray(y, dtype=float)
+        if rows is None:
+            rows = np.arange(xs.size)
+        rows = np.asarray(rows, dtype=int)
+        n = min(xs.size, ys.size, rows.size)
+        xs, ys, rows = xs[:n], ys[:n], rows[:n]
         order = np.argsort(xs)
         xs_s = xs[order]
         ys_s = ys[order]
+        rows_s = rows[order]
         col = color or None
         ls = _ls(line_style)
         lbl = name
@@ -142,11 +153,13 @@ class MatplotlibCanvas(PlotCanvas):
             # The shared renderer keeps the live canvas and the exporter in
             # lockstep. On the flat canvas a 3D style degrades to a colour-mapped
             # 2D scatter; GraphView routes 3D graphs to the PyVista canvas.
+            self._record_series_meta(xs_s, ys_s, rows_s, ax, ms)
+            self._series.append((xs_s, ys_s, name or ""))
             render_xyz_mpl(
                 ax, self._fig, plot_style,
                 SimpleNamespace(
-                    x=np.asarray(x, float), y=np.asarray(y, float),
-                    z=None if z is None else np.asarray(z, float), legend=lbl,
+                    x=xs, y=ys,
+                    z=None if z is None else np.asarray(z, float)[:n], legend=lbl,
                 ),
                 cmap="viridis", color=col or "",
                 width=width, symbol=symbol, symbol_size=symbol_size,
@@ -185,8 +198,68 @@ class MatplotlibCanvas(PlotCanvas):
             ax.errorbar(xs, ys, yerr=yerr, color=col, linestyle="none", marker=marker or "o",
                         markersize=ms, capsize=3, label=None)
 
+        self._record_series_meta(xs_s, ys_s, rows_s, ax, ms)
         self._series.append((xs_s, ys_s, name or ""))
         self._canvas.draw_idle()
+
+    # -- linked brushing ----------------------------------------------------
+    def _record_series_meta(self, xs, ys, rows, ax, marker_size: float) -> None:
+        """Remember where each point lives so clicks and brush overlays can
+        map back to worksheet rows."""
+        self._series_meta.append({
+            "xs": np.asarray(xs, dtype=float),
+            "ys": np.asarray(ys, dtype=float),
+            "rows": np.asarray(rows, dtype=int),
+            "ax": ax,
+            "size": max(8.0, float(marker_size) * 2.0),
+        })
+
+    def set_brush(self, selection: dict[int, list[int]] | None) -> None:
+        for artist in self._brush_artists:
+            try:
+                artist.remove()
+            except Exception:  # noqa: BLE001 - already gone
+                pass
+        self._brush_artists = []
+        if not selection:
+            self._canvas.draw_idle()
+            return
+        for series_index, series_meta in enumerate(self._series_meta):
+            wanted_rows = selection.get(series_index)
+            if not wanted_rows:
+                continue
+            mask = np.isin(series_meta["rows"], list(wanted_rows))
+            if not mask.any():
+                continue
+            artist = series_meta["ax"].plot(
+                series_meta["xs"][mask], series_meta["ys"][mask],
+                linestyle="none", marker="o",
+                markersize=series_meta["size"],
+                markerfacecolor="none", markeredgecolor="#ff7f0e",
+                markeredgewidth=2.0, zorder=10,
+            )[0]
+            self._brush_artists.append(artist)
+        self._canvas.draw_idle()
+
+    def _pick_point(self, event) -> tuple[int, int] | None:
+        """Nearest plotted point to a click, as (series_index, worksheet row)."""
+        best: tuple[float, int, int] | None = None  # (distance_px, series, row)
+        for series_index, series_meta in enumerate(self._series_meta):
+            ax = series_meta["ax"]
+            transform = ax.transData
+            xs, ys = series_meta["xs"], series_meta["ys"]
+            display = transform.transform(np.column_stack([xs, ys]))
+            try:
+                px, py = transform.transform((event.xdata, event.ydata))
+            except Exception:  # noqa: BLE001 - outside the data ranges
+                continue
+            distance = np.hypot(display[:, 0] - px, display[:, 1] - py)
+            idx = int(np.argmin(distance))
+            if best is None or float(distance[idx]) < best[0]:
+                best = (float(distance[idx]), series_index, int(series_meta["rows"][idx]))
+        if best is None or best[0] > 12.0:  # within 12 px of a point
+            return None
+        return best[1], best[2]
 
     def add_reference_line(self, orientation, position, *, color="#888888",
                            width=1.5, line_style="dash", label="") -> None:
@@ -381,6 +454,20 @@ class MatplotlibCanvas(PlotCanvas):
             self._readout = None
 
     def _on_button_press(self, event) -> None:
+        try:
+            # Linked brushing: a left click near a plotted point picks its row.
+            if (
+                not getattr(event, "dblclick", False)
+                and getattr(event, "inaxes", None) is not None
+                and event.xdata is not None
+                and callable(self.point_picked)
+            ):
+                picked = self._pick_point(event)
+                if picked is not None:
+                    self.point_picked(*picked)
+                    return
+        except Exception:  # noqa: BLE001 - picking must never break plotting
+            pass
         try:
             if event.inaxes is not None and callable(self.label_click_callback):
                 # Axis area (not a label) -> focus the axes property group.

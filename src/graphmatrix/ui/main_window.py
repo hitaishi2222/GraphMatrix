@@ -76,6 +76,7 @@ from graphmatrix.ui.analysis_dialogs import (
 from graphmatrix.ui.command_palette import CommandPalette
 from graphmatrix.ui.console import ConsoleView
 from graphmatrix.ui.digitize_dialog import DigitizeDialog
+from graphmatrix.ui.brushing import BrushSelection
 from graphmatrix.ui.graph_view import GraphView
 from graphmatrix.ui.project_panel import ProjectPanel
 from graphmatrix.ui.properties_panel import PropertiesPanel
@@ -167,6 +168,10 @@ class MainWindow(QMainWindow):
         self._file_watcher = QFileSystemWatcher(self)
         self._file_watcher.fileChanged.connect(self._on_project_file_changed)
         self._reloading_from_disk = False
+
+        # Linked brushing: one shared row selection across sheet + graph tabs.
+        self.brush = BrushSelection(self)
+        self.brush.changed.connect(self._apply_brush)
         self._dirty = False
         self.confirm_on_close = True
         self._views: dict[int, QWidget] = {}
@@ -1218,6 +1223,19 @@ class MainWindow(QMainWindow):
             action.setChecked(enabled)
             action.blockSignals(False)
 
+    # -- linked brushing -----------------------------------------------------
+    def _on_brush_requested(self, source: str, rows: list) -> None:
+        """Graph clicks and sheet selections both funnel through the brush."""
+        self.brush.set(source, rows)
+
+    def _apply_brush(self, source: str, rows: list) -> None:
+        """Broadcast the shared selection to every open sheet and graph tab."""
+        for view in self._views.values():
+            if isinstance(view, WorksheetView):
+                view.set_row_highlight(rows if view.source == source else [])
+            elif isinstance(view, GraphView):
+                view.apply_brush(source, rows)
+
     def _on_object_activated(self, obj) -> None:
         if isinstance(obj, Worksheet):
             self._open_sheet_tab(obj)
@@ -1234,8 +1252,11 @@ class MainWindow(QMainWindow):
         view = WorksheetView(sheet, self.commands, sheet_label(self.project, sheet))
         view.plot_column_requested.connect(
             lambda name, s=sheet: self._plot_column(sheet_label(self.project, s), name))
+        view.rows_selected.connect(self._on_brush_requested)
         self._views[id(sheet)] = view
         self.tabs.addTab(view, sheet.name)
+        # If the brush already points at this sheet, tint it on arrival.
+        view.set_row_highlight(self.brush.get(view.source))
         self.tabs.setCurrentWidget(view)
 
     def _open_graph_tab(self, graph: Graph) -> None:
@@ -1246,6 +1267,7 @@ class MainWindow(QMainWindow):
             return
         view = GraphView(graph, self.project, self.commands, on_change=self._mark_dirty)
         view.hover_changed.connect(self._on_graph_hover_changed)
+        view.brush_requested.connect(self._on_brush_requested)
         self._views[id(graph)] = view
         self.tabs.addTab(view, graph.name)
         self.tabs.setCurrentWidget(view)
