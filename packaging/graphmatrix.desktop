@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=GraphMatrix
+Comment=Scientific data analysis and graphing
+Exec=graphmatrix
+Icon=graphmatrix
+Terminal=false
+Categories=Science;Education;Graphics;
+StartupWMClass=graphmatrix

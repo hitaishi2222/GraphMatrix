@@ -13,6 +13,27 @@ and scriptable automation. It targets Windows, macOS, and Linux from a single co
 > M9 digitizer + command palette). See [`PLAN.md`](PLAN.md) §0 for an honest
 > per-milestone status, and [`ROADMAP.md`](ROADMAP.md) for what comes next. 3D is
 > deliberately deferred.
+>
+> **GraphMatrix is still in active development.** APIs, file formats, and UI details
+> may change between releases; please report issues and back up your projects.
+
+## Installation
+
+### From source (recommended for now)
+
+```bash
+git clone https://github.com/hitaishi2222/GraphMatrix.git
+cd GraphMatrix
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev,mcp]"
+graphmatrix
+```
+
+### Requirements
+
+- Python 3.10+
+- PySide6, NumPy, SciPy, matplotlib, pyqtgraph, lmfit, openpyxl, pyarrow
+- Optional: h5py (HDF5), fastmcp (MCP server)
 
 ## Quick start
 
@@ -42,6 +63,7 @@ src/graphmatrix/
   ui/          PySide6 views: main window, panels, graph editor, dialogs, console
   plugins/     Drop-in plugins discovered at startup
 tests/         Core + analysis + I/O + export + scripting + headless UI tests
+examples/      Sample scripts and projects
 packaging/     PyInstaller spec + build script
 docs/          Usage and packaging guides
 .github/       CI matrix (Windows/macOS/Linux)
@@ -82,6 +104,67 @@ testable, headless-batchable, and free to be accelerated later without touching 
   import, and a batch analysis pipeline (recipe → per-file report + figure).
 - **Appearance** — four theme presets (Classic/Modern × Dark/Light) with matching
   plot-canvas colours, switchable from **View → Theme** and remembered between runs.
+
+## Command-line interface
+
+GraphMatrix ships a small CLI for scripting and headless use:
+
+```bash
+graphmatrix --help
+graphmatrix run project.rsproj            # open project(s) in the GUI
+graphmatrix list project.rsproj          # list graphs in a project
+graphmatrix export project.rsproj -g 1,3-5 --format pdf --out ./out
+graphmatrix doctor                      # check environment and dependencies
+```
+
+- `run` opens one or more project files in the GUI.
+- `list` prints the graphs available in a project (1-based indices).
+- `export` exports all or selected graphs (`1`, `1,3`, `1-3`, `(1,3)`).
+- `doctor` verifies Python, required/optional modules, and the display environment.
+
+## MCP server
+
+GraphMatrix exposes an MCP server for AI assistants (stdio transport):
+
+```bash
+pip install "graphmatrix[mcp]"
+graphmatrix-mcp
+```
+
+Tools: `connect`, `summary`, `run` (Python against the Respot/GraphMatrix API),
+and `export`. Example client config:
+
+```json
+{ "mcpServers": { "graphmatrix": { "command": "graphmatrix-mcp" } } }
+```
+
+## Supported formats
+
+- **Import:** CSV/TSV, Excel (`.xlsx`/`.xls`), Parquet, HDF5 (optional)
+- **Export:** PDF, SVG, EPS, PNG, TIFF, JPEG (publication-ready, sized in mm at your DPI)
+
+## Keyboard shortcuts
+
+- `Ctrl+N` New project · `Ctrl+O` Open · `Ctrl+S` Save
+- `Ctrl+Z` / `Ctrl+Shift+Z` Undo / Redo
+- `Ctrl+Shift+P` Command palette
+- `F2` Rename selected object
+
+## Troubleshooting
+
+- **Hyprland / Wayland:** GraphMatrix sets its app id to `graphmatrix` so it tiles.
+  If your compositor still floats it, check window rules matching `python3` or `graphmatrix`.
+- **Headless tests:** run with `QT_QPA_PLATFORM=offscreen`.
+- **Missing optional deps:** run `graphmatrix doctor`.
+
+## Contributing
+
+Contributions are welcome. Please open an issue or pull request. Keep `core/` free of PySide6
+imports so the engine stays testable and headless.
+
+## License
+
+MIT (see `LICENSE` if present).
 
 ## Documentation
 
