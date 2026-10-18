@@ -1,6 +1,6 @@
 # Packaging & distribution
 
-Respot ships as a frozen desktop bundle per platform. Freezing is set up from the
+GraphMatrix ships as a frozen desktop bundle per platform. Freezing is set up from the
 start (milestone M0) because Python desktop distribution is the classic place these
 projects stall.
 
@@ -8,12 +8,12 @@ projects stall.
 
 ```bash
 pip install -e ".[dev]"
-python -m PyInstaller packaging/respot.spec --noconfirm --clean
+python -m PyInstaller packaging/graphmatrix.spec --noconfirm --clean
 ```
 
 Output:
-- Linux/Windows: `dist/respot/` (a directory bundle; run `dist/respot/respot`)
-- macOS: `dist/Respot.app`
+- Linux/Windows: `dist/graphmatrix/` (a directory bundle; run `dist/graphmatrix/graphmatrix`)
+- macOS: `dist/GraphMatrix.app`
 
 `packaging/build.sh` does install → test → build in one step.
 
@@ -27,13 +27,13 @@ antivirus false positives than `--onefile`. If you need a single file, add
 
 ### Windows
 - Code-sign the executable with Authenticode (an EV certificate avoids SmartScreen
-  warnings). `signtool sign /fd sha256 /tr <timestamp-url> /td sha256 dist\respot\respot.exe`.
+  warnings). `signtool sign /fd sha256 /tr <timestamp-url> /td sha256 dist\graphmatrix\graphmatrix.exe`.
 - Build on the oldest Windows you intend to support.
 
 ### macOS
 - The spec builds a `.app`. Notarize (not just sign) for Gatekeeper:
-  `codesign --deep --force --options runtime --sign "Developer ID Application: …" dist/Respot.app`
-  then `xcrun notarytool submit … --wait` and `xcrun stapler staple dist/Respot.app`.
+  `codesign --deep --force --options runtime --sign "Developer ID Application: …" dist/GraphMatrix.app`
+  then `xcrun notarytool submit … --wait` and `xcrun stapler staple dist/GraphMatrix.app`.
 - Build per-architecture (arm64, x86_64) or produce a universal2 build.
 
 ### Linux

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from respot.core.commands import (
+from graphmatrix.core.commands import (
     AddColumnCommand,
     AddWorkbookCommand,
     CommandStack,
@@ -15,7 +15,7 @@ from respot.core.commands import (
     SetCellValueCommand,
     SetCellsCommand,
 )
-from respot.core.model import (
+from graphmatrix.core.model import (
     Column,
     ColumnType,
     Graph,

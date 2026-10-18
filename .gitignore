@@ -21,6 +21,6 @@ htmlcov/
 *.swp
 .DS_Store
 
-# Respot artifacts
+# GraphMatrix artifacts
 *.rsproj.tmp
 /Graph.png

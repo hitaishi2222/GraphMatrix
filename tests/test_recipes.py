@@ -5,10 +5,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from respot.core.batch import run_recipe_over_files
-from respot.core.io import importer
-from respot.core.model import ColumnType, Worksheet
-from respot.core.recipes import Recipe, load_recipe, run_recipe, save_recipe
+from graphmatrix.core.batch import run_recipe_over_files
+from graphmatrix.core.io import importer
+from graphmatrix.core.model import ColumnType, Worksheet
+from graphmatrix.core.recipes import Recipe, load_recipe, run_recipe, save_recipe
 
 
 def _decay(n: int = 200):
@@ -37,7 +37,7 @@ def test_recipe_signal_and_peaks():
 
 def test_recipe_rejects_unknown_operation(tmp_path):
     path = tmp_path / "bad.json"
-    path.write_text('{"format": "respot-recipe", "operation": "nonsense"}', encoding="utf-8")
+    path.write_text('{"format": "graphmatrix-recipe", "operation": "nonsense"}', encoding="utf-8")
     with pytest.raises(ValueError):
         load_recipe(path)
 

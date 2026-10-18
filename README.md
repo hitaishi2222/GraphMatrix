@@ -1,8 +1,8 @@
-# Respot
+# GraphMatrix
 
 A cross-platform scientific data analysis and graphing GUI.
 
-Respot aims to be a Python-first, open alternative to tools like OriginPro:
+GraphMatrix aims to be a Python-first, open alternative to tools like OriginPro:
 typed worksheet columns, publication-quality 2D graphs, a real analysis toolkit,
 and scriptable automation. It targets Windows, macOS, and Linux from a single codebase.
 
@@ -19,7 +19,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 
 # run the app
-PYTHONPATH=src python -m respot
+PYTHONPATH=src python -m graphmatrix
 
 # run the tests (core only, no GUI required)
 pytest
@@ -29,13 +29,13 @@ Or install as a package:
 
 ```bash
 pip install -e ".[dev]"
-respot
+graphmatrix
 ```
 
 ## Layout
 
 ```
-src/respot/
+src/graphmatrix/
   core/        Qt-free engine: model, commands, project I/O, analysis, scripting
   ui/          PySide6 views: main window, panels, graph editor, dialogs, console
   plugins/     Drop-in plugins discovered at startup
@@ -65,7 +65,7 @@ testable, headless-batchable, and free to be accelerated later without touching 
   rubber-band/median), derivative/integral/interpolation, t-tests, ANOVA, correlation,
   histogram.
 - **Recipes** — save an analysis and re-run it on any series, or batch it across many files.
-- **Provenance & reproducibility** — Respot records what you did in plain language
+- **Provenance & reproducibility** — GraphMatrix records what you did in plain language
   (**Tools → Analysis Methods…**) and exports an **analysis bundle** (project + data
   CSVs + figures + `reproduce.py` + `methods.md`) that rebuilds every figure.
 - **Digitizing** — recover an `(x, y)` curve from a picture of a plot

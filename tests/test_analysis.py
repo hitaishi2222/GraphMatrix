@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from respot.core.analysis import deconvolution, descriptive, fitting, peaks, regression, signal, statistics
+from graphmatrix.core.analysis import deconvolution, descriptive, fitting, peaks, regression, signal, statistics
 
 
 def _exp_decay(n=200):

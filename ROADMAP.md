@@ -1,4 +1,4 @@
-# Respot — Roadmap
+# GraphMatrix — Roadmap
 
 Where `PLAN.md` records the locked decisions and the M0–M6 build order, this file
 looks **forward**: the feature backlog, how it is sequenced, and the detailed plan
@@ -85,7 +85,7 @@ first working version, not the polished one.
 |---------|-------|------|-------|
 | Third-party plugin directory + versioned API | Medium | M | PLAN open question #3; ship the host and a stability promise. |
 | Recipe editor UI | Medium | M | Today recipes are JSON on disk; a form-based editor lowers the barrier. |
-| Scheduled / headless CLI (`respot run pipeline.yaml`) | Medium | M | Core is already Qt-free; mostly argument plumbing. |
+| Scheduled / headless CLI (`graphmatrix run pipeline.yaml`) | Medium | M | Core is already Qt-free; mostly argument plumbing. |
 | Macro library with named steps | Low | M | Extends the recorder. |
 
 ### 1.7 Engineering & ship (M14)
@@ -99,7 +99,7 @@ first working version, not the polished one.
 
 ### 1.8 Differentiating ideas
 
-The "what would make Respot more than a smaller Origin" list. M8 and M9 shipped the
+The "what would make GraphMatrix more than a smaller Origin" list. M8 and M9 shipped the
 first five; the rest are queued and scheduled in §6–§7.
 
 | Idea | Value | Cost | Status | Notes |
@@ -108,7 +108,7 @@ first five; the rest are queued and scheduled in §6–§7.
 | Figure-as-code round-trip | High | M | ✅ M8 | `project_to_script`; the bundle's `reproduce.py`, also exportable on its own. |
 | Journal figure presets | High | S | ✅ M8 | `core/journals.py`; Nature/Science/APS/IEEE sizes + typography; applied per graph and honoured on export. |
 | Curve digitizer (image → data) | Medium | M | ✅ M9 | `core/analysis/digitize.py` + dialog; darkness or colour isolation, axis-anchor calibration. |
-| Command palette ("Ask Respot" v1) | Medium | S | ✅ M9 | Fuzzy action search, `Ctrl+Shift+P`. |
+| Command palette ("Ask GraphMatrix" v1) | Medium | S | ✅ M9 | Fuzzy action search, `Ctrl+Shift+P`. |
 | Natural-language command grammar | Medium | M | 📋 | "plot Y1 vs X1", "baseline ALS" → API calls. Builds on the palette. |
 | Interactive fit region | High | M | 📋 | Drag an X window on the canvas → fit/slope. Reuses `slope_between`. |
 | Live / streaming data board | Medium | L | 💭 | Tail a file or serial port and auto-refresh a graph (`QFileSystemWatcher`). |
@@ -245,7 +245,7 @@ the whole project.
 - **Provenance is fed, not inferred.** Structural commands describe themselves; the
   analysis dialogs hand over their `AnalysisResult` at the point it is produced, where
   the summary is richest. This avoids guessing a fit's meaning from a column add.
-- **The bundle is plain files.** Data and figures survive without Respot installed;
+- **The bundle is plain files.** Data and figures survive without GraphMatrix installed;
   only `reproduce.py` needs the app.
 - **Presets set absolute values, not scales.** Applying a preset twice must not
   compound line widths, so `apply_journal_preset` assigns rather than multiplies.
@@ -306,7 +306,7 @@ the whole project.
 - **Digitizing is calibration, not guesswork.** Two anchors per axis define an exact
   affine map; everything else is mask selection. The result is only as good as the
   anchors, so the report says so and the points can be overlaid to check.
-- **The palette is "Ask Respot" v1.** A safe, useful index over what already exists;
+- **The palette is "Ask GraphMatrix" v1.** A safe, useful index over what already exists;
   a natural-language grammar (§1.8) is the next layer once the command surface is
   stable and discoverable.
 

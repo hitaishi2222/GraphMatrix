@@ -7,7 +7,7 @@ test:
 	QT_QPA_PLATFORM=offscreen python -m pytest -q
 
 run:
-	PYTHONPATH=src python -m respot
+	PYTHONPATH=src python -m graphmatrix
 
 build:
 	bash packaging/build.sh

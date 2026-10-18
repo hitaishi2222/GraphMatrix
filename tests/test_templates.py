@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from respot.core.model import Annotation, AxisScale, ColumnType, Graph, PlotSpec, PlotStyle, Project, Workbook, Worksheet
-from respot.core.templates import apply_template, graph_to_template, load_template, save_template
+from graphmatrix.core.model import Annotation, AxisScale, ColumnType, Graph, PlotSpec, PlotStyle, Project, Workbook, Worksheet
+from graphmatrix.core.templates import apply_template, graph_to_template, load_template, save_template
 
 
 def _graph(style=PlotStyle.SCATTER, color="#112233", x_scale=AxisScale.LINEAR):
@@ -20,7 +20,7 @@ def _graph(style=PlotStyle.SCATTER, color="#112233", x_scale=AxisScale.LINEAR):
 
 def test_graph_to_template_roundtrips_style():
     template = graph_to_template(_graph())
-    assert template["format"] == "respot-graph-template"
+    assert template["format"] == "graphmatrix-graph-template"
     assert template["layers"][0]["plots"][0]["style"] == "scatter"
     assert template["layers"][0]["x_scale"] == "linear"
     assert template["annotation_style"][0]["size"] == 14

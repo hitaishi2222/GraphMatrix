@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from respot.core.analysis.result import AnalysisResult
-from respot.core.model import ColumnType, Graph, PlotSpec, PlotStyle, Project, Workbook, Worksheet
-from respot.core.provenance import ProvenanceLog
-from respot.core.report import export_analysis_bundle
-from respot.core.scripting.api import RespotAPI, make_namespace
+from graphmatrix.core.analysis.result import AnalysisResult
+from graphmatrix.core.model import ColumnType, Graph, PlotSpec, PlotStyle, Project, Workbook, Worksheet
+from graphmatrix.core.provenance import ProvenanceLog
+from graphmatrix.core.report import export_analysis_bundle
+from graphmatrix.core.scripting.api import GraphMatrixAPI, make_namespace
 
 
 def _project() -> tuple[Project, Graph]:
@@ -46,7 +46,7 @@ def test_reproduce_script_rebuilds_figures(tmp_path):
     script = (bundle.root / "reproduce.py").read_text()
 
     replay = Project("Replay")
-    api = RespotAPI(replay)
+    api = GraphMatrixAPI(replay)
     namespace = make_namespace(api)
     namespace["api"] = api
     exec(compile(script, "<reproduce>", "exec"), namespace)

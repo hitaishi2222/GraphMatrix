@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from respot.core.model import Column, ColumnType, Project, Workbook, Worksheet
+from graphmatrix.core.model import Column, ColumnType, Project, Workbook, Worksheet
 
 
 def test_column_basics():
@@ -40,7 +40,7 @@ def test_workbook_and_project_structure():
     assert project.workbook("Book1") is book
     assert book.sheet("Sheet1") is book.sheets[0]
     assert project.unique_name("Graph") == "Graph"
-    project.add_graph(__import__("respot.core.model", fromlist=["Graph"]).Graph("Graph"))
+    project.add_graph(__import__("graphmatrix.core.model", fromlist=["Graph"]).Graph("Graph"))
     assert project.unique_name("Graph") == "Graph1"
 
 

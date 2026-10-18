@@ -5,13 +5,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from respot.core.analysis import ranged, signal
-from respot.core.commands import (
+from graphmatrix.core.analysis import ranged, signal
+from graphmatrix.core.commands import (
     AddReferenceLineCommand,
     CommandStack,
     RemoveReferenceLineCommand,
 )
-from respot.core.model import (
+from graphmatrix.core.model import (
     LINE_STYLES,
     ColumnType,
     Graph,
@@ -70,7 +70,7 @@ def test_reference_line_command_undo_redo():
 
 
 def test_template_captures_line_style():
-    from respot.core.templates import apply_template, graph_to_template
+    from graphmatrix.core.templates import apply_template, graph_to_template
 
     source = Graph("G")
     source.first_layer.plots.append(PlotSpec("B/S", "X1", "Y1", line_style="dot"))
@@ -136,7 +136,7 @@ def test_run_operation_dispatches_baseline_names():
 
 
 def test_recipe_can_run_a_slope_operation():
-    from respot.core.recipes import Recipe, run_recipe
+    from graphmatrix.core.recipes import Recipe, run_recipe
 
     x = np.linspace(0.0, 10.0, 101)
     y = 4.0 * x + 2.0
@@ -163,7 +163,7 @@ def _simple_project() -> tuple[Project, Graph]:
 
 
 def test_export_dashed_and_reference_lines(tmp_path):
-    from respot.core.io.export import export_graph
+    from graphmatrix.core.io.export import export_graph
 
     project, graph = _simple_project()
     out = export_graph(graph, project, tmp_path / "fig.pdf")

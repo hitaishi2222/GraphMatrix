@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from respot.core.model import Column, ColumnType, Graph, Project, Workbook, Worksheet
+from graphmatrix.core.model import Column, ColumnType, Graph, Project, Workbook, Worksheet
 
 
 def _sample_project() -> Project:
@@ -53,6 +53,6 @@ def test_rejects_foreign_format(tmp_path):
     try:
         Project.open(path)
     except ValueError as exc:
-        assert "not a Respot project" in str(exc)
+        assert "not a GraphMatrix project" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("expected ValueError")

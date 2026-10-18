@@ -16,8 +16,8 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from respot.core.commands import AddPlotCommand  # noqa: E402
-from respot.core.model import PlotSpec  # noqa: E402
+from graphmatrix.core.commands import AddPlotCommand  # noqa: E402
+from graphmatrix.core.model import PlotSpec  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -27,8 +27,8 @@ def app():
 
 
 def test_full_workflow(app, tmp_path):
-    from respot.core.io.export import export_graph
-    from respot.ui.main_window import MainWindow
+    from graphmatrix.core.io.export import export_graph
+    from graphmatrix.ui.main_window import MainWindow
 
     window = MainWindow()
     window.confirm_on_close = False  # no modal prompt in headless runs
@@ -50,7 +50,7 @@ def test_full_workflow(app, tmp_path):
         assert sum(len(layer.plots) for layer in graph.layers) >= 2
 
         # analysis dialog (construct + run without exec)
-        from respot.ui.analysis_dialogs import FitDialog
+        from graphmatrix.ui.analysis_dialogs import FitDialog
 
         fit = FitDialog(window.project)
         result = fit.run()
@@ -81,11 +81,11 @@ def test_full_workflow(app, tmp_path):
 def test_graph_and_sheet_extras(app, tmp_path):
     from PySide6.QtWidgets import QApplication
 
-    from respot.core.commands import AddAnnotationCommand, ReorderColumnsCommand
-    from respot.core.model import Annotation
-    from respot.core.templates import apply_template, graph_to_template
-    from respot.ui.main_window import MainWindow
-    from respot.ui.worksheet_view import WorksheetView
+    from graphmatrix.core.commands import AddAnnotationCommand, ReorderColumnsCommand
+    from graphmatrix.core.model import Annotation
+    from graphmatrix.core.templates import apply_template, graph_to_template
+    from graphmatrix.ui.main_window import MainWindow
+    from graphmatrix.ui.worksheet_view import WorksheetView
 
     window = MainWindow()
     window.confirm_on_close = False
@@ -131,7 +131,7 @@ def test_graph_and_sheet_extras(app, tmp_path):
         # Project Explorer exposes draggable column items, and a drop adds a plot.
         from PySide6.QtCore import Qt
 
-        from respot.ui.widgets import COLUMN_MIME
+        from graphmatrix.ui.widgets import COLUMN_MIME
 
         window.project_panel.set_project(window.project)
         tree = window.project_panel.tree
@@ -149,8 +149,8 @@ def test_graph_and_sheet_extras(app, tmp_path):
 
 
 def test_theme_preset_switching(app):
-    from respot.ui import theme
-    from respot.ui.main_window import MainWindow
+    from graphmatrix.ui import theme
+    from graphmatrix.ui.main_window import MainWindow
 
     window = MainWindow()
     window.confirm_on_close = False
@@ -174,8 +174,8 @@ def test_theme_preset_switching(app):
 
 
 def test_rename_project_workbook_and_worksheet(app):
-    from respot.core.model import Graph, PlotSpec
-    from respot.ui.main_window import MainWindow
+    from graphmatrix.core.model import Graph, PlotSpec
+    from graphmatrix.ui.main_window import MainWindow
 
     window = MainWindow()
     window.confirm_on_close = False
@@ -213,7 +213,7 @@ def test_rename_project_workbook_and_worksheet(app):
         assert graph.first_layer.plots[0].source == "Book1/Sheet1"
 
         # Validation rejects duplicate names without touching the model.
-        from respot.core.model import Workbook
+        from graphmatrix.core.model import Workbook
 
         window.project.add_workbook(Workbook("Measure"))
         assert window._rename_available(window.project.workbooks[0], "Measure") is False
@@ -223,7 +223,7 @@ def test_rename_project_workbook_and_worksheet(app):
 
 
 def test_plot_column_from_worksheet(app):
-    from respot.ui.main_window import MainWindow
+    from graphmatrix.ui.main_window import MainWindow
 
     window = MainWindow()
     window.confirm_on_close = False
@@ -257,8 +257,8 @@ def test_plot_column_from_worksheet(app):
 
 
 def test_reference_lines_hover_and_slope(app):
-    from respot.core.model import ReferenceLine
-    from respot.ui.main_window import MainWindow
+    from graphmatrix.core.model import ReferenceLine
+    from graphmatrix.ui.main_window import MainWindow
 
     window = MainWindow()
     window.confirm_on_close = False
@@ -289,7 +289,7 @@ def test_reference_lines_hover_and_slope(app):
         assert window.registry.action("graph.hover").isChecked() is False
 
         # Slope dialog runs against the sample data.
-        from respot.ui.analysis_dialogs import SlopeDialog
+        from graphmatrix.ui.analysis_dialogs import SlopeDialog
 
         dialog = SlopeDialog(window.project)
         dialog.x0_edit.setText("0.5")
@@ -299,7 +299,7 @@ def test_reference_lines_hover_and_slope(app):
         assert "Slope" in result.summary
 
         # The slope result can annotate the active graph.
-        from respot.ui.analysis_dialogs import AnalysisResultDialog
+        from graphmatrix.ui.analysis_dialogs import AnalysisResultDialog
 
         before_ann = len(graph.annotations)
         result_dialog = AnalysisResultDialog(
@@ -315,10 +315,10 @@ def test_reference_lines_hover_and_slope(app):
 def test_provenance_journal_and_palette(app, tmp_path):
     from PySide6.QtCore import Qt
 
-    from respot.core.code_export import project_to_script
-    from respot.core.report import export_analysis_bundle
-    from respot.ui.command_palette import CommandPalette
-    from respot.ui.main_window import MainWindow
+    from graphmatrix.core.code_export import project_to_script
+    from graphmatrix.core.report import export_analysis_bundle
+    from graphmatrix.ui.command_palette import CommandPalette
+    from graphmatrix.ui.main_window import MainWindow
 
     window = MainWindow()
     window.confirm_on_close = False
@@ -360,7 +360,7 @@ def test_digitize_dialog_extracts(app, tmp_path):
 
     from PIL import Image
 
-    from respot.ui.digitize_dialog import DigitizeDialog
+    from graphmatrix.ui.digitize_dialog import DigitizeDialog
 
     image = np.full((120, 160, 3), 255, dtype=np.uint8)
     for col in range(20, 140):

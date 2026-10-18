@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from respot.core.io import importer
-from respot.core.model import ColumnType, Worksheet
+from graphmatrix.core.io import importer
+from graphmatrix.core.model import ColumnType, Worksheet
 
 
 def test_csv_roundtrip(tmp_path):
@@ -33,8 +33,8 @@ def test_csv_headerless_inference(tmp_path):
 
 
 def test_excel_roundtrip(tmp_path):
-    from respot.core.io import excel_io
-    from respot.core.model import Workbook
+    from graphmatrix.core.io import excel_io
+    from graphmatrix.core.model import Workbook
 
     book = Workbook("B")
     sheet = book.add_sheet(Worksheet("Data"))
@@ -50,7 +50,7 @@ def test_excel_roundtrip(tmp_path):
 
 
 def test_parquet_roundtrip(tmp_path):
-    from respot.core.io import parquet_io
+    from graphmatrix.core.io import parquet_io
 
     sheet = Worksheet("S")
     sheet.add_column("X1", ColumnType.X, [0.0, 1.0, 2.0])

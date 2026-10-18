@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from respot.core.analysis.digitize import digitize_curve
+from graphmatrix.core.analysis.digitize import digitize_curve
 
 
 def _line_image(slope_px: float = -0.8, thickness: int = 2) -> np.ndarray:

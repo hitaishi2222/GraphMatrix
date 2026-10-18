@@ -1,9 +1,9 @@
-# Using Respot
+# Using GraphMatrix
 
 ## Launch
 
 ```bash
-PYTHONPATH=src python -m respot
+PYTHONPATH=src python -m graphmatrix
 ```
 
 The window has a **Project Explorer** (left), a **Properties** inspector (right),
@@ -120,7 +120,7 @@ or "Plot on active graph" (adds the curve as columns and a plot).
 A recipe records *what* to compute (not the data), so it can be re-run anywhere:
 
 ```python
-from respot.core.recipes import Recipe, run_recipe, save_recipe
+from graphmatrix.core.recipes import Recipe, run_recipe, save_recipe
 
 recipe = Recipe("fit", {"model": "Exponential Decay"}, label="exp decay")
 r = run_recipe(recipe, x, y)          # x, y from anywhere
@@ -134,7 +134,7 @@ takes optional `x0`/`x1` bounds.
 
 ## Scripting examples
 
-The console exposes `api` (a `RespotAPI`), `project`, `np`, `numpy`, `scipy`, plus the
+The console exposes `api` (a `GraphMatrixAPI`), `project`, `np`, `numpy`, `scipy`, plus the
 model classes. Scripted changes go through the same commands as the GUI, so they are
 undoable.
 
@@ -163,8 +163,8 @@ api.save("demo.rsproj")
 Figure-as-code and reproducible bundles are one call each:
 
 ```python
-from respot.core.code_export import project_to_script
-from respot.core.report import export_analysis_bundle
+from graphmatrix.core.code_export import project_to_script
+from graphmatrix.core.report import export_analysis_bundle
 
 print(project_to_script(project))          # a script that rebuilds the project
 export_analysis_bundle(project, None, "bundle")   # data/ + figures/ + reproduce.py + methods.md
@@ -173,7 +173,7 @@ export_analysis_bundle(project, None, "bundle")   # data/ + figures/ + reproduce
 The digitizer is also importable (pixel anchors → data values):
 
 ```python
-from respot.core.analysis.digitize import digitize_curve
+from graphmatrix.core.analysis.digitize import digitize_curve
 
 result = digitize_curve(
     "scan.png",

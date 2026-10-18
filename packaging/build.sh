@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a Respot bundle for the current platform with PyInstaller.
+# Build a GraphMatrix bundle for the current platform with PyInstaller.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -12,7 +12,7 @@ echo "Running tests…"
 QT_QPA_PLATFORM=offscreen python -m pytest -q
 
 echo "Building bundle…"
-python -m PyInstaller packaging/respot.spec --noconfirm --clean
+python -m PyInstaller packaging/graphmatrix.spec --noconfirm --clean
 
 echo
-echo "Done. See dist/respot/ (or dist/Respot.app on macOS)."
+echo "Done. See dist/graphmatrix/ (or dist/GraphMatrix.app on macOS)."

@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from respot.core.io.export import export_graph
-from respot.core.model import (
+from graphmatrix.core.io.export import export_graph
+from graphmatrix.core.model import (
     Annotation,
     ColumnType,
     Graph,

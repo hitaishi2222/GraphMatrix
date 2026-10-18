@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from respot.core.model import (
+from graphmatrix.core.model import (
     AxisScale,
     Column,
     ColumnType,
@@ -62,7 +62,7 @@ def test_plot_spec_and_layer_roundtrip():
 
 
 def test_resolve_plot_returns_arrays():
-    from respot.core.plotting import resolve_plot
+    from graphmatrix.core.plotting import resolve_plot
 
     project = Project()
     book = project.add_workbook(Workbook("Book1"))

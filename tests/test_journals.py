@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from respot.core.io.export import export_graph
-from respot.core.journals import (
+from graphmatrix.core.io.export import export_graph
+from graphmatrix.core.journals import (
     JOURNAL_PRESETS,
     apply_journal_preset,
     export_rcparams,
@@ -11,7 +11,7 @@ from respot.core.journals import (
     journal_names,
     preset,
 )
-from respot.core.model import ColumnType, Graph, PlotSpec, Project, Workbook, Worksheet
+from graphmatrix.core.model import ColumnType, Graph, PlotSpec, Project, Workbook, Worksheet
 
 
 def _graph() -> Graph:

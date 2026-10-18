@@ -1,4 +1,4 @@
-# Respot — Detailed Plan
+# GraphMatrix — Detailed Plan
 
 A cross-platform, Python-first scientific data analysis and graphing GUI, positioned
 as an open alternative to OriginPro.
@@ -53,7 +53,7 @@ Treat M1–M5 as "usably functional with the common 80% done," not "finished."
 
 ## 1. Vision and scope
 
-### 1.1 What Respot is
+### 1.1 What GraphMatrix is
 
 A desktop application for scientists and engineers to:
 
@@ -93,7 +93,7 @@ faster and more scriptable than the incumbent.
 | D6 | Undo/redo + scripting | **Command pattern from day one** | Every model mutation is a `Command`. Undo/redo and macro/script recording fall out for free; retrofitting is brutal. |
 | D7 | Project file | **zip + `project.json`** (binary arrays later) | Human-inspectable, diffable, easy to version. Can add HDF5/no memory-map payloads without changing the envelope. |
 | D8 | Packaging | **PyInstaller first, Nuitka if startup/protection demands it** | Simplest path to signed bundles on 3 OSes; revisit if cold-start or IP protection becomes a problem. |
-| D9 | Plugin system | **Modules exposing `register(context)`** in `respot/plugins/` | Zero-config discovery; same mechanism can later load third-party plugins from a user directory. |
+| D9 | Plugin system | **Modules exposing `register(context)`** in `graphmatrix/plugins/` | Zero-config discovery; same mechanism can later load third-party plugins from a user directory. |
 | D10 | Core/UI boundary | **`core/` must never import PySide6** | Testability, headless batch mode, and a future native acceleration seam. Enforced in review + (later) a lint check. |
 
 ---
@@ -121,7 +121,7 @@ what makes undo/redo, script recording, and headless batch mode possible later.
 ### 3.2 Module map
 
 ```
-src/respot/
+src/graphmatrix/
   __main__.py            entry point
   app.py                 QApplication bootstrap
   core/                  ── Qt-free engine ──
@@ -175,7 +175,7 @@ from that, so adding a field is a one-line change to each side.
 
 **Project file (`.rsproj`)** = a zip archive containing `project.json`:
 ```json
-{ "format": "respot-project", "version": 1, "name": "Untitled",
+{ "format": "graphmatrix-project", "version": 1, "name": "Untitled",
   "workbooks": [ { "name": "Book1", "sheets": [
     { "name": "Sheet1", "columns": [
       { "name": "X1", "col_type": "X", "units": "rad", "dtype": "float64", "data": [...] } ] } ] } ],
@@ -206,7 +206,7 @@ M1+ adds value-edit commands (`SetCellValue`, `SetColumnType`, rename, reorder) 
 
 ## 6. Plugin and scripting model
 
-A plugin is a module under `respot/plugins/` exposing:
+A plugin is a module under `graphmatrix/plugins/` exposing:
 
 ```python
 def register(context) -> None:
@@ -219,7 +219,7 @@ model through `context.commands`, not by mutating it directly.
 
 **Scripting (M5):** the same `Command` objects are the scripting vocabulary. An embedded
 `code.InteractiveConsole` gets a namespace exposing the project, the command stack, and
-convenience API; "record macro" simply serializes the command log. This is Respot's
+convenience API; "record macro" simply serializes the command log. This is GraphMatrix's
 answer to LabTalk — and because it *is* Python, it composes with numpy/scipy for free.
 
 ---

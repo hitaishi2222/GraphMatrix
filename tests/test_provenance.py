@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from respot.core.analysis.result import AnalysisResult
-from respot.core.commands import AddGraphCommand, AddPlotCommand, CommandStack
-from respot.core.model import ColumnType, Graph, PlotSpec, Project, Workbook, Worksheet
-from respot.core.provenance import ProvenanceLog, format_summary
+from graphmatrix.core.analysis.result import AnalysisResult
+from graphmatrix.core.commands import AddGraphCommand, AddPlotCommand, CommandStack
+from graphmatrix.core.model import ColumnType, Graph, PlotSpec, Project, Workbook, Worksheet
+from graphmatrix.core.provenance import ProvenanceLog, format_summary
 
 
 def _project():

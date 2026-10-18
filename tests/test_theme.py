@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from respot.ui import theme  # noqa: E402
+from graphmatrix.ui import theme  # noqa: E402
 
 _TOKEN_KEYS = {
     "window", "panel", "base", "alt", "border", "text", "muted", "accent",

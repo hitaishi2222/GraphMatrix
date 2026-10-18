@@ -3,13 +3,13 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "respot"
+name = "graphmatrix"
 version = "0.0.1"
 description = "Cross-platform scientific data analysis and graphing GUI"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "Respot" }]
+authors = [{ name = "GraphMatrix" }]
 dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",
@@ -27,14 +27,14 @@ hdf5 = ["h5py>=3.8"]
 mcp = ["fastmcp>=2.0"]
 
 [project.scripts]
-respot = "respot.__main__:main"
-respot-mcp = "respot.mcp_server:main"
+graphmatrix = "graphmatrix.__main__:main"
+graphmatrix-mcp = "graphmatrix.mcp_server:main"
 
 [project.gui-scripts]
-respot-gui = "respot.__main__:main"
+graphmatrix-gui = "graphmatrix.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/respot"]
+packages = ["src/graphmatrix"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
