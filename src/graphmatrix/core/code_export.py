@@ -74,6 +74,8 @@ def _plot_literal(spec: PlotSpec) -> str:
         ("legend", repr(spec.legend)),
         ("y_axis", repr(spec.y_axis)),
         ("line_style", repr(spec.line_style)),
+        ("z", repr(spec.z)),
+        ("cmap", repr(spec.cmap)),
     ]
     body = ", ".join(f"{key}={value}" for key, value in kwargs)
     return f"PlotSpec(source={spec.source!r}, x={spec.x!r}, y={spec.y!r}, {body})"
@@ -99,6 +101,8 @@ def _layer_lines(layer: Layer, *, indent: str = "") -> list[str]:
         value = getattr(layer, attr)
         if value:
             lines.append(f"{indent}layer.{attr} = {value!r}")
+    if getattr(layer, "z_label", "Value") not in ("", "Value"):
+        lines.append(f"{indent}layer.z_label = {layer.z_label!r}")
     for attr in ("x_min", "x_max", "y_min", "y_max"):
         value = getattr(layer, attr)
         if value is not None:

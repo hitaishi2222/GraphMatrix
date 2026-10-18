@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -97,7 +98,12 @@ class AnalysisResultDialog(QDialog):
             if err == err:  # not NaN
                 text += f" ± {err:.2g}"
             return f"{text}\nR² = {r2:.4f}"
-        parts = [f"{key} = {value:.4g}" for key, value in list(summary.items())[:3]]
+        parts = []
+        for key, value in list(summary.items())[:3]:
+            try:
+                parts.append(f"{key} = {float(value):.4g}")
+            except (TypeError, ValueError):
+                parts.append(f"{key} = {value}")
         return "\n".join(parts) if parts else result.title
 
     def _annotate_on_graph(self) -> None:
@@ -188,10 +194,16 @@ class RegressionDialog(_TwoColumnDialog):
         self.degree.setValue(2)
         self.x_combo = QComboBox()
         self.y_combo = QComboBox()
+        self.x_min_edit = QLineEdit()
+        self.x_min_edit.setPlaceholderText("blank = from first point")
+        self.x_max_edit = QLineEdit()
+        self.x_max_edit.setPlaceholderText("blank = to last point")
         self.form.addRow("Model:", self.mode)
         self.form.addRow("Degree:", self.degree)
         self.form.addRow("X column:", self.x_combo)
         self.form.addRow("Y column:", self.y_combo)
+        self.form.addRow("Fit region: X from", self.x_min_edit)
+        self.form.addRow("Fit region: X to", self.x_max_edit)
         self._refresh_columns()
 
     def _refresh_columns(self):
@@ -199,11 +211,16 @@ class RegressionDialog(_TwoColumnDialog):
         fill_column_combo(self.y_combo, self.sheet(), types=(ColumnType.Y,))
 
     def run(self):
+        def number(text):
+            text = text.strip()
+            return float(text) if text else None
+
         x = self._x_array(self.x_combo.currentData())
         y = self._x_array(self.y_combo.currentData())
+        x_min, x_max = number(self.x_min_edit.text()), number(self.x_max_edit.text())
         if self.mode.currentText() == "Linear":
-            return regression.linear_fit(x, y)
-        return regression.polynomial_fit(x, y, self.degree.value())
+            return regression.linear_fit(x, y, x_min=x_min, x_max=x_max)
+        return regression.polynomial_fit(x, y, self.degree.value(), x_min=x_min, x_max=x_max)
 
 
 class FitDialog(_TwoColumnDialog):
@@ -214,10 +231,16 @@ class FitDialog(_TwoColumnDialog):
         self.x_combo = QComboBox()
         self.y_combo = QComboBox()
         self.yerr_combo = QComboBox()
+        self.x_min_edit = QLineEdit()
+        self.x_min_edit.setPlaceholderText("blank = from first point")
+        self.x_max_edit = QLineEdit()
+        self.x_max_edit.setPlaceholderText("blank = to last point")
         self.form.addRow("Model:", self.model_combo)
         self.form.addRow("X column:", self.x_combo)
         self.form.addRow("Y column:", self.y_combo)
         self.form.addRow("Y error:", self.yerr_combo)
+        self.form.addRow("Fit region: X from", self.x_min_edit)
+        self.form.addRow("Fit region: X to", self.x_max_edit)
         self._refresh_columns()
 
     def _refresh_columns(self):
@@ -226,10 +249,17 @@ class FitDialog(_TwoColumnDialog):
         fill_column_combo(self.yerr_combo, self.sheet(), types=(ColumnType.YERR,), include_none=True)
 
     def run(self):
+        def number(text):
+            text = text.strip()
+            return float(text) if text else None
+
         x = self._x_array(self.x_combo.currentData())
         y = self._x_array(self.y_combo.currentData())
         yerr = self._x_array(self.yerr_combo.currentData()) if self.yerr_combo.currentData() else None
-        return fitting.fit_model(self.model_combo.currentText(), x, y, yerr=yerr)
+        return fitting.fit_model(
+            self.model_combo.currentText(), x, y, yerr=yerr,
+            x_min=number(self.x_min_edit.text()), x_max=number(self.x_max_edit.text()),
+        )
 
 
 class PeaksDialog(_TwoColumnDialog):
@@ -239,10 +269,16 @@ class PeaksDialog(_TwoColumnDialog):
         self.y_combo = QComboBox()
         self.prominence = QLineEdit()
         self.distance = QLineEdit()
+        self.integrate = QCheckBox("Integrate area per peak")
+        self.integrate.setToolTip(
+            "Trapezoidal area between each peak's prominence bases (local valleys), "
+            "bound minimum subtracted as a baseline."
+        )
         self.form.addRow("X column:", self.x_combo)
         self.form.addRow("Y column:", self.y_combo)
         self.form.addRow("Min prominence:", self.prominence)
         self.form.addRow("Min distance:", self.distance)
+        self.form.addRow("Areas:", self.integrate)
         self._refresh_columns()
 
     def _refresh_columns(self):
@@ -259,6 +295,7 @@ class PeaksDialog(_TwoColumnDialog):
             self._x_array(self.y_combo.currentData()),
             prominence=number(self.prominence.text()),
             distance=number(self.distance.text()),
+            integrate=self.integrate.isChecked(),
         )
 
 

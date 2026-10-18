@@ -10,7 +10,7 @@ stack we did, and in what order**. It is updated as milestones close.
 
 ## 0. Current status
 
-_Last updated: 2026-10-15 (after the M8/M9 provenance-and-digitizer pass). Forward plan
+_Last updated: 2026-10-18 (after the M10 analysis-depth / colour / 3D pass). Forward plan
 lives in [`ROADMAP.md`](ROADMAP.md)._
 
 | Milestone | Status | Notes |
@@ -25,21 +25,26 @@ lives in [`ROADMAP.md`](ROADMAP.md)._
 | **M7 — Graph interaction & range tools** | 🟢 Functional | **Dashed/dotted line styles**, **H-lines & V-lines (undoable `ReferenceLine` on the layer, drawn on canvas + export)**, **hover crosshair + nearest-point readout**, **slope over an X range** (`core.analysis.ranged`, annotate-on-graph), **baseline corrections** (linear, ALS, rolling-ball, rubber-band, median). Details in `ROADMAP.md` §2. |
 | **M8 — Provenance, reproducibility & journal output** | 🟢 Functional | **`Command.describe()` + `ProvenanceLog`** → a `methods.md` write-up; **figure-as-code** (`project_to_script`); **analysis bundle** export (`project.rsproj` + `data/*.csv` + `figures/` + `reproduce.py` + `methods.md` + `provenance.json`); **journal presets** (Nature/Science/APS/IEEE sizes + typography, applied per graph and honoured on export). Menus: Graph → Journal Preset, Export → Project as Python Script / Analysis Bundle, Tools → Analysis Methods. Details in `ROADMAP.md` §3. |
 | **M9 — Curve digitizer & command palette** | 🟢 Functional | **Digitize a curve from an image** (`core.analysis.digitize`: darkness/colour isolation, axis-anchor calibration, region + aggregate options) with a click-to-place dialog; **command palette** (`Ctrl+Shift+P`) fuzzy-searching every registered action. Details in `ROADMAP.md` §4. |
-| Deferred — 3D | ⚪ Not started | Still planned after M2, behind the `PlotCanvas` interface. |
+| **M10 — Analysis depth, colour & 3D plot types** | 🟢 Functional | **Numeric fit regions** (x-min/x-max in regression/nonlinear/recipes — locked UX), **peak integration** (per-peak area between prominence bases), **batch statistics table** (`descriptive.batch_summary`, Analyze → Batch Statistics), **colour-mapped scatter / heatmap / contour** (`PlotSpec.z` + `cmap`, colourbar, scattered-XYZ gridding via `core.plotting.grid_xyz`), and **3D scatter + surface on PyVista** — backend **locked to PyVista**; live scene by `pyvistaqt` behind `PlotCanvas`, vector 3D export via matplotlib. New styles: `color-mapped scatter`, `heatmap`, `contour`, `3d scatter`, `3d surface`. Details in `ROADMAP.md` §5. |
+| 3D (closed) | 🔒 PyVista | The "Deferred — 3D" placeholder is resolved: live 3D on PyVista (`plot3d` extra), export on matplotlib 3D. 3D *fit* remains queued in the backlog. |
 
-**Test status:** `python -m pytest -q` → **120 passed**, no display required
+**Test status:** `python -m pytest -q` → **143 passed**, no display required
 (`QT_QPA_PLATFORM=offscreen`). Covers the model/formula layer, I/O round-trips,
-the full analysis toolkit (incl. deconvolution and the baseline methods), recipes
-+ the batch pipeline, publication export (incl. dual-axis/annotations, dashed lines,
-reference lines and journal presets), graph templates, scripting/macro replay,
-reference lines + hover + slope, provenance + bundle round-trip, the digitizer, and a
-headless end-to-end UI smoke test (incl. the command palette and digitize dialog).
+the full analysis toolkit (incl. deconvolution, numeric fit regions, peak
+integration, batch statistics), recipes + the batch pipeline, publication export
+(incl. dual-axis/annotations, dashed lines, reference lines, journal presets, and
+every colour/3D style), graph templates, scripting/macro replay, reference lines +
+hover + slope, provenance + bundle round-trip, the digitizer, the XYZ/colour plumbing
+(`grid_xyz`, resolved `z`), the PyVista 3D canvas, and a headless end-to-end UI smoke
+test (incl. the command palette, digitize dialog, and the GraphView backend swap).
 
 **Honest caveats:** genuinely deferred (not bugs), and the reasons are external or
 out of scope:
 
-- **Vispy/GPU backend** — not wired; the `PlotCanvas` interface keeps the door open.
-  Performance for >1e5 points is untested (LOD downsampling is on by default).
+- **3D camera transfer** — the live PyVista camera orientation is not copied into
+  the matplotlib-3D export yet; exports use a sensible default view.
+- **GPU/2D scale** — the 2D canvas is still matplotlib/pyqtgraph (LOD downsampling
+  on by default); PyVista hosts only the *3D* live scene for now.
 - **CMYK output** — matplotlib's vector backends cannot emit CMYK directly; not done.
 - **Graph insets / layered annotations** — text annotations exist; insets do not.
 - **Installers, code-signing, notarization, auto-update** — require OS tooling and
@@ -299,11 +304,13 @@ Each milestone lists deliverables and a concrete **acceptance test**.
 
 **Acceptance:** a new user downloads, installs, and completes the "first figure" flow on all three OSes.
 
-### Deferred — 3D
-Slots in **after M2**, reusing the canvas interface:
-- Evaluate **Vispy/PyVista** (Python-first, Qt-embeddable) vs **VTK** (heavier, most capable).
-- Surface/contour/3D-scatter/3D-fit on the same `Graph`/`Layer` model extended with a `z` axis.
-- Keep it behind the existing `PlotCanvas` abstraction so 2D never regresses.
+### 3D — resolved in M10 🔒
+The open 3D slot is closed with the **PyVista** decision (2026-10-18):
+- **Live 3D:** PyVista/VTK scene embedded in PySide6 via `pyvistaqt`, behind the
+  same `PlotCanvas` interface; `GraphView` picks the backend automatically from a
+  graph's styles. Requires the optional `plot3d` extra, so it never blocks installs.
+- **Export:** matplotlib 3D through the normal exporter (vector PDF/SVG).
+- Remaining 3D backlog: 3D *fit* surfaces, camera-aware export.
 
 ---
 
@@ -369,3 +376,4 @@ Slots in **after M2**, reusing the canvas interface:
 | 2026-10-15 | **Plot-from-column pass.** A worksheet column can now be plotted straight from its context menu: right-click a **column header**, or select a whole column and right-click a cell, then choose **Plot “Column”** (pairs the column with its first X/Y partner; creates a graph if none is open, else adds to the active one). New `WorksheetView.plot_column_requested` signal → `MainWindow._plot_column`. Test: worksheet plot-from-column smoke test. Suite now **80 passed**. |
 | 2026-10-15 | **M7 graph-interaction pass.** New `ROADMAP.md` holds the forward plan (backlog by area + detailed M7). Shipped: (1) **dashed/dotted line styles** — `PlotSpec.line_style`, rendered by pyqtgraph (`Qt.PenStyle`) and matplotlib, captured by style templates; (2) **reference lines** — new `ReferenceLine` model on `Layer`, `Add`/`RemoveReferenceLineCommand`, canvas (`pg.InfiniteLine`) + export (`axhline`/`axvline`), sidebar list + dialog; (3) **hover point info** — crosshair + nearest-point readout via an x-sorted search, menu toggle, canvas-only; (4) **slope over an X range** — `core.analysis.ranged.slope_between` (slope, intercept, R², std err, Δy/Δx) + **Analyze → Slope / Range Fit…** with one-click **Annotate on graph**; (5) **baseline corrections** — linear, ALS (Eilers), rolling-ball, rubber-band (lower hull), median, behind a `baseline_correction` dispatcher, wired into the Signal dialog and recipes (recipes also gained a `slope` op). New test file `test_graph_features.py` + a reference-line/hover/slope UI smoke test. Suite now **98 passed**. |
 | 2026-10-15 | **M8/M9 provenance-and-digitizer pass.** New `core/provenance.py` (`Command.describe()` on meaningful commands + `ProvenanceLog` fed by described commands, imports, and analysis results → `methods.md`). New `core/code_export.project_to_script` (figure-as-code; namespace-complete replay, NaN/inf-safe) and `core/report.export_analysis_bundle` (project + `data/*.csv` + `figures/` + `reproduce.py` + `methods.md` + `provenance.json`). New `core/journals.py` presets (Nature/Science/APS/IEEE) with `apply_journal_preset` (idempotent, undoable via a command macro) and preset-aware `export_graph` (rcParams + default figure size); `Graph.journal_preset` serialized. New `core/analysis/digitize.py` (darkness/colour mask, two anchors per axis, region + aggregate) with `ui/digitize_dialog.py` (click-to-place anchors). New `ui/command_palette.py` (`Ctrl+Shift+P`) fuzzy-searching registered actions. Menus: Graph → Journal Preset, Export → Project as Python Script / Analysis Bundle, Tools → Command Palette / Analysis Methods, Analyze → Digitize Curve from Image. Model tweaks: `Worksheet.add_column`/`api.add_column` accept masks; console namespace exposes `Layer`/`AxisScale`/`ReferenceLine`/`Annotation`. New tests `test_provenance.py`, `test_report.py`, `test_journals.py`, `test_digitize.py` + palette/journal/digitize UI smoke tests. Suite now **120 passed**. |
+| 2026-10-18 | **M10 analysis-depth / colour / 3D pass.** Decisions locked: **3D backend = PyVista** (open question #5) and **fit regions = numeric bounds** (open question #3). New: numeric fit regions (`x_min`/`x_max` on `linear_fit`, `polynomial_fit`, `fit_model`, plus Regression/Fit dialog fields and recipe params); peak integration (`find_peaks_result(integrate=True)` — trapezoidal area between prominence bases, Peaks-dialog check + recipe op); batch statistics (`descriptive.batch_summary` + Analyze → Batch Statistics); colour-mapped scatter / heatmap / contour (`PlotStyle` + `PlotSpec.z`/`cmap` + `Layer.z_label`, serialized & emitted by `project_to_script`; colourbar on canvas + export); scattered-XYZ gridding (`core.plotting.grid_xyz`); 3D scatter/surface on the new `ui/canvas/pyvista_canvas.py` (PyVista, optional `plot3d` extra = `pyvista`/`pyvistaqt`; GraphView auto-swaps backends, matplotlib fallback without extras); shared `render_xyz_mpl` keeps the live canvas and the exporter WYSIWYG; 3D export via matplotlib-3D. Non-numeric summary entries handled gracefully in reports/provenance/annotations. New `tests/test_m10.py`. Suite now **143 passed**. |

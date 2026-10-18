@@ -54,13 +54,19 @@ def run_recipe(recipe: Recipe, x: Sequence[float] | None, y: Sequence[float]) ->
     if op == "descriptive":
         return descriptive.summarize(y)
     if op == "regression":
+        x_min = p.get("x_min", None)
+        x_max = p.get("x_max", None)
         if p.get("mode", "linear") == "polynomial":
-            return regression.polynomial_fit(x, y, degree=int(p.get("degree", 2)))
-        return regression.linear_fit(x, y)
+            return regression.polynomial_fit(x, y, degree=int(p.get("degree", 2)),
+                                             x_min=x_min, x_max=x_max)
+        return regression.linear_fit(x, y, x_min=x_min, x_max=x_max)
     if op == "fit":
-        return fitting.fit_model(p.get("model", "Gaussian"), x, y)
+        return fitting.fit_model(p.get("model", "Gaussian"), x, y,
+                                 x_min=p.get("x_min"), x_max=p.get("x_max"))
     if op == "peaks":
-        return peaks.find_peaks_result(x, y, prominence=p.get("prominence"), distance=p.get("distance"))
+        return peaks.find_peaks_result(x, y, prominence=p.get("prominence"),
+                                       distance=p.get("distance"),
+                                       integrate=bool(p.get("integrate", False)))
     if op == "deconvolution":
         kind = p.get("kind", "gaussian")
         centers = p.get("centers")

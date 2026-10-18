@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from graphmatrix.core.model import LINE_STYLES, ColumnType, PlotSpec, PlotStyle, Project, ReferenceLine
+from graphmatrix.core.model import LINE_STYLES, ColumnType, PlotSpec, PlotStyle, Project, ReferenceLine, Z_STYLES
 from graphmatrix.ui.widgets import fill_column_combo, fill_sheet_combo, sheet_label
 
 
@@ -30,6 +30,7 @@ class AddPlotDialog(QDialog):
         self.x_combo = QComboBox()
         self.y_combo = QComboBox()
         self.yerr_combo = QComboBox()
+        self.z_combo = QComboBox()
         self.style_combo = QComboBox()
         for style in PlotStyle:
             self.style_combo.addItem(style.value, style)
@@ -41,6 +42,7 @@ class AddPlotDialog(QDialog):
         form.addRow("X column:", self.x_combo)
         form.addRow("Y column:", self.y_combo)
         form.addRow("Y error:", self.yerr_combo)
+        form.addRow("Colour / Z column:", self.z_combo)
         form.addRow("Style:", self.style_combo)
         form.addRow("Legend label:", self.legend_edit)
 
@@ -53,6 +55,7 @@ class AddPlotDialog(QDialog):
         layout.addWidget(buttons)
 
         self.sheet_combo.currentIndexChanged.connect(self._refresh_columns)
+        self.style_combo.currentIndexChanged.connect(self._sync_z_visibility)
         self._refresh_columns()
 
     def _refresh_columns(self) -> None:
@@ -60,14 +63,22 @@ class AddPlotDialog(QDialog):
         fill_column_combo(self.x_combo, sheet, types=(ColumnType.X,))
         fill_column_combo(self.y_combo, sheet, types=(ColumnType.Y,))
         fill_column_combo(self.yerr_combo, sheet, types=(ColumnType.YERR,), include_none=True)
+        fill_column_combo(self.z_combo, sheet, types=(ColumnType.Z, ColumnType.Y), include_none=True)
+        self._sync_z_visibility()
+
+    def _sync_z_visibility(self) -> None:
+        needs_z = PlotStyle(self.style_combo.currentData()) in Z_STYLES
+        self.z_combo.setEnabled(needs_z)
 
     def spec(self) -> PlotSpec:
         sheet = self.sheet_combo.currentData()
+        needs_z = PlotStyle(self.style_combo.currentData()) in Z_STYLES
         return PlotSpec(
             source=sheet_label(self._project, sheet),
             x=self.x_combo.currentData() or "",
             y=self.y_combo.currentData() or "",
             yerr=self.yerr_combo.currentData(),
+            z=(self.z_combo.currentData() or "") if needs_z else "",
             style=self.style_combo.currentData(),
             legend=self.legend_edit.text().strip(),
         )

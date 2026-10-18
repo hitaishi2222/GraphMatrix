@@ -12,7 +12,7 @@ Status legend: ✅ shipped · 🔨 building now · 📋 planned · 💭 idea / n
 ## 0. How to read this
 
 - **Milestones M0–M6** in `PLAN.md` are done. This roadmap starts at **M7** and runs
-  forward; **M7, M8, and M9 are now shipped** and documented below.
+  forward; **M7, M8, M9, and M10 are shipped** (M10 landed 2026-10-18, see §5).
 - Every item carries a **value / cost** guess and a **depends-on** note, so the order
   is arguable from the table alone.
 - Shipped increments (§2–§4) keep their acceptance tests as a record; preview
@@ -40,8 +40,8 @@ Status legend: ✅ shipped · 🔨 building now · 📋 planned · 💭 idea / n
 | Box / violin plots | Medium | M | 📋 | Stats-forward. |
 | Color-mapped scatter (3rd variable -> color) | High | M | 📋 | Color column + colorbar. |
 | LaTeX / mathtext in labels and annotations | Medium | S | 📋 | matplotlib mathtext nearly free. |
-| Confidence / prediction bands on fits | Medium | M | ✅ | lmfit eval_uncertainty; Fit ±1σ curves. |
-| Peak integration (area per fitted peak) | Medium | S | 📋 | Deconvolution already fits components. |
+| Confidence / prediction bands on fits | Medium | M | ✅ Shipped (M7-M9 pass). |
+| Peak integration (area per fitted peak) | Medium | S | ✅ M10 (`peaks` `integrate` + Peaks dialog + recipes). |
 | Natural-language command grammar | Medium | M | 📋 | Builds on palette. |
 | Live / streaming data board | Medium | L | 💭 | Tail file/serial port, auto-refresh. |
 | Figure diff (before/after) | Low | M | 💭 | Render two graphs and diff. |
@@ -53,6 +53,10 @@ Status legend: ✅ shipped · 🔨 building now · 📋 planned · 💭 idea / n
 | Headless CLI pipelines | Medium | M | ✅ | `graphmatrix run pipeline.yaml`. |
 | Arrow-backed column store | Medium | L | 💭 | Only when dataset forces it. |
 | GPU canvas for >=1e6 points | High | L | 💭 | Benchmark before committing. |
+| Multi-dataset batch statistics table | Medium | M | ✅ M10 (`descriptive.batch_summary` + Analyze → Batch Statistics). |
+| Color-mapped scatter (3rd variable -> color) | High | M | ✅ M10 (`PlotSpec.z` + `cmap`, colourbar). |
+| Contour / heatmap from X-Y-Z | High | L | ✅ M10 (`grid_xyz` + `tricontourf`; scattered XYZ, no matrix type needed). |
+| 3D surface / scatter / 3D fit | High | L | 🟩 M10 shipped scatter+surface on **PyVista** (locked backend); 3D *fit* still queued. |
 
 ---
 
@@ -75,10 +79,10 @@ first working version, not the polished one.
 | Feature | Value | Cost | Notes |
 |---------|-------|------|-------|
 | Baseline corrections: linear, ALS, rolling-ball, rubber-band, median | High | M | ✅ Shipped in M7 (`core.analysis.signal`). |
-| Fit-region selection (fit only over an X window) | High | M | Extends regression/nonlinear dialogs with x-min/x-max. |
-| Confidence / prediction bands on fits | Medium | M | lmfit + matplotlib fill_between; pyqtgraph layered band. |
-| Multi-dataset batch statistics table | Medium | M | One report row per file; pairs with the batch pipeline. |
-| Peak integration (area per fitted peak) | Medium | S | Deconvolution already fits the components. |
+| Fit-region selection (fit only over an X window) | High | M | ✅ M10 — numeric x-min/x-max in regression/nonlinear/slope dialogs + recipes. |
+| Confidence / prediction bands on fits | Medium | M | ✅ Shipped (lmfit `eval_uncertainty`; Fit ±1σ curves). |
+| Multi-dataset batch statistics table | Medium | M | ✅ M10 (`descriptive.batch_summary`; row per column, Recover Analyst-style). |
+| Peak integration (area per fitted peak) | Medium | S | ✅ M10 (prominence-base bounds + dialog/recipe option). |
 | Derivative spectroscopy (1st/2nd) helper | Low | S | `differentiate` exists; add presets/labels. |
 
 ### 1.3 Worksheet & data (M12)
@@ -96,12 +100,12 @@ first working version, not the polished one.
 
 | Feature | Value | Cost | Notes |
 |---------|-------|------|-------|
-| Contour / heatmap from an X–Y–Z matrix | High | L | Needs a matrix column and a canvas extension. |
-| 3D surface / scatter / 3D fit | High | L | Deferred item from PLAN §7; Vispy/PyVista behind `PlotCanvas`. |
+| Contour / heatmap from an X–Y–Z matrix | High | L | ✅ M10 — scattered XYZ via `grid_xyz` / `tricontourf`; matrix *column type* (true raster import) still queued. |
+| 3D surface / scatter / 3D fit | High | L | ✅ M10 scatter + surface on **PyVista** (locked backend); 3D *fit* queued. |
 | Box / violin plots | Medium | M | Stats-forward, cheap via matplotlib; canvas version needs custom items. |
 | Pie / doughnut | Low | S | Rare in lab work; export-only may suffice. |
 | Waterfall / stacked offset lines | Medium | S | Offset each series by a constant; very useful for spectra. |
-| Color-mapped scatter (third variable → color) | High | M | Needs a color column + colorbar widget. |
+| Color-mapped scatter (third variable → color) | High | M | ✅ M10 — `PlotSpec.z` + `cmap` + colourbar on canvas and export. |
 
 ### 1.5 Publication & layout (M11)
 
@@ -144,7 +148,7 @@ first five; the rest are queued and scheduled in §6–§7.
 | Curve digitizer (image → data) | Medium | M | ✅ M9 | `core/analysis/digitize.py` + dialog; darkness or colour isolation, axis-anchor calibration. |
 | Command palette ("Ask GraphMatrix" v1) | Medium | S | ✅ M9 | Fuzzy action search, `Ctrl+Shift+P`. |
 | Natural-language command grammar | Medium | M | 📋 | "plot Y1 vs X1", "baseline ALS" → API calls. Builds on the palette. |
-| Interactive fit region | High | M | 📋 | Drag an X window on the canvas → fit/slope. Reuses `slope_between`. |
+| Interactive fit region | High | M | 📋 | Drag an X window on the canvas → fit/slope. Numeric regions shipped in M10; the gesture would fill the same fields. |
 | Live / streaming data board | Medium | L | 💭 | Tail a file or serial port and auto-refresh a graph (`QFileSystemWatcher`). |
 | Linked brushing across graphs & sheet | High | L | 💭 | Shared selection; highlight a point in every view at once. |
 | Time machine (scrub the undo history) | Low | M | 💭 | The undo stack as a slider; replay commands to a point. |
@@ -360,6 +364,91 @@ the whole project.
 
 ---
 
+## 5. Shipped — M10: analysis depth, colour & 3D plot types ✅
+
+**Decisions locked before build (2026-10-18):**
+- **3D backend: PyVista** (open question #5) — `pyvista`/`pyvistaqt` host the live
+  3D scene behind the `PlotCanvas` interface (optional `plot3d` extra); publication
+  export stays matplotlib-3D, so PDF/SVG output remains vector.
+- **Fit regions are numeric** (open question #3) — x-min/x-max fields in the
+  regression / nonlinear / slope dialogs, not a drag gesture. A drag gesture may
+  still come later; it would *set* these same numbers.
+
+**Theme:** the third data value flows from the worksheet to the canvas, fits
+respect a numeric X window, and every fitted peak reports its area.
+
+### 5.1 Deliverables
+
+1. **Numeric fit regions.**
+   - `linear_fit`, `polynomial_fit`, and `fit_model` gained `x_min`/`x_max`
+     (open ends allowed, reversed bounds swapped); reports say `Fit region: a ≤ x ≤ b`.
+   - Regression and Nonlinear-Fit dialogs have "Fit region: X from / X to" fields;
+     recipes accept `x_min`/`x_max` for the `regression` and `fit` ops.
+   - `slope_between` already scoped by bounds (M7) — this completes the trio.
+
+2. **Peak integration.**
+   - `peaks.find_peaks_result(..., integrate=True)` adds a per-peak **Area** column:
+     trapezoidal area between the peak's prominence bases (the valleys it rises out
+     of), bound-minimum subtracted as a local baseline.
+   - Peak Analysis dialog gained an "Integrate area per peak" check; recipes accept
+     `integrate: true` on the `peaks` op.
+
+3. **Batch statistics table.**
+   - `descriptive.batch_summary(project)` — one row per numeric column across every
+     sheet: N, Missing, Mean, Std Dev, Min, Median, Max.
+   - **Analyze → Batch Statistics…** (recorded in provenance).
+
+4. **Colour-mapped scatter, heatmap, contour (the Z column finally plots).**
+   - `PlotStyle` gained `color-mapped scatter`, `heatmap`, `contour`; `PlotSpec`
+     carries `z` (colour/value column) and `cmap`; `Layer.z_label` names the
+     colourbar. All serialized, template-captured, and emitted by `project_to_script`.
+   - `plotting.grid_xyz` grids scattered X-Y-Z (linear + nearest fill) for
+     heatmap/surface; `contour` uses matplotlib's `tricontourf` directly.
+   - Colour-mapped scatter needs **no gridding** (`c=z` scatter); heatmap and contour
+     degrade gracefully to a plain scatter when no Z column is set.
+
+5. **3D scatter & surface on PyVista.**
+   - `PlotStyle` gained `3d scatter` and `3d surface`; `ui/canvas/pyvista_canvas.py`
+     implements the `PlotCanvas` interface on `pyvistaqt.QtInteractor` (orbit/zoom
+     for free), with 2D styles drawn in the z = 0 plane so mixed graphs never blank.
+   - `create_canvas("pyvista")`; `GraphView` picks/keeps/returns the right backend
+     automatically as styles are edited, falling back to the colour-degraded
+     matplotlib view if the `plot3d` extra is missing.
+   - Export renders 3D styles through matplotlib 3D (`plot_surface` /
+     `scatter3D`) — vector PDF, same model, one exporter.
+
+### 5.2 Design notes
+
+- **One renderer for Z styles.** `render_xyz_mpl` (in `core.io.export`) is shared by
+  the live matplotlib canvas and the exporter, so colourbars, grids, and 3D surfaces
+  stay WYSIWYG without core importing the UI.
+- **The Z-value path is generic.** Any numeric column can supply the colour / height;
+  it does not need the `Z` *type* — a `Y` column works the same way.
+- **Numeric regions beat gestures... for now.** Gesture-to-fit stays a candidate
+  (§6) but would fill the same dialog fields.
+
+### 5.3 Acceptance tests
+
+- Windowed fits recover the segment slope on a two-segment line to 1e-9 and the
+  nonlinear window centres the correct crest; "Fit region" appears in reports.
+- Peak integration recovers a Gaussian's analytic area (amplitude·√(2π)·σ) to < 1%
+  and reports two positive areas for a two-peak spectrum.
+- `batch_summary` skips text columns and counts masked/missing values.
+- `grid_xyz` recovers a sampled plane to < 0.15 and stays all-NaN-safe on degenerate
+  input. Model round-trips for `PlotSpec.z`/`cmap` and `Layer.z_label`.
+- Export of every Z style (colour-mapped, heatmap, contour, 3D scatter, 3D surface)
+  writes PNG **and** vector PDF via the normal exporter.
+- Headless: GraphView re-renders a `3d surface` graph on the PyVista canvas, the
+  AddPlotDialog's Z combo gates on style, and `SetAttributesCommand` round-trips `z`.
+
+### 5.4 Explicitly out of scope for M10
+
+- Camera-aware export (matplotlib 3D uses a default view; the live PyVista camera
+  orientation is not transferred yet).
+- Box / violin, waterfall, pie (queued, §1.4); matrix *column type* (grid_xyz covers
+  scattered X-Y-Z first).
+- Drag-a-region gesture (numeric bounds are the locked UX).
+
 ## 5. M10 — analysis depth & plot types (preview)
 
 Extend the analysis toolkit toward "get the number and put it on the figure":
@@ -373,7 +462,8 @@ is actually wired.
 ## 6. M11 — interactive superpowers (preview)
 
 The differentiation tier. **Interactive fit region** (drag an X window on the canvas →
-run a fit or slope, reusing `slope_between`); **linked brushing** (a shared selection
+run a fit or slope, reusing `slope_between`; with numeric regions now shipped in M10,
+the gesture would simply fill those same fields); **linked brushing** (a shared selection
 highlighted across every open graph and worksheet); **live data** (watch a file or
 serial source and auto-refresh a graph). These share a need for a small selection/cursor
 model on top of the command stack, so they are sequenced together.
@@ -402,13 +492,15 @@ or earlier if the palette/time-travel UX earns its keep.
    vs a looser matcher. Proposal: fixed grammar first, grow from real usage.
 2. **Provenance scope:** keep it session/bundle-only (current) or persist it in the
    project for audit? Revisit if teams ask for signed reproduction.
-3. **Region selection UX (M11):** numeric bounds (simple, scriptable, already in the
-   slope dialog) vs a drag gesture on the canvas. Proposal: gesture now that M7/M8 gave
-   the canvas the plumbing.
+3. **Region selection UX:** ✅ **resolved (2026-10-18) — numeric bounds.** The M10
+   fit-region fields are the UX; a drag gesture remains an M11 candidate that would
+   populate those same fields.
 4. **Arrow migration:** still deferred (PLAN open question #2); nothing in M7–M11
    forces it.
-5. **3D backend:** Vispy vs PyVista vs VTK — decide before M10 closes if contour/3D is
-   the next big bet.
+5. **3D backend:** ✅ **resolved (2026-10-18) — PyVista**, chosen over Vispy and VTK:
+   Python-first, VTK render window embeds directly in PySide6 via `pyvistaqt`, and
+   publication export keeps matplotlib's vector 3D backends. Live 3D = PyVista;
+   export = matplotlib 3D.
 
 ---
 
@@ -420,3 +512,4 @@ or earlier if the palette/time-travel UX earns its keep.
 | 2026-10-15 | M7 shipped. Added §1.8 differentiating ideas; detailed and shipped M8 (provenance, reproducibility & journal output) and M9 (digitizer & command palette); renumbered the preview milestones. |
 | 2026-10-17 | WYSIWYG pass: matplotlib-backed canvas (live view == export), double-click resets zoom, default title no longer shows "GraphN", flat toolbar/sidebar buttons, Wayland/Hyprland tiling fix. |
 | 2026-10-17 | Publication polish: Layer.minor_ticks + Layer.tick_direction (model, serialization, export, canvas, UI). |
+| 2026-10-18 | M10 shipped: numeric fit regions (regression/nonlinear/recipes), peak integration, batch statistics table, colour-mapped scatter / heatmap / contour (`PlotSpec.z` + `cmap`, colourbar, `grid_xyz`), and **PyVista locked as the 3D backend** (`3d scatter` / `3d surface` live canvas behind `PlotCanvas`, matplotlib-3D export). Open questions #3 (numeric regions) and #5 (PyVista) resolved. New tests in `test_m10.py`; suite at **143 passed**. |

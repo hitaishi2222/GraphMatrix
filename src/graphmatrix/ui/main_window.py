@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 )
 
 from graphmatrix.core.code_export import project_to_script
+from graphmatrix.core.analysis.descriptive import batch_summary
 from graphmatrix.core.commands import (
     AddAnnotationCommand,
     AddColumnCommand,
@@ -375,6 +376,7 @@ class MainWindow(QMainWindow):
             ("analyze.deconvolution", "Peak Deconvolution...", self._action_deconvolution, False),
             ("analyze.signal", "Signal Processing...", self._action_signal, False),
             ("analyze.statistics", "Statistics / t-test / ANOVA...", self._action_statistics, False),
+            ("analyze.batch_stats", "Batch Statistics...", self._action_batch_stats, False),
             ("analyze.digitize", "Digitize Curve from Image...", self._action_digitize, True),
         ):
             r.register(ActionSpec(action_id, text, None, menu="Analyze", separator_before=sep), slot)
@@ -970,6 +972,11 @@ class MainWindow(QMainWindow):
     def _action_statistics(self) -> None:
         if self.project.workbooks:
             self._run_dialog(StatisticsDialog(self.project, self))
+
+    def _action_batch_stats(self) -> None:
+        result = batch_summary(self.project)
+        self.provenance.record_analysis(result, source="")
+        AnalysisResultDialog(result, parent=self).exec()
 
     def _action_digitize(self) -> None:
         dialog = DigitizeDialog(self)

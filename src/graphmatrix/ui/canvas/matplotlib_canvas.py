@@ -112,8 +112,12 @@ class MatplotlibCanvas(PlotCanvas):
         yerr=None, xerr=None,
         y_axis: str = "left",
         line_style: str = "solid",
+        z=None,
     ) -> None:
-        import matplotlib
+        from types import SimpleNamespace
+
+        from graphmatrix.core.io.export import render_xyz_mpl
+        from graphmatrix.core.model import PlotStyle, Z_STYLES
 
         ax = self._ax_left
         if y_axis == "right":
@@ -131,6 +135,29 @@ class MatplotlibCanvas(PlotCanvas):
         lbl = name
         marker = symbol if symbol else None
         ms = symbol_size * 0.6
+
+        plot_style = PlotStyle(style)
+
+        if plot_style in Z_STYLES:
+            # The shared renderer keeps the live canvas and the exporter in
+            # lockstep. On the flat canvas a 3D style degrades to a colour-mapped
+            # 2D scatter; GraphView routes 3D graphs to the PyVista canvas.
+            render_xyz_mpl(
+                ax, self._fig, plot_style,
+                SimpleNamespace(
+                    x=np.asarray(x, float), y=np.asarray(y, float),
+                    z=None if z is None else np.asarray(z, float), legend=lbl,
+                ),
+                cmap="viridis", color=col or "",
+                width=width, symbol=symbol, symbol_size=symbol_size,
+                line_style=ls, label=lbl, z_label="Value",
+            )
+            try:
+                self._fig.tight_layout()
+            except Exception:  # noqa: BLE001
+                pass
+            self._canvas.draw_idle()
+            return
 
         if style == "scatter":
             ax.plot(xs, ys, linestyle="none", marker=marker or "o", markersize=ms,

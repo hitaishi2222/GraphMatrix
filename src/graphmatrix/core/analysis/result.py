@@ -39,7 +39,10 @@ class AnalysisResult:
         lines = [self.title, "=" * len(self.title), ""]
         if self.summary:
             for key, value in self.summary.items():
-                lines.append(f"{key:<16}: {value:.6g}")
+                if isinstance(value, str):
+                    lines.append(f"{key:<16}: {value}")
+                else:
+                    lines.append(f"{key:<16}: {value:.6g}")
             lines.append("")
         if self.parameters:
             lines.append("Parameters:")

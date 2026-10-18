@@ -46,6 +46,46 @@ def summarize(data: Sequence[float], name: str = "Data", *, cl: float = 0.95) ->
     return result
 
 
+def batch_summary(project) -> AnalysisResult:
+    """One report row per numeric column across every sheet in the project.
+
+    The "many datasets at a glance" table: pairs with the batch pipelines, and
+    is the M10 standings report — Sheet, Column, Type, N, Missing, Mean, SD,
+    Min, Median, Max.
+    """
+    header = ["Sheet", "Column", "Type", "N", "Missing", "Mean", "Std Dev", "Min", "Median", "Max"]
+    rows = [header]
+    for book in project.workbooks:
+        for sheet in book.sheets:
+            for column in sheet.columns:
+                if not column.is_numeric:
+                    continue
+                values = column.float_data()
+                missing = int(np.sum(~np.isfinite(values)))
+                values = values[np.isfinite(values)]
+                name = f"{sheet.name}"
+                col_name = column.name
+                if values.size == 0:
+                    rows.append([name, col_name, str(column.col_type), "0", str(missing), "", "", "", "", ""])
+                    continue
+                rows.append([
+                    name, col_name, str(column.col_type), str(values.size), str(missing),
+                    f"{float(np.mean(values)):.6g}",
+                    f"{float(np.std(values, ddof=1)) if values.size > 1 else 0:.6g}",
+                    f"{float(np.min(values)):.6g}",
+                    f"{float(np.median(values)):.6g}",
+                    f"{float(np.max(values)):.6g}",
+                ])
+    result = AnalysisResult(kind="batch-stats", title="Batch Statistics")
+    result.tables["Columns"] = rows
+    n_columns = max(len(rows) - 1, 0)
+    result.summary = {"Sheets": float(sum(len(b.sheets) for b in project.workbooks)),
+                      "Columns": float(n_columns)}
+    if n_columns == 0:
+        result.notes = "No numeric columns in the project."
+    return result
+
+
 def summarize_columns(sheet, names: Sequence[str]) -> AnalysisResult:
     rows = [["Column", "N", "Mean", "Std Dev", "Min", "Max"]]
     for name in names:
@@ -67,4 +107,4 @@ def summarize_columns(sheet, names: Sequence[str]) -> AnalysisResult:
     return result
 
 
-__all__ = ["summarize", "summarize_columns"]
+__all__ = ["summarize", "summarize_columns", "batch_summary"]

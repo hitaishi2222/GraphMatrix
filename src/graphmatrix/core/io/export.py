@@ -10,8 +10,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..journals import export_rcparams, figure_size
-from ..model import Graph, PlotStyle, Project
-from ..plotting import auto_axis_labels, resolve_layer
+from ..model import Graph, PlotStyle, Project, Z_STYLES, is_3d_style
+from ..plotting import auto_axis_labels, grid_xyz, resolve_layer
 
 _PALETTE = (
     "#1f77b4", "#d62728", "#2ca02c", "#9467bd",
@@ -84,8 +84,14 @@ def export_graph(
     figsize = (width_mm / 25.4, height_mm / 25.4)
 
     rc = export_rcparams(preset_name) if preset_name else {}
+    use_3d = any(
+        is_3d_style(spec.style)
+        for graph_layer in graph.layers
+        for spec in graph_layer.plots
+    )
     with mpl.rc_context(rc):
-        fig, ax_left = plt.subplots(figsize=figsize, dpi=dpi)
+        fig = plt.figure(figsize=figsize, dpi=dpi)
+        ax_left = fig.add_subplot(111, projection="3d") if use_3d else fig.add_subplot(111)
         plot_theme = getattr(graph, "plot_theme", "")
         _colors = _PLOT_THEME_COLORS.get(plot_theme)
         if _colors is not None:
@@ -129,14 +135,15 @@ def _render_figure(fig, ax_left, graph: Graph, project: Project) -> None:
         series = resolve_layer(project, layer)
         for plot_index, (spec, data) in enumerate(zip(layer.plots, series)):
             color = spec.color or _PALETTE[plot_index % len(_PALETTE)]
+            _z_label = getattr(layer, "z_label", "") or getattr(data, "z_label", "") or "Value"
             if getattr(spec, "y_axis", "left") == "right":
                 if ax_right is None:
                     ax_right = ax_left.twinx()
                     if layer.y_scale.value == "log":
                         ax_right.set_yscale("log")
-                _draw(ax_right, spec, data, color)
+                _draw(ax_right, spec, data, color, fig=fig, z_label=_z_label)
             else:
-                _draw(ax_left, spec, data, color)
+                _draw(ax_left, spec, data, color, fig=fig, z_label=_z_label)
 
         label_kwargs = {}
         if getattr(layer, "label_font_family", ""):
@@ -206,11 +213,20 @@ def _render_figure(fig, ax_left, graph: Graph, project: Project) -> None:
     fig.tight_layout()
 
 
-def _draw(ax, spec, data, color) -> None:
+def _draw(ax, spec, data, color, fig=None, z_label="") -> None:
     style = PlotStyle(spec.style)
     label = data.legend or None
     x, y = data.x, data.y
     ls = _linestyle(getattr(spec, "line_style", "solid"))
+
+    if style in Z_STYLES:
+        render_xyz_mpl(
+            ax, fig, style, data, cmap=getattr(spec, "cmap", "viridis"),
+            color=color, width=spec.line_width, symbol=spec.symbol,
+            symbol_size=spec.symbol_size, line_style=ls, label=label,
+            z_label=z_label or (getattr(data, "z_label", "") or "Value"),
+        )
+        return
 
     if style is PlotStyle.SCATTER:
         ax.plot(x, y, linestyle="none", marker=spec.symbol, markersize=spec.symbol_size * 0.6,
@@ -249,4 +265,100 @@ def _label_reference_line(ax, ref, line) -> None:
                 ha="right", va="bottom")
 
 
-__all__ = ["export_graph", "_FORMATS", "SUPPORTED_FORMATS"]
+_CBAR_DEFAULT_CMAP = "viridis"
+
+
+def render_xyz_mpl(
+    ax,
+    fig,
+    style: PlotStyle,
+    data,
+    *,
+    cmap: str = "viridis",
+    color: str = "",
+    width: float = 2.0,
+    symbol: str = "o",
+    symbol_size: float = 7.0,
+    line_style: object = "-",
+    label: str | None = None,
+    z_label: str = "Value",
+) -> None:
+    """Draw a Z-carrying series (color-mapped / heatmap / contour / 3D) on ``ax``.
+
+    Shared by the live matplotlib canvas and the publication exporter so both
+    render the *same* figure. Adds a colourbar to ``fig`` where meaningful.
+    """
+    from mpl_toolkits.mplot3d import Axes3D  # noqa: F401 - needed for 3d projection side effects
+
+    three_d = style in (PlotStyle.SCATTER3D, PlotStyle.SURFACE3D)
+    size = symbol_size * 8 if style is PlotStyle.SCATTER3D else symbol_size
+    ms = symbol_size * 0.6
+
+    def _finish_colorbar(mapping, label_text: str) -> None:
+        try:
+            bar = fig.colorbar(mapping, ax=ax, fraction=0.046, pad=0.03)
+            if label_text:
+                bar.set_label(label_text)
+        except Exception:  # noqa: BLE001 - colourbar is decorative
+            pass
+
+    if three_d and not hasattr(ax, "get_proj"):
+        # A 3D series plotted on a 2D set of axes: fall back to a soft warning
+        # contour view so the figure still renders.
+        if data.z is not None and data.z.size:
+            sc = ax.scatter(data.x, data.y, c=data.z, cmap=cmap, s=ms * 12, label=label)
+            _finish_colorbar(sc, z_label)
+        return
+
+    if style is PlotStyle.COLOR_SCATTER:
+        if data.z is None:
+            # No colour column: degrade to a plain scatter.
+            ax.scatter(data.x, data.y, s=ms * 55, c=color or None, label=label,
+                       marker=symbol or "o")
+            return
+        sc = ax.scatter(data.x, data.y, c=data.z, cmap=cmap,
+                        s=ms * 55, marker=symbol or "o", label=label)
+        _finish_colorbar(sc, z_label)
+        return
+
+    if style is PlotStyle.HEATMAP:
+        if data.z is None:
+            ax.scatter(data.x, data.y, s=ms * 40, c=color or "0.3", label=label)
+            return
+        gx, gy, grid = grid_xyz(data.x, data.y, data.z)
+        mesh = ax.pcolormesh(gx, gy, grid, cmap=cmap, shading="auto")
+        _finish_colorbar(mesh, z_label)
+        return
+
+    if style is PlotStyle.CONTOUR:
+        if data.z is None:
+            ax.scatter(data.x, data.y, s=ms * 40, c=color or "0.3", label=label)
+            return
+        filled = ax.tricontourf(data.x, data.y, data.z, cmap=cmap)
+        ax.tricontour(data.x, data.y, data.z, colors="k", linewidths=0.4, alpha=0.4)
+        _finish_colorbar(filled, z_label)
+        return
+
+    if three_d:
+        import numpy as _np
+
+        z = data.z if data.z is not None else _np.zeros_like(data.x)
+        if style is PlotStyle.SCATTER3D:
+            kwargs = {}
+            if data.z is not None:
+                kwargs["c"] = data.z
+                kwargs["cmap"] = cmap
+            else:
+                kwargs["color"] = color or "#1f77b4"
+            ax.scatter3D(data.x, data.y, z, s=size, depthshade=False, **kwargs)
+            return
+        # SURFACE3D
+        gx, gy, grid = grid_xyz(data.x, data.y, z)
+        surface = ax.plot_surface(gx, gy, grid, cmap=cmap, linewidth=0.1,
+                                  antialiased=True,
+                                  color=color or None)
+        _finish_colorbar(surface, z_label)
+        return
+
+
+__all__ = ["export_graph", "_FORMATS", "SUPPORTED_FORMATS", "render_xyz_mpl"]

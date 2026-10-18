@@ -8,11 +8,12 @@ GraphMatrix aims to be a Python-first, open alternative to tools like OriginPro:
 typed worksheet columns, publication-quality 2D graphs, a real analysis toolkit,
 and scriptable automation. It targets Windows, macOS, and Linux from a single codebase.
 
-> Status: **M1–M9 functionally implemented** (M0 skeleton + worksheets, 2D graphs,
-> analysis, export, scripting, M7 graph-interaction, M8 provenance/journal output, and
-> M9 digitizer + command palette). See [`PLAN.md`](PLAN.md) §0 for an honest
-> per-milestone status, and [`ROADMAP.md`](ROADMAP.md) for what comes next. 3D is
-> deliberately deferred.
+> Status: **M1–M10 functionally implemented** (M0 skeleton + worksheets, 2D graphs,
+> analysis, export, scripting, M7 graph-interaction, M8 provenance/journal output,
+> M9 digitizer + command palette, and M10 analysis-depth + colour-mapped/heatmap/
+> contour plots + 3D scatter/surface on **PyVista**). See [`PLAN.md`](PLAN.md) §0
+> for an honest per-milestone status, and [`ROADMAP.md`](ROADMAP.md) for what
+> comes next.
 >
 > **GraphMatrix is still in active development.** APIs, file formats, and UI details
 > may change between releases; please report issues and back up your projects.
@@ -143,8 +144,9 @@ and `export`. Example client config:
 
 ## Supported formats
 
-- **Import:** CSV/TSV, Excel (`.xlsx`/`.xls`), Parquet, HDF5 (optional)
+- **Import:** CSV/TSV, Excel (`.xlsx`/`.xls`), Parquet, HDF5/NetCDF (optional)
 - **Export:** PDF, SVG, EPS, PNG, TIFF, JPEG (publication-ready, sized in mm at your DPI)
+- **3D plotting** (live scene): optional extra — `pip install pyvista pyvistaqt`
 
 ## Keyboard shortcuts
 

@@ -19,9 +19,26 @@ class PlotStyle(str, Enum):
     AREA = "area"
     STEP = "step"
     ERRORBAR = "errorbar"
+    COLOR_SCATTER = "color-mapped scatter"
+    HEATMAP = "heatmap"
+    CONTOUR = "contour"
+    SCATTER3D = "3d scatter"
+    SURFACE3D = "3d surface"
 
     def __str__(self) -> str:  # pragma: no cover - cosmetic
         return self.value
+
+
+#: Styles that need a third value (colour or height) flowing with the series.
+Z_STYLES = (
+    PlotStyle.COLOR_SCATTER, PlotStyle.HEATMAP, PlotStyle.CONTOUR,
+    PlotStyle.SCATTER3D, PlotStyle.SURFACE3D,
+)
+
+
+def is_3d_style(style: PlotStyle | str) -> bool:
+    """True for styles rendered in a 3D scene (PyVista canvas / 3D export)."""
+    return PlotStyle(style) in (PlotStyle.SCATTER3D, PlotStyle.SURFACE3D)
 
 
 class AxisScale(str, Enum):
@@ -62,6 +79,8 @@ class PlotSpec:
     legend: str = ""
     y_axis: str = "left"  # "left" | "right" (secondary Y axis)
     line_style: str = "solid"  # one of LINE_STYLES
+    z: str = ""  # colour/height column for Z_STYLES
+    cmap: str = "viridis"  # colormap for colour-mapped / heatmap / contour styles
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -71,6 +90,7 @@ class PlotSpec:
             "line_width": self.line_width, "symbol": self.symbol,
             "symbol_size": self.symbol_size, "legend": self.legend,
             "y_axis": self.y_axis, "line_style": self.line_style,
+            "z": self.z, "cmap": self.cmap,
         }
 
     @classmethod
@@ -84,6 +104,8 @@ class PlotSpec:
             legend=payload.get("legend", ""),
             y_axis=payload.get("y_axis", "left"),
             line_style=payload.get("line_style", "solid"),
+            z=payload.get("z", ""),
+            cmap=payload.get("cmap", "viridis"),
         )
 
 
@@ -165,6 +187,7 @@ class Layer:
     show_legend: bool = True
     minor_ticks: bool = True
     tick_direction: str = "out"
+    z_label: str = "Value"  # colourbar / 3D z-axis label
 
     def add_plot(self, spec: PlotSpec) -> PlotSpec:
         self.plots.append(spec)
@@ -197,6 +220,7 @@ class Layer:
             "show_legend": self.show_legend,
             "minor_ticks": self.minor_ticks,
             "tick_direction": self.tick_direction,
+            "z_label": self.z_label,
             "label_font_family": self.label_font_family,
             "label_font_size": self.label_font_size,
             "label_color": self.label_color,
@@ -222,6 +246,7 @@ class Layer:
         if td == "both":
             td = "inout"
         layer.tick_direction = td
+        layer.z_label = payload.get("z_label", "Value")
         layer.label_font_family = payload.get("label_font_family", "")
         layer.label_font_size = payload.get("label_font_size", 12.0)
         layer.label_color = payload.get("label_color", "")

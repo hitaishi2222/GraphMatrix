@@ -14,6 +14,8 @@ import numpy as np
 
 from .result import AnalysisResult, ParamRow, r_squared
 
+from .regression import _window
+
 # (function, [param names], [default values])
 _MODEL_SPECS: dict[str, tuple[Callable[..., np.ndarray], list[str], list[float]]] = {}
 
@@ -88,13 +90,22 @@ def fit_model(
     *,
     yerr: Sequence[float] | None = None,
     p0: dict[str, float] | None = None,
+    x_min: float | None = None,
+    x_max: float | None = None,
 ) -> AnalysisResult:
+    """Fit ``model_name`` to ``(x, y)``.
+
+    ``x_min``/``x_max`` restrict the fit to a numeric X window (open ends allowed)
+    — the dialog equivalent of dragging a region, per the M10 decision to scope
+    fits by *numeric bounds*.
+    """
     import lmfit
 
     x = np.asarray(x, float)
     y = np.asarray(y, float)
     mask = np.isfinite(x) & np.isfinite(y)
     x, y = x[mask], y[mask]
+    x, y = _window(x, y, x_min, x_max)
     result = AnalysisResult(kind="fit", title=f"Nonlinear Fit — {model_name}")
 
     if model_name not in _MODEL_SPECS:
@@ -141,6 +152,11 @@ def fit_model(
         "BIC": float(fit.bic),
         "N": float(x.size),
     }
+    if x_min is not None or x_max is not None:
+        result.summary["Fit region"] = (
+            f"{x_min if x_min is not None else '−∞'} ≤ x ≤ "
+            f"{x_max if x_max is not None else '∞'}"
+        )
     xs = np.linspace(x.min(), x.max(), 400)
     params = {name: fit.params[name].value for name in param_names}
     result.curves["Fit"] = (xs, func(xs, **params))
@@ -166,11 +182,13 @@ def fit_custom(
     y: Sequence[float],
     *,
     p0: dict[str, float] | None = None,
+    x_min: float | None = None,
+    x_max: float | None = None,
 ) -> AnalysisResult:
     """Fit a caller-supplied model function."""
     _MODEL_SPECS["__custom__"] = (func, list(param_names), [1.0] * len(param_names))
     try:
-        return fit_model("__custom__", x, y, p0=p0)
+        return fit_model("__custom__", x, y, p0=p0, x_min=x_min, x_max=x_max)
     finally:
         _MODEL_SPECS.pop("__custom__", None)
 

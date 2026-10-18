@@ -10,8 +10,11 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Sequence
 
-BACKENDS = ("pyqtgraph", "matplotlib")
+BACKENDS = ("pyqtgraph", "matplotlib", "pyvista")
 DEFAULT_BACKEND = "matplotlib"
+
+#: Backends that need a GL/EGL context and the ``plot3d`` extra.
+BACKEND_EXTRAS = {"pyvista": "pip install pyvista pyvistaqt (the plot3d extra)"}
 
 
 class PlotCanvas(ABC):
@@ -41,11 +44,14 @@ class PlotCanvas(ABC):
         xerr: Sequence[float] | None = None,
         y_axis: str = "left",
         line_style: str = "solid",
+        z: Sequence[float] | None = None,
     ) -> Any:
         """Plot a series and return the backend's plot item.
 
         ``y_axis`` selects the primary ("left") or secondary ("right") Y axis.
         ``line_style`` is one of :data:`graphmatrix.core.model.graph.LINE_STYLES`.
+        ``z`` is the colour/height series for the Z-carrying styles
+        (color-mapped scatter, heatmap, contour, 3D scatter/surface).
         """
 
     @abstractmethod
@@ -122,4 +128,11 @@ def create_canvas(backend: str = DEFAULT_BACKEND) -> PlotCanvas:
         from .matplotlib_canvas import MatplotlibCanvas
 
         return MatplotlibCanvas()
-    raise ValueError(f"unknown canvas backend: {backend!r} (known: {BACKENDS})")
+    if backend == "pyvista":
+        from .pyvista_canvas import PyVistaCanvas
+
+        return PyVistaCanvas()
+    raise ValueError(
+        f"unknown canvas backend: {backend!r} (known: {BACKENDS})"
+        + ("" if backend not in BACKEND_EXTRAS else f"; install it with: {BACKEND_EXTRAS[backend]}")
+    )

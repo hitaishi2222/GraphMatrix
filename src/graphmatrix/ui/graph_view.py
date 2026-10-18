@@ -49,13 +49,15 @@ from graphmatrix.core.model import (
     PlotStyle,
     Project,
     ReferenceLine,
+    Z_STYLES,
+    is_3d_style,
 )
 from graphmatrix.core.plotting import auto_axis_labels, make_plot_for_column, resolve_plot
 from graphmatrix.ui import theme
 from graphmatrix.ui import plot_themes
 from graphmatrix.ui.canvas import create_canvas
 from graphmatrix.ui.plot_dialogs import AddPlotDialog, ReferenceLineDialog
-from graphmatrix.ui.widgets import COLUMN_MIME
+from graphmatrix.ui.widgets import COLUMN_MIME, fill_column_combo
 
 _SYMBOLS = ["o", "s", "^", "v", "d", "+", "x", "*", ""]
 
@@ -73,7 +75,7 @@ class GraphView(QWidget):
         self._loading = False
         self.setAcceptDrops(True)
 
-        self.canvas = create_canvas()
+        self.canvas = create_canvas(self._preferred_backend())
         self.canvas.label_click_callback = self._on_label_click
         self.plot_list = QListWidget()
         self.plot_list.currentRowChanged.connect(self._on_plot_selected)
@@ -97,16 +99,16 @@ class GraphView(QWidget):
         side.addWidget(self._build_ref_group())
         side.addStretch(1)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(sidebar)
-        splitter.addWidget(self.canvas.widget())
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([320, 900])
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.addWidget(sidebar)
+        self.splitter.addWidget(self.canvas.widget())
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setSizes([320, 900])
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(splitter)
+        layout.addWidget(self.splitter)
 
         self.refresh()
 
@@ -130,6 +132,7 @@ class GraphView(QWidget):
             self.linestyle_combo.addItem(line_style, line_style)
         self.color_button = QPushButton("color")
         self.color_button.clicked.connect(self._pick_color)
+        self.z_combo = QComboBox()
         self.width_spin = QDoubleSpinBox()
         self.width_spin.setRange(0.1, 20.0)
         self.width_spin.setSingleStep(0.5)
@@ -144,6 +147,7 @@ class GraphView(QWidget):
         form.addRow("Style:", self.style_combo)
         form.addRow("Line style:", self.linestyle_combo)
         form.addRow("Color:", self.color_button)
+        form.addRow("Colour / Z column:", self.z_combo)
         form.addRow("Line width:", self.width_spin)
         form.addRow("Symbol:", self.symbol_combo)
         form.addRow("Symbol size:", self.symbol_size_spin)
@@ -177,6 +181,8 @@ class GraphView(QWidget):
         self.xlabel_edit = QLineEdit()
         self.ylabel_edit = QLineEdit()
         self.y2label_edit = QLineEdit()
+        self.zlabel_edit = QLineEdit()
+        self.zlabel_edit.setPlaceholderText("colourbar / 3D Z axis")
         self.font_family_combo = QComboBox()
         self.font_family_combo.addItems(QFontDatabase.families())
         self.label_font_size_spin = QDoubleSpinBox()
@@ -222,6 +228,7 @@ class GraphView(QWidget):
         lform.addRow("X label:", self.xlabel_edit)
         lform.addRow("Y label:", self.ylabel_edit)
         lform.addRow("Y2 label:", self.y2label_edit)
+        lform.addRow("Z label:", self.zlabel_edit)
         lform.addRow("Font family:", self.font_family_combo)
         lform.addRow("Label size:", self.label_font_size_spin)
         lform.addRow("Title size:", self.title_font_size_spin)
@@ -238,7 +245,7 @@ class GraphView(QWidget):
         for widget in (self.xscale_combo, self.yscale_combo, self.legend_check, self.minor_ticks_check, self.tick_direction_combo):
             widget.currentIndexChanged.connect(self._apply_axis_props)
         self.plot_theme_combo.currentIndexChanged.connect(self._apply_plot_theme)
-        for widget in (self.title_edit, self.xlabel_edit, self.ylabel_edit, self.y2label_edit, self.xmin_edit, self.xmax_edit, self.ymin_edit, self.ymax_edit):
+        for widget in (self.title_edit, self.xlabel_edit, self.ylabel_edit, self.y2label_edit, self.zlabel_edit, self.xmin_edit, self.xmax_edit, self.ymin_edit, self.ymax_edit):
             widget.editingFinished.connect(self._apply_axis_props)
         self.font_family_combo.currentIndexChanged.connect(self._apply_axis_props)
         self.label_font_size_spin.valueChanged.connect(self._apply_axis_props)
@@ -408,6 +415,18 @@ class GraphView(QWidget):
         self.color_button.setStyleSheet(f"background-color: {self._color or '#ffffff'}")
 
     # -- apply edits ---------------------------------------------------------
+    def _populate_z_combo(self, spec: PlotSpec | None) -> None:
+        """Fill the Colour/Z column combo from the spec's source sheet."""
+        sheet = self.project.sheet(spec.source) if spec is not None else None
+        self.z_combo.blockSignals(True)
+        fill_column_combo(self.z_combo, sheet, types=None, include_none=True)
+        if spec is not None and spec.z:
+            index = self.z_combo.findData(spec.z)
+            self.z_combo.setCurrentIndex(index if index >= 0 else 0)
+        else:
+            self.z_combo.setCurrentIndex(0)
+        self.z_combo.blockSignals(False)
+
     def _apply_plot_props(self) -> None:
         if self._loading:
             return
@@ -419,6 +438,7 @@ class GraphView(QWidget):
             style=self.style_combo.currentData(),
             line_style=self.linestyle_combo.currentData(),
             color=self._color,
+            z=(self.z_combo.currentData() or "" if self.z_combo.count() else getattr(spec, "z", "")),
             line_width=self.width_spin.value(),
             symbol=self.symbol_combo.currentText(),
             symbol_size=self.symbol_size_spin.value(),
@@ -440,6 +460,7 @@ class GraphView(QWidget):
             x_label=self.xlabel_edit.text(),
             y_label=self.ylabel_edit.text(),
             y2_label=self.y2label_edit.text(),
+            z_label=self.zlabel_edit.text(),
             x_min=_float_or_none(self.xmin_edit.text()),
             x_max=_float_or_none(self.xmax_edit.text()),
             y_min=_float_or_none(self.ymin_edit.text()),
@@ -560,6 +581,7 @@ class GraphView(QWidget):
                 self.legend_edit.setText(spec.legend)
                 self.yaxis_combo.setCurrentText(spec.y_axis)
                 self._color = spec.color
+                self._populate_z_combo(spec)
             self._load_axis_fields(self._active_layer())
         finally:
             self._loading = False
@@ -572,6 +594,7 @@ class GraphView(QWidget):
         self.xlabel_edit.setText(layer.x_label)
         self.ylabel_edit.setText(layer.y_label)
         self.y2label_edit.setText(layer.y2_label)
+        self.zlabel_edit.setText(getattr(layer, "z_label", ""))
         self.font_family_combo.setCurrentText(layer.label_font_family or self.font_family_combo.itemText(0))
         self.label_font_size_spin.setValue(layer.label_font_size)
         self.title_font_size_spin.setValue(self.graph.title_font_size)
@@ -604,10 +627,50 @@ class GraphView(QWidget):
         self.legend_edit.clear()
         self._loading = False
 
+    def _preferred_backend(self) -> str:
+        """matplotlib by default; the PyVista 3D scene when the graph asks for it."""
+        for layer in self.graph.layers:
+            for spec in layer.plots:
+                if is_3d_style(spec.style):
+                    return "pyvista"
+        return "matplotlib"
+
+    def _ensure_backend(self) -> None:
+        """Swap the canvas when a graph moves between 2D and 3D content.
+
+        The 3D canvas needs the optional plot3d extra; if it is missing the
+        (colour-degraded) matplotlib view stays instead of failing the tab.
+        """
+        wanted = self._preferred_backend()
+        klass = type(self.canvas).__name__
+        current = "pyvista" if klass == "PyVistaCanvas" else (
+            "pyqtgraph" if klass == "PyQtGraphCanvas" else "matplotlib"
+        )
+        if wanted == current:
+            return
+        try:
+            new_canvas = create_canvas(wanted)
+        except Exception:  # noqa: BLE001 - optional dep may be absent
+            return
+        old_widget = self.canvas.widget()
+        old_canvas, self.canvas = self.canvas, new_canvas
+        self.canvas.label_click_callback = self._on_label_click
+        index = self.splitter.indexOf(old_widget)
+        if index < 0:
+            index = 1
+        self.splitter.replaceWidget(index, self.canvas.widget())
+        self.splitter.setStretchFactor(index, 1)
+        try:
+            old_canvas.close()
+        except Exception:  # noqa: BLE001
+            pass
+
     def render(self) -> None:
+        self._ensure_backend()
         self.canvas.set_grid(getattr(self.graph, "layout_rows", 1), getattr(self.graph, "layout_cols", 1))
         self.canvas.set_theme(self.graph.plot_theme or theme.current_preset())
         layer = self._active_layer()
+        three_d = any(is_3d_style(spec.style) for each in self.graph.layers for spec in each.plots)
         self.canvas.set_scales(x=AxisScale(layer.x_scale).value, y=AxisScale(layer.y_scale).value)
         self.canvas.show_legend(layer.show_legend)
 
@@ -624,6 +687,7 @@ class GraphView(QWidget):
                     symbol_size=spec.symbol_size, name=data.legend,
                     yerr=data.yerr, xerr=data.xerr,
                     y_axis=spec.y_axis, line_style=spec.line_style,
+                    z=data.z if PlotStyle(spec.style) in Z_STYLES else None,
                 )
 
         for each in self.graph.layers:
@@ -638,11 +702,18 @@ class GraphView(QWidget):
 
         self.canvas.set_current_panel(0)
         x_label, y_label = auto_axis_labels(self.project, layer)
-        self.canvas.set_labels(bottom=x_label or None, left=y_label or None,
-                               right=layer.y2_label or None,
-                               fontfamily=layer.label_font_family,
-                               fontsize=layer.label_font_size,
-                               color=layer.label_color)
+        if three_d:
+            self.canvas.set_labels(bottom=x_label or None, left=y_label or None,
+                                   right=layer.z_label or None,
+                                   fontfamily=layer.label_font_family,
+                                   fontsize=layer.label_font_size,
+                                   color=layer.label_color)
+        else:
+            self.canvas.set_labels(bottom=x_label or None, left=y_label or None,
+                                   right=layer.y2_label or None,
+                                   fontfamily=layer.label_font_family,
+                                   fontsize=layer.label_font_size,
+                                   color=layer.label_color)
         self.canvas.set_limits(x=(layer.x_min, layer.x_max), y=(layer.y_min, layer.y_max))
         self.canvas.set_ticks(minor=getattr(layer, "minor_ticks", True),
                              direction=getattr(layer, "tick_direction", "out"))

@@ -145,7 +145,10 @@ class PyQtGraphCanvas(PlotCanvas):
         symbol: str = "o", symbol_size: float = 7.0, name: str | None = None,
         yerr: Sequence[float] | None = None, xerr: Sequence[float] | None = None,
         y_axis: str = "left", line_style: str = "solid",
+        z: Sequence[float] | None = None,
     ) -> Any:
+        # The legacy 2D pyqtgraph backend has no Z-carrying styles; GraphView
+        # routes those graphs to matplotlib or the PyVista canvas instead.
         xs = np.asarray(x, dtype=float)
         ys = np.asarray(y, dtype=float)
         n = min(xs.size, ys.size)
