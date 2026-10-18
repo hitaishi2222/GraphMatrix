@@ -6,7 +6,9 @@ matplotlib, what you see on screen is exactly what you get on export.
 
 from __future__ import annotations
 
+import sys
 import numpy as np
+sys.setrecursionlimit(10000)
 
 from .base import PlotCanvas
 
@@ -102,6 +104,11 @@ class MatplotlibCanvas(PlotCanvas):
         if self._axes:
             self._current_panel = index % len(self._axes)
             self._ax_left = self._axes[self._current_panel]
+            if getattr(self, "_ax_right", None) is not None:
+                try:
+                    self._ax_right.remove()
+                except Exception:  # noqa: BLE001
+                    pass
             self._ax_right = None
 
     def plot(

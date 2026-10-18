@@ -41,6 +41,61 @@ def test_api_analysis_delegates():
     assert result.summary["R²"] > 0.99
 
 
+def test_api_fit_regions_and_polynomial_delegate():
+    project = Project()
+    api = GraphMatrixAPI(project)
+    api.add_workbook("B")
+    api.add_worksheet("B", "S")
+    x = np.linspace(0, 10, 100)
+    api.add_column("B/S", "X1", "X", data=x)
+    api.add_column("B/S", "Y1", "Y", data=2.0 * x + 1.0)
+
+    lin = api.linear_fit("B/S", "X1", "Y1", x_min=2.0, x_max=6.0)
+    assert "Fit region" in lin.summary
+    np.testing.assert_allclose(lin.parameters[0].value, 2.0, rtol=1e-6)
+
+    poly = api.polynomial_fit("B/S", "X1", "Y1", degree=1, x_min=4.0)
+    assert "Fit region" in poly.summary
+    np.testing.assert_allclose(poly.parameters[0].value, 2.0, rtol=1e-6)
+
+    nonlinear = api.fit("Gaussian", "B/S", "X1", "Y1", x_min=3.0, x_max=7.0)
+    assert "Fit region" in nonlinear.summary
+    assert nonlinear.summary["N"] < x.size
+
+
+def test_api_batch_stats_and_colour_plots():
+    from graphmatrix.core.model import ColumnType, Worksheet, Workbook
+
+    project = Project()
+    api = GraphMatrixAPI(project)
+    book = Workbook("B")
+    sheet = book.add_sheet(Worksheet("S"))
+    sheet.add_column("X1", ColumnType.X, [0.0, 1.0, 2.0])
+    sheet.add_column("Y1", ColumnType.Y, [1.0, 2.0, 3.0])
+    from graphmatrix.core.commands import AddWorkbookCommand
+
+    api._push(AddWorkbookCommand(project, book))
+
+    stats = api.batch_stats()
+    assert stats.kind == "batch-stats"
+
+    graph = api.add_graph("G")
+    spec = api.add_plot("G", "B/S", "X1", "Y1", z="Y1", cmap="plasma")
+    assert spec.z == "Y1"
+    assert spec.cmap == "plasma"
+
+
+def test_mcp_summary_reports_versions():
+    from graphmatrix.mcp_server import _summary
+
+    project = Project()
+    project.create_version("v1", note="first")
+    payload = _summary(project)
+    assert payload["versions"] == [
+        {"name": "v1", "created": project.versions[0]["created"], "note": "first"}
+    ]
+
+
 def test_macro_recorder_generates_runnable_script():
     project = Project()
     stack = CommandStack()

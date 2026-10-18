@@ -136,8 +136,11 @@ pip install "graphmatrix[mcp]"
 graphmatrix-mcp
 ```
 
-Tools: `connect`, `summary`, `run` (Python against the GraphMatrix API),
-and `export`. Example client config:
+Tools: `connect`, `summary` (workbooks, sheets, graphs, and project versions),
+`run` (Python against the GraphMatrix API — including pipelines, versioning,
+batch statistics, colour/XYZ plots, numeric fit regions via
+`api.fit(..., x_min=..., x_max=...)`, and live data tailing via
+`graphmatrix.core.live.LiveFileSource`), and `export`. Example client config:
 
 ```json
 { "mcpServers": { "graphmatrix": { "command": "graphmatrix-mcp" } } }

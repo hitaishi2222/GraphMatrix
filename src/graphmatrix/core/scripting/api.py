@@ -110,9 +110,11 @@ class GraphMatrixAPI:
         return graph
 
     def add_plot(self, graph_name: str, source: str, x: str, y: str,
-                 *, style: str = "line+symbol", legend: str = "") -> PlotSpec:
+                 *, style: str = "line+symbol", legend: str = "",
+                 z: str = "", cmap: str = "viridis") -> PlotSpec:
         graph = self.graph(graph_name)
-        spec = PlotSpec(source=source, x=x, y=y, style=PlotStyle(style), legend=legend)
+        spec = PlotSpec(source=source, x=x, y=y, style=PlotStyle(style), legend=legend,
+                        z=z, cmap=cmap)
         self._push(AddPlotCommand(graph, graph.first_layer, spec))
         return spec
 
@@ -138,19 +140,32 @@ class GraphMatrixAPI:
 
         return descriptive.summarize(self.column(source, name).float_data(), name)
 
-    def fit(self, model: str, source: str, x: str, y: str, *, yerr: str | None = None):
+    def fit(self, model: str, source: str, x: str, y: str, *, yerr: str | None = None,
+            p0: dict[str, float] | None = None, x_min: float | None = None,
+            x_max: float | None = None):
         from ..analysis import fitting
 
         sheet = self.sheet(source)
         yerr_data = sheet.column(yerr).float_data() if yerr else None
         return fitting.fit_model(model, sheet.column(x).float_data(),
-                                 sheet.column(y).float_data(), yerr=yerr_data)
+                                 sheet.column(y).float_data(), yerr=yerr_data, p0=p0,
+                                 x_min=x_min, x_max=x_max)
 
-    def linear_fit(self, source: str, x: str, y: str):
+    def linear_fit(self, source: str, x: str, y: str, *,
+                   x_min: float | None = None, x_max: float | None = None):
         from ..analysis import regression
 
         sheet = self.sheet(source)
-        return regression.linear_fit(sheet.column(x).float_data(), sheet.column(y).float_data())
+        return regression.linear_fit(sheet.column(x).float_data(), sheet.column(y).float_data(),
+                                     x_min=x_min, x_max=x_max)
+
+    def polynomial_fit(self, source: str, x: str, y: str, degree: int = 2, *,
+                       x_min: float | None = None, x_max: float | None = None):
+        from ..analysis import regression
+
+        sheet = self.sheet(source)
+        return regression.polynomial_fit(sheet.column(x).float_data(), sheet.column(y).float_data(),
+                                         degree, x_min=x_min, x_max=x_max)
 
     def find_peaks(self, source: str, x: str, y: str, **kwargs):
         from ..analysis import peaks
@@ -158,6 +173,12 @@ class GraphMatrixAPI:
         sheet = self.sheet(source)
         return peaks.find_peaks_result(sheet.column(x).float_data(),
                                        sheet.column(y).float_data(), **kwargs)
+
+    def batch_stats(self):
+        """Descriptive statistics over every numeric column in the project (M10)."""
+        from ..analysis import descriptive
+
+        return descriptive.batch_summary(self.project)
 
     # -- persistence ---------------------------------------------------------
     def save(self, path: str) -> Path:
