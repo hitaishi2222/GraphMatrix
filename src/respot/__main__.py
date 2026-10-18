@@ -6,9 +6,9 @@ import sys
 
 
 def main() -> int:
-    from respot.app import run
+    from respot.cli import main as cli_main
 
-    return run(sys.argv)
+    return cli_main()
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QAction, QActionGroup, QFont
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QDockWidget,
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QInputDialog,
+    QLabel,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -110,16 +112,32 @@ class ExportGraphDialog(QDialog):
         self.width = QDoubleSpinBox(); self.width.setRange(10, 500); self.width.setValue(100.0); self.width.setSuffix(" mm")
         self.height = QDoubleSpinBox(); self.height.setRange(10, 500); self.height.setValue(75.0); self.height.setSuffix(" mm")
         self.dpi = QSpinBox(); self.dpi.setRange(72, 1200); self.dpi.setValue(300)
+        self.transparent = QCheckBox("Transparent background")
         form = QFormLayout()
         form.addRow("Width:", self.width)
         form.addRow("Height:", self.height)
         form.addRow("DPI:", self.dpi)
+        form.addRow(self.transparent)
+
+        # One-click aspect-ratio presets.
+        ratio_row = QHBoxLayout()
+        ratio_row.addWidget(QLabel("Ratio:"))
+        for label, ratio in (("1:1", 1.0), ("4:3", 4 / 3), ("3:2", 1.5), ("16:9", 16 / 9), ("Golden", 1.618)):
+            btn = QPushButton(label)
+            btn.clicked.connect(lambda _checked=False, r=ratio: self._apply_ratio(r))
+            ratio_row.addWidget(btn)
+        ratio_row.addStretch(1)
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addLayout(ratio_row)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        layout = QVBoxLayout(self)
-        layout.addLayout(form)
         layout.addWidget(buttons)
+
+    def _apply_ratio(self, ratio: float) -> None:
+        width = self.width.value()
+        self.height.setValue(round(width / ratio, 2))
 
 
 class MainWindow(QMainWindow):
@@ -892,7 +910,8 @@ class MainWindow(QMainWindow):
             return
         try:
             export_graph(graph, self.project, path, width_mm=options.width.value(),
-                         height_mm=options.height.value(), dpi=options.dpi.value())
+                         height_mm=options.height.value(), dpi=options.dpi.value(),
+                         transparent=options.transparent.isChecked())
         except Exception as exc:  # noqa: BLE001
             traceback.print_exc()
             QMessageBox.critical(self, "Export failed", f"{type(exc).__name__}: {exc}")
@@ -915,7 +934,8 @@ class MainWindow(QMainWindow):
             target = out_dir / f"{graph.name}.pdf"
             try:
                 export_graph(graph, self.project, target, width_mm=options.width.value(),
-                             height_mm=options.height.value(), dpi=options.dpi.value())
+                             height_mm=options.height.value(), dpi=options.dpi.value(),
+                             transparent=options.transparent.isChecked())
                 exported += 1
             except Exception as exc:  # noqa: BLE001
                 self.statusBar().showMessage(f"Failed {graph.name}: {exc}", 6000)

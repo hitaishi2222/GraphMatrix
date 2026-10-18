@@ -10,8 +10,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Sequence
 
-BACKENDS = ("pyqtgraph",)
-DEFAULT_BACKEND = "pyqtgraph"
+BACKENDS = ("pyqtgraph", "matplotlib")
+DEFAULT_BACKEND = "matplotlib"
 
 
 class PlotCanvas(ABC):
@@ -76,6 +76,9 @@ class PlotCanvas(ABC):
     def set_scales(self, *, x: str = "linear", y: str = "linear") -> None: ...
 
     @abstractmethod
+    def set_ticks(self, *, minor: bool = True, direction: str = "out") -> None: ...
+
+    @abstractmethod
     def set_limits(self, *, x: tuple[float | None, float | None] | None = None,
                    y: tuple[float | None, float | None] | None = None) -> None: ...
 
@@ -90,9 +93,25 @@ class PlotCanvas(ABC):
         """Match the canvas background/axes to a named theme preset."""
 
 
+_ALIASES = {
+    "mpl": "matplotlib",
+    "agg": "matplotlib",
+    "wysiwyg": "matplotlib",
+    "qt": "matplotlib",
+    "figure": "matplotlib",
+    "pyqt": "pyqtgraph",
+    "pg": "pyqtgraph",
+}
+
+
 def create_canvas(backend: str = DEFAULT_BACKEND) -> PlotCanvas:
+    backend = _ALIASES.get(backend, backend)
     if backend == "pyqtgraph":
         from .pyqtgraph_canvas import PyQtGraphCanvas
 
         return PyQtGraphCanvas()
+    if backend == "matplotlib":
+        from .matplotlib_canvas import MatplotlibCanvas
+
+        return MatplotlibCanvas()
     raise ValueError(f"unknown canvas backend: {backend!r} (known: {BACKENDS})")

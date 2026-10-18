@@ -160,6 +160,8 @@ class Layer:
     y_min: float | None = None
     y_max: float | None = None
     show_legend: bool = True
+    minor_ticks: bool = True
+    tick_direction: str = "out"
 
     def add_plot(self, spec: PlotSpec) -> PlotSpec:
         self.plots.append(spec)
@@ -190,6 +192,8 @@ class Layer:
             "x_min": self.x_min, "x_max": self.x_max,
             "y_min": self.y_min, "y_max": self.y_max,
             "show_legend": self.show_legend,
+            "minor_ticks": self.minor_ticks,
+            "tick_direction": self.tick_direction,
         }
 
     @classmethod
@@ -207,6 +211,11 @@ class Layer:
         layer.y_min = payload.get("y_min")
         layer.y_max = payload.get("y_max")
         layer.show_legend = payload.get("show_legend", True)
+        layer.minor_ticks = payload.get("minor_ticks", True)
+        td = payload.get("tick_direction", "out")
+        if td == "both":
+            td = "inout"
+        layer.tick_direction = td
         return layer
 
     def __repr__(self) -> str:  # pragma: no cover - cosmetic
@@ -222,6 +231,7 @@ class Graph:
         self.layers: list[Layer] = [Layer()]
         self.annotations: list[Annotation] = []
         self.journal_preset: str = ""
+        self.plot_theme: str = ""
 
     def add_layer(self, layer: Layer | None = None) -> Layer:
         layer = layer or Layer(f"Layer {len(self.layers) + 1}")
@@ -249,6 +259,7 @@ class Graph:
             "layers": [l.to_dict() for l in self.layers],
             "annotations": [a.to_dict() for a in self.annotations],
             "journal_preset": self.journal_preset,
+            "plot_theme": self.plot_theme,
         }
 
     @classmethod
@@ -259,6 +270,7 @@ class Graph:
             graph.layers = layers
         graph.annotations = [Annotation.from_dict(a) for a in payload.get("annotations", [])]
         graph.journal_preset = payload.get("journal_preset", "")
+        graph.plot_theme = payload.get("plot_theme", "")
         return graph
 
     def __repr__(self) -> str:  # pragma: no cover - cosmetic

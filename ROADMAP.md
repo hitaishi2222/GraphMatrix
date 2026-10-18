@@ -76,7 +76,7 @@ first working version, not the polished one.
 | Graph insets / picture-in-picture axes | High | M | Deferred from M4; a nested axes box. |
 | Multi-panel figure layout (grid of graphs) | High | L | The single most-requested Origin feature after insets. |
 | LaTeX / mathtext in labels and annotations | Medium | S | matplotlib mathtext is nearly free; canvas falls back to plain. |
-| Error-bar / fill-between style polish, minor ticks, tick direction | Medium | S | Tick config is a small model extension. |
+| Error-bar / fill-between style polish, minor ticks, tick direction | Medium | S | ✅ Shipped (minor ticks + tick direction; error-bar polish remains). |
 | CMYK-safe PDF export | Low | M | Needs a real CMYK pipeline (Ghostscript); documented gap in PLAN. |
 
 ### 1.6 Scripting & automation (M13)
@@ -384,3 +384,5 @@ or earlier if the palette/time-travel UX earns its keep.
 |------|--------|
 | 2026-10-15 | Roadmap created. Backlog grouped by area with value/cost; M7 (graph interaction & range tools) detailed and marked in progress. |
 | 2026-10-15 | M7 shipped. Added §1.8 differentiating ideas; detailed and shipped M8 (provenance, reproducibility & journal output) and M9 (digitizer & command palette); renumbered the preview milestones. |
+| 2026-10-17 | WYSIWYG pass: matplotlib-backed canvas (live view == export), double-click resets zoom, default title no longer shows "GraphN", flat toolbar/sidebar buttons, Wayland/Hyprland tiling fix. |
+| 2026-10-17 | Publication polish: Layer.minor_ticks + Layer.tick_direction (model, serialization, export, canvas, UI). |

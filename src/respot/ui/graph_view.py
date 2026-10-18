@@ -50,6 +50,7 @@ from respot.core.model import (
 )
 from respot.core.plotting import auto_axis_labels, make_plot_for_column, resolve_plot
 from respot.ui import theme
+from respot.ui import plot_themes
 from respot.ui.canvas import create_canvas
 from respot.ui.plot_dialogs import AddPlotDialog, ReferenceLineDialog
 from respot.ui.widgets import COLUMN_MIME
@@ -83,6 +84,7 @@ class GraphView(QWidget):
         buttons = QHBoxLayout()
         for text, slot in (("Add Plot", self.add_plot), ("Remove", self.remove_plot), ("Add Layer", self.add_layer)):
             button = QPushButton(text)
+            button.setFlat(True)
             button.clicked.connect(slot)
             buttons.addWidget(button)
         side.addLayout(buttons)
@@ -173,6 +175,15 @@ class GraphView(QWidget):
         self.legend_check = QComboBox()
         self.legend_check.addItem("Show", True)
         self.legend_check.addItem("Hide", False)
+        self.minor_ticks_check = QComboBox()
+        self.minor_ticks_check.addItem("On", True)
+        self.minor_ticks_check.addItem("Off", False)
+        self.tick_direction_combo = QComboBox()
+        self.tick_direction_combo.addItems(["out", "in", "inout"])
+        self.plot_theme_combo = QComboBox()
+        self.plot_theme_combo.addItem("Follow app theme", "")
+        for pt in plot_themes.PLOT_THEMES.values():
+            self.plot_theme_combo.addItem(pt.label, pt.id)
         form.addRow("X scale:", self.xscale_combo)
         form.addRow("Y scale:", self.yscale_combo)
         form.addRow("X label:", self.xlabel_edit)
@@ -183,9 +194,13 @@ class GraphView(QWidget):
         form.addRow("Y min:", self.ymin_edit)
         form.addRow("Y max:", self.ymax_edit)
         form.addRow("Legend:", self.legend_check)
+        form.addRow("Minor ticks:", self.minor_ticks_check)
+        form.addRow("Tick direction:", self.tick_direction_combo)
+        form.addRow("Plot theme:", self.plot_theme_combo)
 
-        for widget in (self.xscale_combo, self.yscale_combo, self.legend_check):
+        for widget in (self.xscale_combo, self.yscale_combo, self.legend_check, self.minor_ticks_check, self.tick_direction_combo):
             widget.currentIndexChanged.connect(self._apply_axis_props)
+        self.plot_theme_combo.currentIndexChanged.connect(self._apply_plot_theme)
         for widget in (self.xlabel_edit, self.ylabel_edit, self.y2label_edit, self.xmin_edit, self.xmax_edit, self.ymin_edit, self.ymax_edit):
             widget.editingFinished.connect(self._apply_axis_props)
         return self.group_axis
@@ -207,6 +222,7 @@ class GraphView(QWidget):
         self.remove_ref_button = QPushButton("Remove")
         self.remove_ref_button.clicked.connect(self.remove_reference_line)
         for button in (self.add_h_button, self.add_v_button, self.remove_ref_button):
+            button.setFlat(True)
             buttons.addWidget(button)
         layout.addLayout(buttons)
 
@@ -373,6 +389,18 @@ class GraphView(QWidget):
             y_min=_float_or_none(self.ymin_edit.text()),
             y_max=_float_or_none(self.ymax_edit.text()),
             show_legend=self.legend_check.currentData(),
+            minor_ticks=self.minor_ticks_check.currentData(),
+            tick_direction=self.tick_direction_combo.currentText(),
+        ))
+        self.render()
+        self._changed()
+
+    def _apply_plot_theme(self) -> None:
+        if self._loading:
+            return
+        self.commands.push(SetAttributesCommand(
+            self.graph, "Plot theme",
+            plot_theme=self.plot_theme_combo.currentData() or "",
         ))
         self.render()
         self._changed()
@@ -470,6 +498,16 @@ class GraphView(QWidget):
         self.ymin_edit.setText("" if layer.y_min is None else str(layer.y_min))
         self.ymax_edit.setText("" if layer.y_max is None else str(layer.y_max))
         self.legend_check.setCurrentIndex(0 if layer.show_legend else 1)
+        self.minor_ticks_check.setCurrentIndex(0 if getattr(layer, "minor_ticks", True) else 1)
+        idx = self.tick_direction_combo.findText(getattr(layer, "tick_direction", "out"))
+        if idx >= 0:
+            self.tick_direction_combo.setCurrentIndex(idx)
+        # plot theme lives on the graph, not the layer
+        theme_idx = self.plot_theme_combo.findData(getattr(self.graph, "plot_theme", ""))
+        if theme_idx >= 0:
+            self.plot_theme_combo.blockSignals(True)
+            self.plot_theme_combo.setCurrentIndex(theme_idx)
+            self.plot_theme_combo.blockSignals(False)
 
     def _clear_forms(self) -> None:
         self._loading = True
@@ -478,6 +516,7 @@ class GraphView(QWidget):
 
     def render(self) -> None:
         self.canvas.clear()
+        self.canvas.set_theme(self.graph.plot_theme or theme.current_preset())
         layer = self._active_layer()
         self.canvas.set_scales(x=AxisScale(layer.x_scale).value, y=AxisScale(layer.y_scale).value)
         self.canvas.show_legend(layer.show_legend)
@@ -510,7 +549,10 @@ class GraphView(QWidget):
         self.canvas.set_labels(bottom=x_label or None, left=y_label or None,
                                right=layer.y2_label or None)
         self.canvas.set_limits(x=(layer.x_min, layer.x_max), y=(layer.y_min, layer.y_max))
-        self.canvas.set_title(self.graph.title or self.graph.name)
+        self.canvas.set_ticks(minor=getattr(layer, "minor_ticks", True),
+                             direction=getattr(layer, "tick_direction", "out"))
+        if self.graph.title:
+            self.canvas.set_title(self.graph.title)
         self.canvas.set_hover(self.hover_enabled)
 
         for annotation in self.graph.annotations:

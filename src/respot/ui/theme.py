@@ -315,6 +315,9 @@ QComboBox QAbstractItemView {
     selection-background-color: $accent; selection-color: $accent_text; outline: 0;
 }
 QPlainTextEdit, QTextEdit { padding: 4px; }
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox { padding: 2px 8px; }
+QSpinBox::up-button, QDoubleSpinBox::up-button,
+QSpinBox::down-button, QDoubleSpinBox::down-button { width: 14px; }
 
 QHeaderView::section {
     background: $panel; color: $muted; padding: 6px 9px;

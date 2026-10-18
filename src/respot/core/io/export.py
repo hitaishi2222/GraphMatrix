@@ -18,6 +18,21 @@ _PALETTE = (
     "#ff7f0e", "#17becf", "#8c564b", "#e377c2",
 )
 
+#: Plot-theme (canvas) colours mirrored from ``ui.theme`` so export stays
+#: WYSIWYG without core importing the UI layer.
+_PLOT_THEME_COLORS = {
+    "classic-dark": ("#191a1d", "#d7dae0"),
+    "classic-light": ("#ffffff", "#202124"),
+    "modern-dark": ("#0e1015", "#dde1ea"),
+    "modern-light": ("#ffffff", "#1b1e2b"),
+    "plot-classic-light": ("#ffffff", "#202124"),
+    "plot-classic-dark": ("#191a1d", "#d7dae0"),
+    "plot-seaborn": ("#f0f0f0", "#262626"),
+    "plot-earth": ("#f6f1e7", "#3b2f2f"),
+    "plot-monochrome": ("#ffffff", "#000000"),
+    "plot-publication": ("#ffffff", "#000000"),
+}
+
 _FORMATS = {".pdf", ".svg", ".eps", ".png", ".tif", ".tiff", ".jpg", ".jpeg"}
 
 #: Human-readable list of the formats users may export to.
@@ -71,6 +86,17 @@ def export_graph(
     rc = export_rcparams(preset_name) if preset_name else {}
     with mpl.rc_context(rc):
         fig, ax_left = plt.subplots(figsize=figsize, dpi=dpi)
+        plot_theme = getattr(graph, "plot_theme", "")
+        _colors = _PLOT_THEME_COLORS.get(plot_theme)
+        if _colors is not None:
+            bg, fg = _colors
+            fig.patch.set_facecolor(bg)
+            ax_left.set_facecolor(bg)
+            ax_left.tick_params(colors=fg)
+            ax_left.xaxis.label.set_color(fg)
+            ax_left.yaxis.label.set_color(fg)
+            for spine in ax_left.spines.values():
+                spine.set_color(fg)
         _render_figure(fig, ax_left, graph, project)
         fmt = path.suffix.lower().lstrip(".") if path.suffix else "pdf"
         if fmt == "tiff":
@@ -123,6 +149,17 @@ def _render_figure(fig, ax_left, graph: Graph, project: Project) -> None:
             ax_left.set_xlim(left=layer.x_min, right=layer.x_max)
         if layer.y_min is not None or layer.y_max is not None:
             ax_left.set_ylim(bottom=layer.y_min, top=layer.y_max)
+
+        # Minor ticks + tick direction (publication polish).
+        direction = getattr(layer, "tick_direction", "out") or "out"
+        if getattr(layer, "minor_ticks", True):
+            ax_left.minorticks_on()
+            if ax_right is not None:
+                ax_right.minorticks_on()
+        for _ax in (ax_left, ax_right):
+            if _ax is None:
+                continue
+            _ax.tick_params(which="both", direction=direction)
 
         for ref in getattr(layer, "ref_lines", []):
             style = _linestyle(ref.line_style)

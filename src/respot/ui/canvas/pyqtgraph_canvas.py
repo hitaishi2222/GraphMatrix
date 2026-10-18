@@ -72,9 +72,24 @@ class PyQtGraphCanvas(PlotCanvas):
         self.set_downsampling(True)
         self.set_theme(theme.current_preset())
 
+        # Double-clicking the canvas resets the view to its original (full) range.
+        try:
+            self._widget.scene().sigMouseClicked.connect(self._on_mouse_clicked)
+        except Exception:  # noqa: BLE001
+            pass
+
     def _sync_right_view(self) -> None:
         self._view_right.setGeometry(self._main_view.sceneBoundingRect())
         self._view_right.linkedViewChanged(self._main_view, self._view_right.XAxis)
+
+    def _on_mouse_clicked(self, ev) -> None:
+        try:
+            if ev.double():
+                self._main_view.autoRange()
+                if self._view_right is not None:
+                    self._view_right.autoRange()
+        except Exception:  # noqa: BLE001
+            pass
 
     def _container(self, right: bool):
         return self._view_right if right else self._plot_item
@@ -333,6 +348,9 @@ class PyQtGraphCanvas(PlotCanvas):
 
     def set_scales(self, *, x: str = "linear", y: str = "linear") -> None:
         self._plot_item.setLogMode(x=(x == "log"), y=(y == "log"))
+
+    def set_ticks(self, *, minor: bool = True, direction: str = "out") -> None:
+        return
 
     def set_limits(self, *, x=None, y=None) -> None:
         if x is not None and any(v is not None for v in x):
