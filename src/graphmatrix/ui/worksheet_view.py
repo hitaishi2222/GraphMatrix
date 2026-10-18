@@ -127,11 +127,18 @@ class WorksheetView(QWidget):
         tint = QColor(self.HIGHLIGHT_COLOR)
         tint.setAlpha(40)
         on = self._highlighted_rows
-        for row in range(self.table.rowCount()):
-            for col in range(self.table.columnCount()):
-                item = self.table.item(row, col)
-                if item is not None:
-                    item.setBackground(tint if row in on else Qt.GlobalColor.transparent)
+        # setBackground() emits itemChanged; block signals so a purely visual
+        # change is never mistaken for a user edit (which would push a command
+        # and re-populate the view, looping forever).
+        self.table.blockSignals(True)
+        try:
+            for row in range(self.table.rowCount()):
+                for col in range(self.table.columnCount()):
+                    item = self.table.item(row, col)
+                    if item is not None:
+                        item.setBackground(tint if row in on else Qt.GlobalColor.transparent)
+        finally:
+            self.table.blockSignals(False)
 
     def set_row_highlight(self, rows: list[int]) -> None:
         """Highlight the given worksheet rows (linked brush from graph or sheet)."""
@@ -170,7 +177,21 @@ class WorksheetView(QWidget):
                 value = float(text)
             except ValueError:
                 value = text
+        if self._is_no_op_edit(row, col, value):
+            return
         self.commands.push(SetCellValueCommand(self.sheet, row, col, value))
+
+    def _is_no_op_edit(self, row: int, col: int, value) -> bool:
+        """True when the parsed edit matches the stored value (nothing to do)."""
+        column = self.sheet.columns[col]
+        if row >= len(column):
+            return False
+        current = column.get(row)
+        if isinstance(value, float) and isinstance(current, float):
+            if np.isnan(value) and np.isnan(current):
+                return True
+            return value == current
+        return value == current
 
     def _context_menu(self, pos) -> None:
         menu = QMenu(self)
