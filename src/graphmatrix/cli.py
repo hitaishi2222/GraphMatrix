@@ -84,7 +84,19 @@ def cli(ctx: click.Context) -> None:
 @cli.command("run")
 @click.argument("paths", nargs=-1, type=click.Path(exists=True))
 def run_cmd(paths: tuple[str, ...]) -> None:
-    """Open project file(s) in the GUI."""
+    """Open project file(s) in the GUI, or run a YAML pipeline headlessly."""
+    pipelines = [p for p in paths if str(p).lower().endswith((".yaml", ".yml"))]
+    others = [p for p in paths if not str(p).lower().endswith((".yaml", ".yml"))]
+    if pipelines:
+        from graphmatrix.core.pipelines import run_pipeline
+
+        for p in pipelines:
+            run_pipeline(p)
+        if others:
+            from graphmatrix.app import run
+
+            raise SystemExit(run(others))
+        return
     from graphmatrix.app import run
 
     raise SystemExit(run(list(paths)))

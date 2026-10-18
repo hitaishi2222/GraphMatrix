@@ -22,7 +22,41 @@ Status legend: ✅ shipped · 🔨 building now · 📋 planned · 💭 idea / n
 
 ---
 
-## 1. Backlog
+## 1. Backlog (core)
+
+## 2. Next-level features (make it genuinely great)
+
+| Idea | Value | Cost | Status | Notes |
+|------|-------|------|--------|-------|
+| Multi-panel figure layouts (grid of graphs, shared axes) | High | L | 📋 | Single most-requested Origin feature. |
+| Graph insets / picture-in-picture axes | High | M | 📋 | Nested axes box on a graph. |
+| Interactive fit region (drag X window on canvas) | High | M | 📋 | Reuses slope_between; drives fit/slope. |
+| Linked brushing across graphs & sheet | High | L | 💭 | Shared selection highlight. |
+| Time machine (scrub undo history) | Low | M | 💭 | Replay commands to a point. |
+| Column formulas with auto-recalculate | Medium | M | 📋 | Set Column Values that update on input change. |
+| NetCDF import/export | Medium | M | 📋 | xarray optional extra. |
+| Contour / heatmap from X-Y-Z matrix | High | L | 📋 | Needs matrix column type. |
+| 3D surface / scatter / 3D fit | High | L | 📋 | Vispy/PyVista behind PlotCanvas. |
+| Box / violin plots | Medium | M | 📋 | Stats-forward. |
+| Color-mapped scatter (3rd variable -> color) | High | M | 📋 | Color column + colorbar. |
+| LaTeX / mathtext in labels and annotations | Medium | S | 📋 | matplotlib mathtext nearly free. |
+| Confidence / prediction bands on fits | Medium | M | ✅ | lmfit eval_uncertainty; Fit ±1σ curves. |
+| Peak integration (area per fitted peak) | Medium | S | 📋 | Deconvolution already fits components. |
+| Natural-language command grammar | Medium | M | 📋 | Builds on palette. |
+| Live / streaming data board | Medium | L | 💭 | Tail file/serial port, auto-refresh. |
+| Figure diff (before/after) | Low | M | 💭 | Render two graphs and diff. |
+| Units engine | Medium | L | 💭 | Dimensional tracking + conversion. |
+| Signed installers + auto-update | High | L | 📋 | OS certs; CI already builds bundles. |
+| Crash reporting (opt-in) | Low | M | 💭 | After first public build. |
+| Plugin host + versioned API | Medium | M | 📋 | Stability promise. |
+| Recipe editor UI | Medium | M | 📋 | Form-based editor for JSON recipes. |
+| Headless CLI pipelines | Medium | M | ✅ | `graphmatrix run pipeline.yaml`. |
+| Arrow-backed column store | Medium | L | 💭 | Only when dataset forces it. |
+| GPU canvas for >=1e6 points | High | L | 💭 | Benchmark before committing. |
+
+---
+
+## 1. Backlog (core)
 
 Grouped by area, roughly highest value first. "Cost" is a coarse T-shirt size for a
 first working version, not the polished one.

@@ -142,7 +142,15 @@ def fit_model(
         "N": float(x.size),
     }
     xs = np.linspace(x.min(), x.max(), 400)
-    result.curves["Fit"] = (xs, func(xs, **{name: fit.params[name].value for name in param_names}))
+    params = {name: fit.params[name].value for name in param_names}
+    result.curves["Fit"] = (xs, func(xs, **params))
+    # Confidence band (±1 sigma) when lmfit can provide the uncertainty.
+    try:
+        dely = fit.eval_uncertainty(x=xs, sigma=1.0)
+        result.curves["Fit +1σ"] = (xs, func(xs, **params) + np.asarray(dely))
+        result.curves["Fit -1σ"] = (xs, func(xs, **params) - np.asarray(dely))
+    except Exception:  # noqa: BLE001 - uncertainty not available for all models
+        pass
     result.curves["Residuals"] = (x, y - y_fit)
     result.notes = "Parameters: " + ", ".join(
         f"{p.name}={p.value:.5g}" + (f"±{p.error:.3g}" if p.error else "")

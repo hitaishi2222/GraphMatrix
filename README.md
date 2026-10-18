@@ -114,6 +114,7 @@ graphmatrix --help
 graphmatrix run project.rsproj            # open project(s) in the GUI
 graphmatrix list project.rsproj          # list graphs in a project
 graphmatrix export project.rsproj -g 1,3-5 --format pdf --out ./out
+graphmatrix run pipeline.yaml            # run a headless YAML pipeline
 graphmatrix doctor                      # check environment and dependencies
 ```
 
@@ -121,6 +122,8 @@ graphmatrix doctor                      # check environment and dependencies
 - `list` prints the graphs available in a project (1-based indices).
 - `export` exports all or selected graphs (`1`, `1,3`, `1-3`, `(1,3)`).
 - `doctor` verifies Python, required/optional modules, and the display environment.
+- Pipelines are YAML files with steps: `import`, `column`, `graph`, `plot`, `fit`,
+  `analyze`, `export`, `save`, and `code`.
 
 ## MCP server
 
@@ -131,7 +134,7 @@ pip install "graphmatrix[mcp]"
 graphmatrix-mcp
 ```
 
-Tools: `connect`, `summary`, `run` (Python against the Respot/GraphMatrix API),
+Tools: `connect`, `summary`, `run` (Python against the GraphMatrix API),
 and `export`. Example client config:
 
 ```json

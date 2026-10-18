@@ -2,11 +2,11 @@
 
 import numpy as np
 from graphmatrix.core.model import Project
-from graphmatrix.core.scripting.api import RespotAPI
+from graphmatrix.core.scripting.api import GraphMatrixAPI
 from graphmatrix.core.commands import CommandStack
 
 project = Project("Sample")
-api = RespotAPI(project, CommandStack())
+api = GraphMatrixAPI(project, CommandStack())
 book = api.add_workbook("Book1")
 sheet = api.add_worksheet("Book1", "Sheet1")
 x = np.linspace(0, 2 * np.pi, 200)
