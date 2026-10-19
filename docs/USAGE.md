@@ -68,14 +68,31 @@ Formulas reference columns by name and use numpy functions, e.g. `sin(X1) + 2`,
   color, width, dash style, and optional label. Lines belong to a layer and are
   undoable; they appear in exports too.
 - **Data readout** — **Graph → Data Readout (Hover)** (or the sidebar toggle) shows a
-  crosshair plus the nearest data point's series, `x`, and `y` under the mouse. It is an
-  interaction only, so it never appears in exported figures.
+  crosshair plus the nearest data point's series, `x`, and `y` under the mouse. The
+  readout is drawn in the corner of the figure by the canvas overlay, so it is
+  interface, not figure content: it never appears in exported figures.
+- **Canvas tools** — a small floating toolbar in the top-right corner of every graph
+  offers **zoom in**, **zoom out**, **fit** (reset the panel to the data's limits) and
+  the **data readout** switch. It fades out when the pointer leaves the figure. Like
+  the readout, it is a widget and never reaches an exported file.
+- **Panel marker** — in a grid, a stack or an X-twin, the panel you are editing is
+  framed in the figure and named in the corner ("Panel 2 / 4"). Selecting a series in
+  the **Plots** list jumps the marker to that series' panel, so the sidebar and the
+  figure always agree.
 - Styles: line, scatter, line+symbol, bar, area, step, error bar. Multi-layer and
   **dual Y axis** supported. Large series are downsampled automatically while panning.
 - **Journal presets** — **Graph → Journal Preset** applies a publisher's figure size
   and typography (Nature, Science, APS, IEEE — single & double column) to the active
   graph: it restyles the plots' line widths and marker sizes and records the preset so
   the exporter uses the matching font sizes and default dimensions. Undoable.
+- **Plot theme** — the **Plot theme** combo in the graph sidebar sets the canvas
+  colours of that graph (Follow app theme, Classic light/dark, Seaborn, Earth,
+  Monochrome, Publication). The export follows the same theme, so the file looks like
+  the preview. A journal preset always exports on white paper.
+- **Export — what you see is what you get.** The exporter reuses the canvas
+  renderer: same background, foreground, grid, title, legend and axis labels. The
+  exported file is exactly the requested size in millimetres (no hidden cropping), and
+  exporting from the window keeps the on-screen proportions of the figure.
 
 #### Graph layout types
 
@@ -148,6 +165,11 @@ or "Plot on active graph" (adds the curve as columns and a plot).
   PNG/TIFF (raster) at a chosen size in mm and DPI. Dual-axis and annotations included.
 - **Export → Export All Graphs…** — batch export every graph in the project to a folder.
 - **Export → Export Worksheet as CSV…**
+- **"Match on-screen proportions"** (in the export dialog, on by default) makes the
+  file look exactly like the preview: it takes the shape of the figure on screen and
+  scales the typography, line widths and markers with the page, so nothing is
+  re-proportioned. Turn it off for print-sized figures with standard point-sized
+  typography (or pick a journal preset, which always uses its own sizes).
 
 ### 6. Automate
 
@@ -158,24 +180,60 @@ or "Plot on active graph" (adds the curve as columns and a plot).
 - **Tools → Batch Analysis (Recipe)…**: pick a recipe (JSON) and many data files; each
   file is imported, analyzed, and gets a text report + a figure in the output folder.
 
-## MCP server control
+## MCP server
 
-Install the optional extra (`pip install "graphmatrix[mcp]"`), then open
-**Tools → MCP Server…** or click the **MCP** mark in the status bar. The dock lets you:
-
-- pick **Streamable HTTP** or **SSE**, a host and a port, then **Start server** /
-  **Stop server**;
-- read the coloured status mark (grey stopped, amber starting, green running, red
-  error), the endpoint, and the live GUI bridge socket;
-- review the exposed tools and stream the server's log;
-- copy an HTTP or stdio client config to the clipboard.
-
-The same server can be launched outside the GUI:
+Install the optional extra (`pip install "graphmatrix[mcp]"`). The server is
+started by the *client* (Pi, Claude Desktop, …), so GraphMatrix itself has no
+server UI to configure:
 
 ```bash
-graphmatrix-mcp                                   # stdio
-graphmatrix-mcp --transport http --port 8765     # persistent endpoint
+graphmatrix-mcp                                   # stdio (the usual setup)
+graphmatrix-mcp --transport http --port 8765     # a shared, persistent endpoint
 ```
+
+Client config:
+
+```json
+{ "mcpServers": { "graphmatrix": { "command": "graphmatrix-mcp" } } }
+```
+
+```json
+{ "mcpServers": { "graphmatrix-live": { "url": "http://127.0.0.1:8765/mcp" } } }
+```
+
+#### The live bridge
+
+Every running window listens on a local Unix socket
+(`~/.local/state/graphmatrix/ipc-<pid>.sock`). That bridge is what the *live*
+tools use to edit the open project — it is part of the application, independent
+of the MCP server, and it needs no configuration. The window also registers
+itself in `~/.local/state/graphmatrix/instance.json` at startup so assistants
+can find it.
+
+#### Driving the open window from an assistant
+
+When GraphMatrix is already running, an assistant should use the *live* tools
+instead of `run`: they act on the project in the window, so results are visible
+immediately and remain undoable.
+
+1. `live_describe` — find the data. It lists every worksheet with its typed
+   columns, the plottable X/Y pairs, every graph with its panels and series,
+   and the graph templates (`simple`, `stack`, `double-y`, `x-twin`, `grid`)
+   and plot styles this build supports.
+2. `live_add_data` — when no data exists yet, create a sheet directly:
+   `columns=[{"name": "X", "type": "X", "generate": {"kind": "linspace", "start": 0, "stop": 10, "count": 41}}, {"name": "Y", "type": "Y", "generate": {"kind": "sin", "count": 41}}]`.
+3. `live_create_graph` — make the figure:
+   `name="Stacked", graph_type="stack", panels=2, source="Measurements/Run1", x="X", y="Oscillation", style="line"`.
+   The graph opens as a tab straight away.
+4. `live_add_plot` — fill the remaining panels:
+   `graph="Stacked", source="Measurements/Run1", x="X", y="Counts", panel=2, replace=True`.
+   `panel` is 1-based, `replace=True` clears the panel first, and
+   `y_axis="right"` puts the series on a double-Y graph's second axis.
+5. `live_set_property` — label it: `graph="Stacked", key="x_label", value="time (s)"`.
+6. `live_export` / `live_save` — write the figure out or persist the project.
+
+`live_run` is still there for anything the high-level tools do not cover: it
+executes Python against the same live project through the same command stack.
 
 #### Analysis recipes
 

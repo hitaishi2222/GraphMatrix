@@ -159,27 +159,18 @@ pip install "graphmatrix[mcp]"
 
 There are two ways to run it:
 
-- **In-app control (recommended):** open **Tools → MCP Server…** (or click the
-  **MCP** status mark in the bottom-right corner of the window). Choose a transport
-  (Streamable HTTP or SSE), host and port, then **Start server**. The dock shows a
-  coloured status mark (grey stopped, amber starting, green running, red error), the
-  endpoint, the exposed tools, live server logs, and a live-GUI bridge indicator.
-  **Copy HTTP config** / **Copy stdio config** put a ready client config on the
-  clipboard.
-- **Editor-launched stdio:** configure your client to run `graphmatrix-mcp`.
+- **Client-launched stdio (recommended):** point your client at the `graphmatrix-mcp`
+  command. The client starts and stops the server itself; GraphMatrix needs no
+  in-app server UI.
+- **Port-based server:** run it yourself when several clients should share one
+  endpoint.
 
 ```bash
-graphmatrix-mcp                                   # stdio (editors launch this)
+graphmatrix-mcp                                   # stdio (clients launch this)
 graphmatrix-mcp --transport http --port 8765     # port-based server
 ```
 
-Tools: `connect`, `summary` (workbooks, sheets, graphs, layout types, and project
-versions), `run` (Python against the GraphMatrix API — including pipelines,
-versioning, batch statistics, colour/XYZ plots, numeric fit regions via
-`api.fit(..., x_min=..., x_max=...)`, and live data tailing via
-`graphmatrix.core.live.LiveFileSource`), `export`, and the live tools
-`live_summary`, `live_run`, `live_open`, `live_screenshot` (these drive the running
-GUI over its local IPC bridge). Example configs:
+Client config:
 
 ```json
 { "mcpServers": { "graphmatrix": { "command": "graphmatrix-mcp" } } }
@@ -189,10 +180,44 @@ GUI over its local IPC bridge). Example configs:
 { "mcpServers": { "graphmatrix-live": { "url": "http://127.0.0.1:8765/mcp" } } }
 ```
 
+**The live bridge.** A running GraphMatrix window always listens on a local
+Unix socket (`~/.local/state/graphmatrix/ipc-<pid>.sock`). The live tools use it
+to edit the open project: the changes appear at once, are undoable with
+`Ctrl+Z`, and are visible in the window. No server UI or configuration is
+involved — the bridge is part of the application, not of the MCP server.
+
+Tools: `connect`, `summary` (workbooks, sheets, graphs, layout types, and project
+versions), `run` (Python against the GraphMatrix API — including pipelines,
+versioning, batch statistics, colour/XYZ plots, numeric fit regions via
+`api.fit(..., x_min=..., x_max=...)`, and live data tailing via
+`graphmatrix.core.live.LiveFileSource`), `export`, and the live tools that
+drive the running GUI over its local IPC bridge:
+
+| Live tool | What it does |
+| --- | --- |
+| `live_summary` | Quick map of the open project (workbooks, sheets, graphs). |
+| `live_describe` | Detailed map: every column with its type, which X/Y pairs are plottable, every graph with its panels and series, plus the supported graph types and plot styles. |
+| `live_add_data` | Create a worksheet and fill it with columns (literal values or a generator such as `linspace`/`sin`/`random`). |
+| `live_create_graph` | Create a graph of any template — `simple`, `stack`, `double-y`, `x-twin`, `grid` — with its first series, and open it as a tab. |
+| `live_add_plot` | Add a series to a specific panel (1-based); `y_axis="right"` for the secondary axis, `replace=True` to clear the panel first. |
+| `live_set_graph_type` | Switch a graph's template or resize its panel grid. |
+| `live_set_property` | Set graph properties (`title`, `panel_gap_x`, `y_delta`, …) or panel properties (`x_label`, `y_label`, `y2_label`, `x_scale`, `show_y_axis`, …). |
+| `live_delete_graph` | Remove a graph (undoable in the GUI). |
+| `live_save` / `live_export` | Save the project / export graphs to PDF, SVG, PNG, … (same theme and proportions as the preview). |
+| `live_run` / `live_open` / `live_screenshot` | Raw Python against the live project, open a project file, capture the window. |
+
+Live edits go through the GUI's own command stack: they appear at once, are
+undoable with `Ctrl+Z`, and never touch a file behind your back.
+
+A ready-made skill for assistants lives in
+[`.agents/skills/graphmatrix-mcp/SKILL.md`](.agents/skills/graphmatrix-mcp/SKILL.md);
+`examples/mcp_live_demo.py` runs the whole workflow against a running window.
+
 ## Supported formats
 
 - **Import:** CSV/TSV, Excel (`.xlsx`/`.xls`), Parquet, HDF5/NetCDF (optional)
-- **Export:** PDF, SVG, EPS, PNG, TIFF, JPEG (publication-ready, sized in mm at your DPI)
+- **Export:** PDF, SVG, EPS, PNG, TIFF, JPEG (sized in mm at your DPI, and drawn with
+  the same theme, grid, title and legend as the on-screen preview)
 - **3D plotting** (live scene): optional extra — `pip install pyvista pyvistaqt`
 
 ## Keyboard shortcuts

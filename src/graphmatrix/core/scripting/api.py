@@ -14,14 +14,12 @@ import numpy as np
 
 from ..commands import (
     AddColumnCommand,
-    AddGraphCommand,
-    AddPlotCommand,
     AddWorkbookCommand,
     AddWorksheetCommand,
     Command,
     CommandStack,
 )
-from ..io.importer import import_file, import_sheet
+from ..io.importer import import_file
 from ..model import (
     LINE_STYLES,
     Annotation,
@@ -116,14 +114,85 @@ class GraphMatrixAPI:
         *,
         style: str = "line+symbol",
         legend: str = "",
+        graph_type: str = "simple",
+        title: str = "",
+        panels: int | None = None,
+        rows: int | None = None,
+        cols: int | None = None,
     ) -> Graph:
-        graph = Graph(self.project.unique_name(name))
-        if source and x and y:
-            graph.first_layer.add_plot(
-                PlotSpec(source=source, x=x, y=y, style=PlotStyle(style), legend=legend)
-            )
-        self._push(AddGraphCommand(self.project, graph))
-        return graph
+        """Create a graph, optionally with its first plot.
+
+        ``graph_type`` selects the figure template: ``simple``, ``stack``,
+        ``double-y``, ``x-twin`` or ``grid`` (see
+        :mod:`graphmatrix.core.scripting.graphs`).
+        """
+        from .graphs import create_graph
+
+        result = create_graph(
+            self.project,
+            self.commands,
+            name=name,
+            graph_type=graph_type,
+            source=source or "",
+            x=x or "",
+            y=y or "",
+            style=style,
+            legend=legend,
+            title=title,
+            panels=panels,
+            rows=rows,
+            cols=cols,
+            strict=False,
+        )
+        return self.graph(result["graph"])
+
+    def create_graph(self, name: str = "Graph", **kwargs: Any) -> Graph:
+        """Create a graph of any template; keyword arguments mirror
+        :func:`graphmatrix.core.scripting.graphs.create_graph`."""
+        from .graphs import create_graph as _create
+
+        payload = dict(kwargs)
+        payload.setdefault("name", name)
+        result = _create(self.project, self.commands, strict=False, **payload)
+        return self.graph(result["graph"])
+
+    def describe_project(self) -> dict[str, Any]:
+        """A detailed, model-friendly map of the project (data + graphs)."""
+        from .graphs import describe_project
+
+        return describe_project(self.project)
+
+    def set_graph_type(
+        self,
+        graph_name: str,
+        graph_type: str,
+        *,
+        panels: int | None = None,
+        rows: int | None = None,
+        cols: int | None = None,
+    ) -> Graph:
+        """Switch a graph's template (and optionally its panel count)."""
+        from .graphs import set_graph_type as _set
+
+        _set(
+            self.project,
+            self.commands,
+            graph_name,
+            graph_type,
+            panels=panels,
+            rows=rows,
+            cols=cols,
+        )
+        return self.graph(graph_name)
+
+    def set_property(
+        self, graph_name: str, key: str, value: Any, *, panel: int = 1
+    ) -> Graph:
+        """Set one graph or panel property (labels, axis scale, legend, …)."""
+        from .graphs import set_property as _set
+
+        _set(self.project, self.commands, graph_name, key, value, panel=panel)
+        return self.graph(graph_name)
 
     def add_plot(
         self,
@@ -136,19 +205,30 @@ class GraphMatrixAPI:
         legend: str = "",
         z: str = "",
         cmap: str = "viridis",
+        panel: int = 1,
+        y_axis: str = "left",
     ) -> PlotSpec:
-        graph = self.graph(graph_name)
-        spec = PlotSpec(
+        """Add a series to a graph; ``panel`` is 1-based."""
+        from .graphs import add_plot as _add
+
+        _add(
+            self.project,
+            self.commands,
+            graph_name,
             source=source,
             x=x,
             y=y,
-            style=PlotStyle(style),
+            style=style,
             legend=legend,
+            panel=panel,
+            y_axis=y_axis,
             z=z,
             cmap=cmap,
+            strict=False,
         )
-        self._push(AddPlotCommand(graph, graph.first_layer, spec))
-        return spec
+        graph = self.graph(graph_name)
+        layer = graph.layers[min(panel, len(graph.layers)) - 1]
+        return layer.plots[-1]
 
     # -- data ----------------------------------------------------------------
     def import_data(self, path: str, *, book_name: str | None = None) -> Workbook:

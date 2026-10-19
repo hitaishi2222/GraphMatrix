@@ -63,4 +63,10 @@ def run(
     app._graphmatrix_ipc = [IpcBridge(w) for w in windows]
     # Keep references alive for the lifetime of the event loop.
     app._graphmatrix_windows = windows
+    # Announce this instance so agents can find the bridge even when the
+    # window was started without a project file.
+    from graphmatrix.core.instance import register as register_instance
+
+    first = windows[0] if windows else None
+    register_instance(first._path if first is not None else None)
     return app.exec()

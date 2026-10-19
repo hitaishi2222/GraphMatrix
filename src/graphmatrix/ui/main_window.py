@@ -109,11 +109,6 @@ from graphmatrix.ui.digitize_dialog import DigitizeDialog
 from graphmatrix.ui.brushing import BrushSelection
 from graphmatrix.ui.graph_view import GraphView
 from graphmatrix.ui.live_dialog import LiveController
-from graphmatrix.ui.mcp_panel import (
-    McpPanel,
-    McpServerController,
-    McpStatusIndicator,
-)
 from graphmatrix.ui.project_panel import ProjectPanel
 from graphmatrix.ui.properties_panel import PropertiesPanel
 from graphmatrix.ui.widgets import sheet_label
@@ -179,11 +174,20 @@ class ExportGraphDialog(QDialog):
         self.dpi.setRange(72, 1200)
         self.dpi.setValue(300)
         self.transparent = QCheckBox("Transparent background")
+        self.match_screen = QCheckBox("Match on-screen proportions")
+        self.match_screen.setChecked(True)
+        self.match_screen.setToolTip(
+            "Use the proportions of the figure on screen and scale the "
+            "typography, line widths and markers accordingly, so the file "
+            "looks exactly like the preview. Turn it off for print-sized "
+            "figures with standard (point-sized) typography."
+        )
         form = QFormLayout()
         form.addRow("Width:", self.width)
         form.addRow("Height:", self.height)
         form.addRow("DPI:", self.dpi)
         form.addRow(self.transparent)
+        form.addRow(self.match_screen)
 
         # One-click aspect-ratio presets.
         ratio_row = QHBoxLayout()
@@ -212,7 +216,6 @@ class ExportGraphDialog(QDialog):
     def _apply_ratio(self, ratio: float) -> None:
         width = self.width.value()
         self.height.setValue(round(width / ratio, 2))
-
 
 class MainWindow(QMainWindow):
     def __init__(self, project: Project | None = None) -> None:
@@ -243,8 +246,6 @@ class MainWindow(QMainWindow):
 
         # Live / streaming data board (Tools → Live Data…).
         self.live = LiveController(self)
-        # In-app control of the optional MCP server (status mark + dock panel).
-        self.mcp = McpServerController(self)
         self._dirty = False
         self.confirm_on_close = True
         self._views: dict[int, QWidget] = {}
@@ -275,7 +276,6 @@ class MainWindow(QMainWindow):
                 (self.dock_project, "Project Explorer"),
                 (self.dock_properties, "Properties"),
                 (self.dock_console, "Python Console"),
-                (self.dock_mcp, "MCP Server"),
             ):
                 action = dock.toggleViewAction()
                 action.setText(label)
@@ -354,20 +354,6 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock_console)
         dock_console.hide()
         self.dock_console = dock_console
-
-        # MCP server control (start/stop, logs, client config) + status mark.
-        self.mcp_panel = McpPanel(self.mcp)
-        dock_mcp = QDockWidget("MCP Server", self)
-        dock_mcp.setObjectName("dock.mcp")
-        dock_mcp.setWidget(self.mcp_panel)
-        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock_mcp)
-        dock_mcp.hide()
-        self.dock_mcp = dock_mcp
-
-        self.mcp_indicator = McpStatusIndicator()
-        self.mcp_indicator.clicked.connect(self._show_mcp_panel)
-        self.mcp.status_changed.connect(self._on_mcp_status_changed)
-        self.statusBar().addPermanentWidget(self.mcp_indicator)
 
         # Versions are exposed via a toolbar dropdown (see _build_toolbar).
 
@@ -820,20 +806,6 @@ class MainWindow(QMainWindow):
             ),
             self._action_live_data,
         )
-        r.register(
-            ActionSpec(
-                "tools.mcp",
-                "MCP Server…",
-                None,
-                menu="Tools",
-                checkable=True,
-                tooltip="Start/stop the MCP server and inspect its status",
-            ),
-            self._toggle_mcp,
-        )
-        # Keep the menu check state in sync when the dock is closed directly.
-        self.dock_mcp.visibilityChanged.connect(self._on_mcp_dock_visibility)
-
         r.register(
             ActionSpec("help.about", "About GraphMatrix", None, menu="Help"),
             self._action_about,
@@ -1293,37 +1265,6 @@ class MainWindow(QMainWindow):
             SetAttributesCommand(obj, "Edit Layout", **{field: value})
         )
         self.properties_panel.show_object(obj)
-
-    # -- MCP server control --------------------------------------------------
-    def _toggle_mcp(self, *_args) -> None:
-        visible = self.registry.action("tools.mcp").isChecked()
-        self.dock_mcp.setVisible(visible)
-        if visible:
-            self.mcp_panel.refresh_bridge()
-
-    def _on_mcp_dock_visibility(self, visible: bool) -> None:
-        action = self.registry.action("tools.mcp")
-        if action.isChecked() != visible:
-            action.blockSignals(True)
-            action.setChecked(visible)
-            action.blockSignals(False)
-
-    def _show_mcp_panel(self) -> None:
-        """Open the MCP dock (clicked from the status-bar mark)."""
-        action = self.registry.action("tools.mcp")
-        action.blockSignals(True)
-        action.setChecked(True)
-        action.blockSignals(False)
-        self.dock_mcp.show()
-        self.dock_mcp.raise_()
-        self.mcp_panel.refresh_bridge()
-
-    def _on_mcp_status_changed(self, state: str, detail: str) -> None:
-        self.mcp_indicator.set_state(state, detail)
-        if state == "running":
-            self.statusBar().showMessage(f"MCP server ready \u2014 {detail}", 6000)
-        elif state == "error":
-            self.statusBar().showMessage(f"MCP server error \u2014 {detail}", 8000)
 
     def _action_rename_for(self, obj) -> None:
         if obj is None:
@@ -1836,6 +1777,7 @@ class MainWindow(QMainWindow):
         options = ExportGraphDialog(self)
         if not options.exec():
             return
+        aspect, scale = self._export_geometry(options)
         try:
             export_graph(
                 graph,
@@ -1845,6 +1787,9 @@ class MainWindow(QMainWindow):
                 height_mm=options.height.value(),
                 dpi=options.dpi.value(),
                 transparent=options.transparent.isChecked(),
+                theme=current_preset(),
+                aspect=aspect,
+                scale=scale,
             )
         except Exception as exc:  # noqa: BLE001
             traceback.print_exc()
@@ -1866,6 +1811,7 @@ class MainWindow(QMainWindow):
             return
         out_dir = Path(directory)
         exported = 0
+        aspect, scale = self._export_geometry(options)
         for graph in self.project.graphs:
             target = out_dir / f"{graph.name}.pdf"
             try:
@@ -1877,11 +1823,48 @@ class MainWindow(QMainWindow):
                     height_mm=options.height.value(),
                     dpi=options.dpi.value(),
                     transparent=options.transparent.isChecked(),
+                    theme=current_preset(),
+                    aspect=aspect,
+                    scale=scale,
                 )
                 exported += 1
             except Exception as exc:  # noqa: BLE001
                 self.statusBar().showMessage(f"Failed {graph.name}: {exc}", 6000)
         self.statusBar().showMessage(f"Exported {exported} graph(s) to {out_dir}", 5000)
+
+    def _export_geometry(self, options) -> tuple[float | None, float]:
+        """Aspect ratio and typography scale for an export.
+
+        With "Match on-screen proportions" the file keeps the shape of the
+        figure on screen and its typography, line widths and markers are
+        scaled by the page/canvas ratio — that is what makes the export look
+        like the preview instead of a differently sized page.
+        """
+        if not options.match_screen.isChecked():
+            return None, 1.0
+        view = self._active_graph_view
+        if view is None or not hasattr(view, "canvas"):
+            return None, 1.0
+        try:
+            widget = view.canvas.widget()
+            figure = getattr(view.canvas, "_fig", None)
+            toolbar = getattr(view.canvas, "_toolbar", None)
+            width = widget.width()
+            height = widget.height()
+            if toolbar is not None:
+                height -= toolbar.height()
+            dpi = float(getattr(figure, "dpi", 0) or 0) or float(
+                widget.logicalDpiX() or 96
+            )
+        except Exception:  # noqa: BLE001 - the view may be closing
+            return None, 1.0
+        if width <= 0 or height <= 0:
+            return None, 1.0
+        screen_w, screen_h = width / dpi, height / dpi
+        aspect = screen_w / screen_h
+        options.height.setValue(round(options.width.value() / aspect, 2))
+        scale = (options.width.value() / 25.4) / screen_w
+        return aspect, max(0.05, min(4.0, scale))
 
     def _action_export_sheet(self) -> None:
         sheet = self._current_sheet()
@@ -2169,7 +2152,6 @@ class MainWindow(QMainWindow):
     # ----------------------------------------------------------------- events
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt override
         if not self.confirm_on_close or self._confirm_discard():
-            self.mcp.stop()
             unregister_instance()
             event.accept()
         else:

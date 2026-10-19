@@ -4,6 +4,19 @@ Run with: ``graphmatrix-mcp`` (stdio transport) or ``python -m graphmatrix.mcp_s
 For a port-based server that the GUI can start and stop, use
 ``graphmatrix-mcp --transport http --port 8765``.
 Install the optional dependency first: ``pip install graphmatrix[mcp]``.
+
+Two families of tools are offered:
+
+*session tools* (``connect``, ``summary``, ``run``, ``export``) work on a
+project opened in the server's own process;
+
+*live tools* (``live_summary``, ``live_describe``, ``live_create_graph``,
+``live_add_plot``, ``live_set_graph_type``, ``live_add_data``,
+``live_set_property``, ``live_delete_graph``, ``live_save``, ``live_export``,
+``live_run``, ``live_open``, ``live_screenshot``) act on the GraphMatrix
+window that is running on this machine. They are the intended path for an
+assistant that should drive the application the user is looking at: changes
+land in the open project, are undoable with Ctrl+Z, and are visible at once.
 """
 
 from __future__ import annotations
@@ -11,6 +24,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import json
 import sys
 import uuid
 from pathlib import Path
@@ -142,7 +156,14 @@ def summary(project_id: str) -> dict[str, Any]:
 
 
 def run(project_id: str, code: str) -> dict[str, Any]:
-    """Execute Python against the project using the GraphMatrix API."""
+    """Execute Python against the project using the GraphMatrix API.
+
+    The namespace holds ``api`` (a :class:`GraphMatrixAPI`), ``project``,
+    ``np``/``numpy``, ``scipy`` and ``math``. Intent-level helpers live on
+    ``api`` too: ``api.create_graph(..., graph_type="stack")``,
+    ``api.add_plot(...)``, ``api.set_graph_type(...)``,
+    ``api.set_property(...)`` and ``api.describe_project()``.
+    """
     if project_id not in _SESSIONS:
         raise ValueError("unknown project_id")
     project, commands = _SESSIONS[project_id]
@@ -211,12 +232,307 @@ def export(
 
 # -- live instance control (direct IPC to the running GUI) -------------------
 
+#: Marker used to pick the JSON payload out of the GUI's stdout.
+_JSON_MARKER = "<<<GRAPHMATRIX_JSON>>>"
+
+
+class UnsupportedOp(RuntimeError):
+    """The running GUI is older than this server and lacks the op."""
+
+
+def _gui(op: str, **payload: Any) -> dict[str, Any]:
+    """Send one op to the running GUI and return its answer."""
+    from graphmatrix.core.ipc import request
+
+    res = request(op, **payload)
+    if not res.get("ok"):
+        error = str(res.get("error", ""))
+        if "unknown op" in error:
+            raise UnsupportedOp(error)
+        raise RuntimeError(error)
+    return res
+
+
+def _live_call(func: str, *, open_graphs: bool = False, **kwargs: Any) -> dict[str, Any]:
+    """Call a helper of :mod:`graphmatrix.core.scripting.graphs` in the GUI.
+
+    The GUI may predate the helper module, but Python imports it on demand,
+    and it is reloaded on every call so the toolkit in a long-running window
+    never goes stale.
+    """
+    from graphmatrix.core.ipc import request
+
+    code = (
+        "import importlib, json\n"
+        "from graphmatrix.core.scripting import graphs as G\n"
+        "G = importlib.reload(G)\n"
+        f"_gm_result = G.{func}(api.project, api.commands, **{kwargs!r})\n"
+        f"print({_JSON_MARKER!r} + json.dumps(_gm_result, default=str))\n"
+    )
+    res = request("run", code=code, open_graphs=open_graphs)
+    if not res.get("ok"):
+        raise RuntimeError(str(res.get("error", "live call failed")))
+    stdout = res.get("stdout", "")
+    if _JSON_MARKER not in stdout:
+        raise RuntimeError(f"live call {func!r} returned no result: {stdout[-500:]!r}")
+    line = stdout.split(_JSON_MARKER, 1)[1].strip().splitlines()[0]
+    return json.loads(line)
+
 
 def live_summary() -> dict[str, Any]:
     """Summary of the project open in the running GraphMatrix window."""
     from graphmatrix.core.ipc import request
 
     return request("summary")["summary"]
+
+
+def live_describe() -> dict[str, Any]:
+    """Detailed map of the live project: data, columns, graphs, capabilities.
+
+    Use this first: it lists every worksheet with its typed columns (and which
+    X/Y pairs are ready to plot), every graph with its panels and series, and
+    the graph templates and plot styles this build supports.
+    """
+    try:
+        return _gui("describe")["description"]
+    except UnsupportedOp:
+        return _live_call("describe_project")
+
+
+def live_create_graph(
+    name: str = "Graph",
+    graph_type: str = "simple",
+    source: str = "",
+    x: str = "",
+    y: str = "",
+    style: str = "line+symbol",
+    legend: str = "",
+    title: str = "",
+    panels: int | None = None,
+    rows: int | None = None,
+    cols: int | None = None,
+    y_axis: str = "left",
+    z: str = "",
+    cmap: str = "viridis",
+    replicate: bool = True,
+    open: bool = True,
+) -> dict[str, Any]:
+    """Create a graph in the running GUI and show it as a tab.
+
+    ``graph_type`` is ``simple``, ``stack`` (panels share X), ``double-y``
+    (second Y axis on the right), ``x-twin`` (panels share Y) or ``grid``
+    (``rows`` x ``cols`` panels). ``panels`` sets the panel count for stack
+    and x-twin. When ``source``/``x``/``y`` are given the series is drawn in
+    every panel (set ``replicate=False`` to keep it in the first panel only).
+    """
+    return _live_call(
+        "create_graph",
+        open_graphs=bool(open),
+        name=name,
+        graph_type=graph_type,
+        source=source,
+        x=x,
+        y=y,
+        style=style,
+        legend=legend,
+        title=title,
+        panels=panels,
+        rows=rows,
+        cols=cols,
+        y_axis=y_axis,
+        z=z,
+        cmap=cmap,
+        replicate=replicate,
+    )
+
+
+def live_add_plot(
+    graph: str,
+    source: str,
+    x: str,
+    y: str,
+    style: str = "line+symbol",
+    legend: str = "",
+    panel: int = 1,
+    y_axis: str = "left",
+    z: str = "",
+    cmap: str = "viridis",
+    color: str = "",
+    symbol: str = "o",
+    line_style: str = "solid",
+    line_width: float = 2.0,
+    replace: bool = False,
+) -> dict[str, Any]:
+    """Add one series to a panel of an existing graph in the running GUI.
+
+    ``panel`` is 1-based; panels that do not exist yet are created, so a stack
+    or grid can be filled panel by panel. ``y_axis="right"`` puts the series
+    on the secondary axis of a double-Y graph. With ``replace`` the panel's
+    current series are removed first.
+    """
+    return _live_call(
+        "add_plot",
+        graph_name=graph,
+        source=source,
+        x=x,
+        y=y,
+        style=style,
+        legend=legend,
+        panel=panel,
+        y_axis=y_axis,
+        z=z,
+        cmap=cmap,
+        color=color,
+        symbol=symbol,
+        line_style=line_style,
+        line_width=line_width,
+        replace=replace,
+    )
+
+
+def live_set_graph_type(
+    graph: str,
+    graph_type: str,
+    panels: int | None = None,
+    rows: int | None = None,
+    cols: int | None = None,
+) -> dict[str, Any]:
+    """Switch a graph's template (and optionally its panel count)."""
+    return _live_call(
+        "set_graph_type",
+        graph_name=graph,
+        graph_type=graph_type,
+        panels=panels,
+        rows=rows,
+        cols=cols,
+    )
+
+
+def live_add_data(
+    book: str = "Book",
+    sheet: str = "Sheet1",
+    columns: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Create a worksheet in the live project and fill it with columns.
+
+    Each column is a dict: ``{"name": "X", "type": "X", "values": [0, 1, 2]}``
+    or ``{"name": "Y", "type": "Y", "generate": {"kind": "sin", "count": 50}}``.
+    Generator kinds: ``linspace`` (start, stop, count), ``arange`` (start, stop,
+    step), ``sin``/``cos`` (count, amp, freq, phase), ``random`` (count, seed,
+    scale), ``ramp`` (count).
+    """
+    if not columns:
+        raise ValueError("columns must not be empty")
+    return _live_call("add_data", book=book, sheet=sheet, columns=columns)
+
+
+def live_set_property(
+    graph: str,
+    key: str,
+    value: str,
+    panel: int = 1,
+) -> dict[str, Any]:
+    """Set a graph or panel property in the running GUI.
+
+    Graph properties: ``title``, ``panel_gap_x``, ``panel_gap_y``,
+    ``y_delta``, ``layout_rows``, ``layout_cols``, ``plot_theme``,
+    ``journal_preset``, ``title_font_size``, ``title_color``.
+    Panel properties: ``x_label``, ``y_label``, ``y2_label``, ``z_label``,
+    ``x_scale``, ``y_scale``, ``x_min``, ``x_max``, ``y_min``, ``y_max``,
+    ``show_legend``, ``show_y_axis``, ``minor_ticks``, ``tick_direction``,
+    ``label_font_size``, ``label_font_family``, ``label_color``.
+    """
+    return _live_call(
+        "set_property", graph_name=graph, key=key, value=value, panel=panel
+    )
+
+
+def live_delete_graph(graph: str) -> dict[str, Any]:
+    """Remove a graph from the live project (undoable in the GUI)."""
+    return _live_call("delete_graph", graph_name=graph)
+
+
+def live_save(path: str = "") -> dict[str, Any]:
+    """Save the live project. Without a path the current file is reused."""
+    if path:
+        try:
+            return _gui("save", path=path)
+        except UnsupportedOp:
+            pass
+    from graphmatrix.core.ipc import request
+
+    code = (
+        "try:\n"
+        "    from graphmatrix.core.ipc import current_window\n"
+        "except Exception:\n"
+        "    current_window = lambda: None\n"
+        "from pathlib import Path\n"
+        f"p = Path({path!r}) if {path!r} else None\n"
+        "if p is None:\n"
+        "    win = current_window()\n"
+        "    p = getattr(win, '_path', None)\n"
+        "if p is None:\n"
+        "    raise RuntimeError('no path given and the project was never saved')\n"
+        "api.save(str(p))\n"
+        "try:\n"
+        "    win = current_window()\n"
+        "    if win is not None:\n"
+        "        win._path = p\n"
+        "        win._set_dirty(False)\n"
+        "        win._update_title()\n"
+        "except Exception:\n"
+        "    pass\n"
+        "print('SAVED ' + str(p))\n"
+    )
+    res = request("run", code=code)
+    if not res.get("ok"):
+        raise RuntimeError(str(res.get("error", "save failed")))
+    return {"saved": res.get("stdout", "").strip().removeprefix("SAVED ")}
+
+
+def live_export(
+    graphs: str | None = None,
+    out_dir: str = ".",
+    format: str = "pdf",
+    dpi: int = 300,
+    width_mm: float = 100.0,
+    height_mm: float = 75.0,
+    transparent: bool = False,
+    match_screen: bool = True,
+) -> dict[str, Any]:
+    """Export graphs of the live project (default: all) to a directory.
+
+    ``graphs`` is a selection like ``"1,3-4"`` (1-based positions in the live
+    project) or ``""`` for every graph. The export follows the theme of the
+    running window and, with ``match_screen``, keeps the on-screen proportions
+    of the graph, so the file looks like the preview.
+    """
+    names = None
+    if graphs:
+        names = [n.strip() for n in str(graphs).split(",") if n.strip()]
+    try:
+        return _gui(
+            "export",
+            graphs=names,
+            out_dir=out_dir,
+            format=format,
+            dpi=dpi,
+            width_mm=width_mm,
+            height_mm=height_mm,
+            transparent=transparent,
+            match_screen=bool(match_screen),
+        )
+    except UnsupportedOp:
+        return _live_call(
+            "export_graphs",
+            graphs=names,
+            out_dir=out_dir,
+            format=format,
+            dpi=dpi,
+            width_mm=width_mm,
+            height_mm=height_mm,
+            transparent=transparent,
+        )
 
 
 def live_run(code: str, open_graphs: bool = False) -> dict[str, Any]:
@@ -252,6 +568,15 @@ if mcp is not None:
     mcp.tool(run)
     mcp.tool(export)
     mcp.tool(live_summary)
+    mcp.tool(live_describe)
+    mcp.tool(live_create_graph)
+    mcp.tool(live_add_plot)
+    mcp.tool(live_set_graph_type)
+    mcp.tool(live_add_data)
+    mcp.tool(live_set_property)
+    mcp.tool(live_delete_graph)
+    mcp.tool(live_save)
+    mcp.tool(live_export)
     mcp.tool(live_run)
     mcp.tool(live_open)
     mcp.tool(live_screenshot)

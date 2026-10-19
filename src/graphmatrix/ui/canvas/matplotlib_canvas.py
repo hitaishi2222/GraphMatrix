@@ -12,6 +12,7 @@ import numpy as np
 sys.setrecursionlimit(10000)
 
 from .base import PlotCanvas
+from .overlay import CanvasOverlay, watch_container
 
 _LINESTYLES = {
     "solid": "-",
@@ -31,28 +32,24 @@ class MatplotlibCanvas(PlotCanvas):
 
     def __init__(self) -> None:
         from matplotlib.figure import Figure
-        from matplotlib.backends.backend_qtagg import (
-            FigureCanvasQTAgg,
-            NavigationToolbar2QT,
-        )
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
         from PySide6.QtWidgets import QVBoxLayout, QWidget
 
         self._fig = Figure()
         self._canvas = FigureCanvasQTAgg(self._fig)
-        self._toolbar = NavigationToolbar2QT(self._canvas, None)
-        # Keep the toolbar buttons flat so they sit flush with the themed
-        # background instead of showing rounded, bordered boxes with gaps.
-        self._toolbar.setStyleSheet(
-            "QToolButton, QPushButton { border: none; border-radius: 0; "
-            "background: transparent; padding: 2px; }"
-            "QToolButton:hover, QPushButton:hover { background: rgba(128,128,128,0.15); }"
-        )
         self._container = QWidget()
         lay = QVBoxLayout(self._container)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
-        lay.addWidget(self._toolbar)
         lay.addWidget(self._canvas)
+        # The tool buttons, the panel marker and the readout float above the
+        # plot as plain widgets, so they can never end up in an export.
+        self._overlay = CanvasOverlay(self._container)
+        self._overlay.zoom_in_requested.connect(self.zoom_in)
+        self._overlay.zoom_out_requested.connect(self.zoom_out)
+        self._overlay.fit_requested.connect(self.fit)
+        self._overlay.hover_toggled.connect(self.set_hover)
+        self._watcher = watch_container(self._container, self._overlay)
         self._grid_rows = 1
         self._grid_cols = 1
         self._gap_x = 0.0
@@ -67,11 +64,11 @@ class MatplotlibCanvas(PlotCanvas):
         self._brush_artists: list = []
         self._hover_enabled = False
         self._hover_cid = None
+        self._theme_fg = ""
+        self._active_panel = 0
         self._canvas.mpl_connect("button_press_event", self._on_button_press)
+        self._canvas.mpl_connect("draw_event", self._on_draw)
         self.label_click_callback = None
-        self._cross_v = None
-        self._cross_h = None
-        self._readout = None
         self.set_theme("classic-dark")
 
     # -- PlotCanvas ---------------------------------------------------------
@@ -93,9 +90,6 @@ class MatplotlibCanvas(PlotCanvas):
         self._series = []
         self._series_meta = []
         self._brush_artists = []
-        self._cross_v = None
-        self._cross_h = None
-        self._readout = None
         # re-apply theme colours to the fresh axes
         try:
             self.set_theme(self._last_theme)
@@ -277,6 +271,90 @@ class MatplotlibCanvas(PlotCanvas):
         self._series.append((xs_s, ys_s, name or ""))
         self._canvas.draw_idle()
 
+    # -- overlay (tools, panel marker, readout) -----------------------------
+    def overlay(self):
+        """The floating chrome drawn on top of the plot."""
+        return self._overlay
+
+    def _on_draw(self, event) -> None:
+        """Keep the panel marker aligned with the axes after a redraw."""
+        axes = self._axes
+        if not axes:
+            return
+        index = min(self._active_panel, len(axes) - 1)
+        self._overlay.set_panel(
+            self._active_panel,
+            len(axes),
+            self._panel_rect(axes[index]),
+        )
+
+    def set_active_panel(self, index: int, total: int | None = None) -> None:
+        """Mark the panel the user is editing (grid / stack layouts)."""
+        self._active_panel = max(0, int(index))
+        count = total if total is not None else len(self._axes)
+        axes = self._axes
+        ax = axes[self._active_panel] if self._active_panel < len(axes) else self._ax_left
+        self._overlay.set_panel(self._active_panel, count, self._panel_rect(ax))
+
+    def _display_ratio(self) -> float:
+        """Device pixels per logical pixel (HiDPI screens report 1.25, 1.5, …)."""
+        try:
+            return float(self._canvas.devicePixelRatioF() or 1.0)
+        except Exception:  # noqa: BLE001
+            return 1.0
+
+    def _panel_rect(self, ax) -> object:
+        """The axes' area in widget pixels (Qt origin: top left)."""
+        from PySide6.QtCore import QRect
+
+        if ax is None:
+            return None
+        try:
+            bbox = ax.get_window_extent()
+        except Exception:  # noqa: BLE001 - the figure may not be laid out yet
+            return None
+        ratio = self._display_ratio()
+        height = float(self._fig.bbox.height)
+        return QRect(
+            int(bbox.x0 / ratio),
+            int((height - bbox.y1) / ratio),
+            max(0, int(bbox.width / ratio)),
+            max(0, int(bbox.height / ratio)),
+        )
+
+    def zoom_in(self) -> None:
+        """Zoom the current panel in around its centre."""
+        self._scale_limits(1 / 1.25)
+
+    def zoom_out(self) -> None:
+        """Zoom the current panel out around its centre."""
+        self._scale_limits(1.25)
+
+    def _scale_limits(self, factor: float) -> None:
+        for ax in (self._ax_left, self._ax_right):
+            if ax is None:
+                continue
+            try:
+                x0, x1 = ax.get_xlim()
+                y0, y1 = ax.get_ylim()
+            except Exception:  # noqa: BLE001
+                continue
+            cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+            ax.set_xlim(cx + (x0 - cx) * factor, cx + (x1 - cx) * factor)
+            ax.set_ylim(cy + (y0 - cy) * factor, cy + (y1 - cy) * factor)
+        self._canvas.draw_idle()
+
+    def fit(self) -> None:
+        """Reset the panel to the data's own limits."""
+        for ax in (self._ax_left, self._ax_right):
+            if ax is None:
+                continue
+            try:
+                ax.autoscale()
+            except Exception:  # noqa: BLE001
+                continue
+        self._canvas.draw_idle()
+
     # -- linked brushing ----------------------------------------------------
     def _record_series_meta(self, xs, ys, rows, ax, marker_size: float) -> None:
         """Remember where each point lives so clicks and brush overlays can
@@ -394,6 +472,7 @@ class MatplotlibCanvas(PlotCanvas):
 
     def set_hover(self, enabled: bool) -> None:
         self._hover_enabled = bool(enabled)
+        self._overlay.set_hover_enabled(self._hover_enabled)
         if enabled and self._hover_cid is None:
             self._hover_cid = self._canvas.mpl_connect(
                 "motion_notify_event", self._on_hover
@@ -429,8 +508,9 @@ class MatplotlibCanvas(PlotCanvas):
         kwargs = {"fontsize": fontsize or 14.0}
         if fontfamily:
             kwargs["fontfamily"] = fontfamily
-        if color:
-            kwargs["color"] = color
+        # Without an explicit colour the title follows the theme, so it stays
+        # readable on a dark canvas.
+        kwargs["color"] = color or getattr(self, "_theme_fg", "") or "#000000"
         self._fig.suptitle(text, **kwargs)
         # Reserve a strip at the top so a centred figure title never overlaps
         # the first row of panels (grid/stack/x-twin layouts).
@@ -532,7 +612,14 @@ class MatplotlibCanvas(PlotCanvas):
                 handles = handles + h2
                 labels = labels + l2
             if labels:
-                self._ax_left.legend(handles, labels, loc="best", frameon=False)
+                legend = self._ax_left.legend(
+                    handles, labels, loc="best", frameon=False
+                )
+                # Keep the legend readable on a dark canvas.
+                fg = getattr(self, "_theme_fg", "")
+                if fg:
+                    for text in legend.get_texts():
+                        text.set_color(fg)
         self._canvas.draw_idle()
 
     def set_downsampling(self, flag: bool) -> None:
@@ -540,15 +627,13 @@ class MatplotlibCanvas(PlotCanvas):
 
     def set_theme(self, preset: str) -> None:
         self._last_theme = preset
+        from graphmatrix.core.plot_themes import resolve_theme
         from graphmatrix.ui import theme
-        from graphmatrix.ui import plot_themes
 
-        colors = plot_themes.canvas_colors(preset)
-        if colors is None:
-            bg, fg, grid_alpha = theme.canvas_colors(preset)
-        else:
-            bg, fg, grid_alpha = colors
+        bg, fg, grid_alpha = resolve_theme(preset, theme.current_preset())
+        self._theme_fg = fg
         self._fig.patch.set_facecolor(bg)
+        self._overlay.set_colors(bg, fg)
         axes = list(getattr(self, "_axes", []))
         for right in getattr(self, "_right_axes", {}).values():
             if right is not None and right not in axes:
@@ -573,21 +658,18 @@ class MatplotlibCanvas(PlotCanvas):
 
     # -- hover helpers ------------------------------------------------------
     def _on_hover(self, event) -> None:
+        from PySide6.QtCore import QPoint
+
         if not self._hover_enabled:
             return
         if event.inaxes not in (self._ax_left, self._ax_right):
             return
-        ax = self._ax_left
-        if self._cross_v is None:
-            self._cross_v = ax.axvline(
-                event.xdata, color="gray", linewidth=0.5, alpha=0.5
-            )
-            self._cross_h = ax.axhline(
-                event.ydata, color="gray", linewidth=0.5, alpha=0.5
-            )
-        else:
-            self._cross_v.set_xdata([event.xdata, event.xdata])
-            self._cross_h.set_ydata([event.ydata, event.ydata])
+        # The crosshair is drawn by the overlay (a plain widget), not by
+        # matplotlib, so it can never end up in an exported figure.
+        ratio = self._display_ratio()
+        self._overlay.set_crosshair(
+            QPoint(int(event.x / ratio), int(event.y / ratio))
+        )
 
         best = None
         for xs, ys, name in self._series:
@@ -600,35 +682,17 @@ class MatplotlibCanvas(PlotCanvas):
                     if best is None or dist < best[0]:
                         best = (dist, float(xs[cand]), float(ys[cand]), name)
         if best is not None:
-            if self._readout is None:
-                self._readout = ax.text(
-                    0.02,
-                    0.98,
-                    "",
-                    transform=ax.transAxes,
-                    va="top",
-                    ha="left",
-                    fontsize=9,
-                    color=ax.xaxis.label.get_color(),
-                )
-            self._readout.set_text(f"{best[3]}: x={best[1]:.4g}, y={best[2]:.4g}")
+            self._overlay.set_readout(
+                f"{best[3]}:   x = {best[1]:.4g}    y = {best[2]:.4g}"
+            )
+        else:
+            self._overlay.set_readout("")
         self._canvas.draw_idle()
 
     def _remove_crosshair(self) -> None:
-        for attr in ("_cross_v", "_cross_h"):
-            obj = getattr(self, attr)
-            if obj is not None:
-                try:
-                    obj.remove()
-                except Exception:
-                    pass
-                setattr(self, attr, None)
-        if self._readout is not None:
-            try:
-                self._readout.remove()
-            except Exception:
-                pass
-            self._readout = None
+        """Clear the crosshair and the readout (the overlay owns both)."""
+        self._overlay.set_crosshair(None)
+        self._overlay.set_readout("")
 
     def _on_button_press(self, event) -> None:
         try:

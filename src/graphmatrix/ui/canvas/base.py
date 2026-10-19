@@ -160,6 +160,28 @@ class PlotCanvas(ABC):
     @abstractmethod
     def set_downsampling(self, flag: bool) -> None: ...
 
+    # -- canvas chrome -------------------------------------------------------
+    def overlay(self):
+        """The floating chrome drawn on top of the plot, or ``None``.
+
+        The overlay carries the zoom tools, the panel marker and the hover
+        readout. It is a plain widget, never a figure artist, so it can not
+        end up in an exported file.
+        """
+        return None
+
+    def set_active_panel(self, index: int, total: int | None = None) -> None:
+        """Mark the panel the user is editing (grid / stack layouts)."""
+
+    def zoom_in(self) -> None:
+        """Zoom the current panel in."""
+
+    def zoom_out(self) -> None:
+        """Zoom the current panel out."""
+
+    def fit(self) -> None:
+        """Reset the current panel to the data's own limits."""
+
     @abstractmethod
     def set_theme(self, preset: str) -> None:
         """Match the canvas background/axes to a named theme preset."""

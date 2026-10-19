@@ -11,21 +11,13 @@ from typing import Any, Sequence
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QRectF, Qt
 
 from .base import PlotCanvas
+from .overlay import CanvasOverlay, watch_container
 from .. import theme
 
-PALETTE = (
-    "#1f77b4",
-    "#d62728",
-    "#2ca02c",
-    "#9467bd",
-    "#ff7f0e",
-    "#17becf",
-    "#8c564b",
-    "#e377c2",
-)
+from graphmatrix.core.plot_themes import DEFAULT_PALETTE as PALETTE
 
 _PEN_STYLES = {
     "solid": Qt.PenStyle.SolidLine,
@@ -46,6 +38,11 @@ class PyQtGraphCanvas(PlotCanvas):
     def __init__(self) -> None:
         pg.setConfigOptions(antialias=True)
         self._widget = pg.PlotWidget()
+        self._overlay = CanvasOverlay(self._widget)
+        self._overlay.zoom_in_requested.connect(self.zoom_in)
+        self._overlay.zoom_out_requested.connect(self.zoom_out)
+        self._overlay.fit_requested.connect(self.fit)
+        self._overlay.hover_toggled.connect(self.set_hover)
         self._plot_item = self._widget.getPlotItem()
         self._main_view = self._plot_item.getViewBox()
         self._legend = None
@@ -77,6 +74,7 @@ class PyQtGraphCanvas(PlotCanvas):
         self._view_right.setXLink(self._plot_item)
         self._main_view.sigResized.connect(self._sync_right_view)
         self._sync_right_view()
+        self._watcher = watch_container(self._widget, self._overlay)
         self.set_downsampling(True)
         self.set_theme(theme.current_preset())
 
@@ -289,6 +287,43 @@ class PyQtGraphCanvas(PlotCanvas):
         self._main_view.addItem(item, ignoreBounds=True)
         self._ref_lines.append(item)
 
+    # -- canvas chrome -------------------------------------------------------
+    def overlay(self):
+        """The floating chrome drawn on top of the plot."""
+        return self._overlay
+
+    def zoom_in(self) -> None:
+        """Zoom the view in around its centre."""
+        self._scale_view(1 / 1.25)
+
+    def zoom_out(self) -> None:
+        """Zoom the view out around its centre."""
+        self._scale_view(1.25)
+
+    def _scale_view(self, factor: float) -> None:
+        for view in (self._main_view, self._view_right):
+            try:
+                (x0, x1), (y0, y1) = view.viewRange()
+            except Exception:  # noqa: BLE001
+                continue
+            cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+            left = cx + (x0 - cx) * factor
+            right = cx + (x1 - cx) * factor
+            top = cy + (y0 - cy) * factor
+            bottom = cy + (y1 - cy) * factor
+            view.setRange(
+                QRectF(left, top, right - left, bottom - top),
+                padding=0,
+            )
+
+    def fit(self) -> None:
+        """Reset the view to the data's own range."""
+        for view in (self._main_view, self._view_right):
+            try:
+                view.autoRange()
+            except Exception:  # noqa: BLE001
+                continue
+
     # -- hover readout -------------------------------------------------------
     def set_hover(self, enabled: bool) -> None:
         self._hover_enabled = bool(enabled)
@@ -349,6 +384,7 @@ class PyQtGraphCanvas(PlotCanvas):
             self._crosshair_h.setVisible(False)
             self._hover_label.setVisible(False)
             self._hover_marker.setVisible(False)
+            self._overlay.set_readout("")
             return
         x, y, name = point
         self._crosshair_v.setPos(x)
@@ -358,6 +394,7 @@ class PyQtGraphCanvas(PlotCanvas):
         if name:
             text = f"{name}\n{text}"
         self._hover_label.setText(text)
+        self._overlay.set_readout(text.replace("\n", ":   "))
         self._hover_label.setPos(x, y)
         for item in (
             self._crosshair_v,
@@ -477,6 +514,7 @@ class PyQtGraphCanvas(PlotCanvas):
     def set_theme(self, preset: str) -> None:
         bg, fg, grid_alpha = theme.canvas_colors(preset)
         self._fg = fg
+        self._overlay.set_colors(bg, fg)
         try:
             pg.setConfigOptions(background=bg, foreground=fg)
         except Exception:  # noqa: BLE001

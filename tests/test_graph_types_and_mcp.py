@@ -247,57 +247,36 @@ def test_y_axis_visibility_toggle(qapp):
         window.close()
 
 
-def test_mcp_controller_command_and_panel_states(qapp):
-    from graphmatrix.ui.mcp_panel import (
-        ERROR,
-        RUNNING,
-        STOPPED,
-        McpPanel,
-        McpServerController,
-        McpStatusIndicator,
+def test_mcp_server_cli_options():
+    from graphmatrix.mcp_server import build_parser
+
+    default = build_parser().parse_args([])
+    assert default.transport == "stdio"
+    assert default.port == 8765
+
+    parsed = build_parser().parse_args(
+        ["--transport", "http", "--host", "0.0.0.0", "--port", "9000", "--no-banner"]
     )
+    assert parsed.transport == "http"
+    assert parsed.host == "0.0.0.0"
+    assert parsed.port == 9000
+    assert parsed.no_banner is True
 
-    command = McpServerController.server_command(
-        "127.0.0.1", 8765, "sse", python="/usr/bin/python3"
-    )
-    assert command == [
-        "/usr/bin/python3",
-        "-m",
-        "graphmatrix.mcp_server",
-        "--transport",
-        "sse",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        "8765",
-    ]
 
-    controller = McpServerController()
-    assert controller.state == STOPPED
-    assert controller.endpoint() == "http://127.0.0.1:8765/mcp"
+def test_the_window_has_no_mcp_server_ui(qapp):
+    """The MCP server is launched by the client, so the app ships no MCP UI."""
+    from graphmatrix.ui.main_window import MainWindow
 
-    panel = McpPanel(controller)
+    window = MainWindow()
+    window.confirm_on_close = False
     try:
-        assert panel.start_button.text() == "Start server"
-        controller.status_changed.emit(RUNNING, "Listening on http://127.0.0.1:8765/mcp")
-        assert panel.start_button.text() == "Stop server"
-        assert panel.status_label.text() == "Running"
-        assert not panel.host_edit.isEnabled()
-
-        controller.status_changed.emit(ERROR, "boom")
-        assert panel.status_label.text() == "Error"
-        assert panel.start_button.text() == "Start server"
-        assert panel.host_edit.isEnabled()
+        assert not hasattr(window, "dock_mcp")
+        assert not hasattr(window, "mcp_panel")
+        assert not hasattr(window, "mcp_indicator")
+        with pytest.raises(KeyError):
+            window.registry.action("tools.mcp")
     finally:
-        panel.deleteLater()
-
-    indicator = McpStatusIndicator()
-    indicator.set_state(RUNNING, "Listening")
-    assert indicator.state == RUNNING
-    assert "Running" in indicator.toolTip()
-    indicator.set_state(STOPPED, "Not started")
-    assert indicator.state == STOPPED
-    assert "Stopped" in indicator.toolTip()
+        window.close()
 
 
 def test_mcp_server_cli_options():

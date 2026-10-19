@@ -159,6 +159,35 @@ def test_unknown_op_reports_error(app, bridge):
     assert "unknown op" in res["error"]
 
 
+def test_describe_op_maps_data_and_graphs(app, bridge):
+    res = _rpc(
+        app,
+        "describe",
+    )
+    assert res["ok"] is True, res
+    description = res["description"]
+    assert "graph_types" in description["capabilities"]
+    assert description["workbooks"][0]["sheets"][0]["label"].endswith("/Sheet1")
+
+
+def test_save_op_writes_the_project_and_adopts_the_path(app, bridge, tmp_path):
+    path = tmp_path / "saved.rsproj"
+    res = _rpc(app, "save", path=str(path))
+    assert res["ok"] is True, res
+    assert path.exists()
+    assert str(bridge.window._path) == str(path)
+    assert bridge.window._dirty is False
+
+
+def test_export_op_writes_graph_files(app, bridge, tmp_path):
+    res = _rpc(app, "run", code="api.add_graph('G1')")
+    assert res["ok"] is True, res
+    out = tmp_path / "figs"
+    res = _rpc(app, "export", out_dir=str(out), format="png", dpi=50)
+    assert res["ok"] is True, res
+    assert res["files"] and os.path.exists(res["files"][0])
+
+
 def test_run_open_graphs_flag_opens_new_tabs(app, bridge):
     res = _rpc(
         app,
@@ -180,6 +209,36 @@ api.add_graph('TabPlot', source='Tabbed/Sheet1', x='X', y='Y', style='line')
     assert res["opened_graphs"] == []
     titles = [bridge.window.tabs.tabText(i) for i in range(bridge.window.tabs.count())]
     assert titles.count("TabPlot") == 1
+
+
+def test_add_plot_can_replace_a_panel(app, bridge):
+    res = _rpc(
+        app,
+        "run",
+        code=(
+            "api.add_workbook('R')\n"
+            "api.add_worksheet('R', 'S')\n"
+            "api.add_column('R/S', 'X', 'X', [0.0, 1.0, 2.0])\n"
+            "api.add_column('R/S', 'Y1', 'Y', [1.0, 2.0, 3.0])\n"
+            "api.add_column('R/S', 'Y2', 'Y', [4.0, 5.0, 6.0])\n"
+            "api.add_graph('RG', source='R/S', x='X', y='Y1')\n"
+        ),
+    )
+    assert res["ok"] is True, res
+    graph = bridge.window.project.graph("RG")
+    assert len(graph.first_layer.plots) == 1
+    res = _rpc(
+        app,
+        "run",
+        code=(
+            "from graphmatrix.core.scripting import graphs as G\n"
+            "G.add_plot(api.project, api.commands, 'RG', source='R/S', x='X', y='Y2',"
+            " panel=1, replace=True)\n"
+        ),
+    )
+    assert res["ok"] is True, res
+    graph = bridge.window.project.graph("RG")
+    assert [spec.y for spec in graph.first_layer.plots] == ["Y2"]
 
 
 def test_socket_path_is_per_pid_and_unique():

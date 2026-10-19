@@ -7,6 +7,9 @@ pid) and answers newline-delimited JSON requests:
     {"op": "summary"}                                -> {"ok": true, "summary": {...}}
     {"op": "run", "code": "..."}                     -> {"ok": true, "stdout": ..., "stderr": ...}
     {"op": "open", "path": "...", "force": false}    -> {"ok": true, "opened": path}
+    {"op": "describe"}                              -> {"ok": true, "description": {...}}
+    {"op": "save", "path": "..."}                   -> {"ok": true, "saved": path}
+    {"op": "export", "out_dir": "...", ...}         -> {"ok": true, "files": [...]}
 
 ``run`` executes Python against the *live* window's project through the same
 GraphMatrixAPI / CommandStack the GUI console uses, so changes appear instantly
@@ -31,7 +34,7 @@ from PySide6.QtCore import QObject
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 #: Ops the bridge answers.
-_OPS = ("ping", "summary", "run", "open", "screenshot")
+_OPS = ("ping", "summary", "describe", "run", "open", "save", "export", "screenshot")
 
 #: Client-side default timeout in seconds.
 DEFAULT_TIMEOUT = 30.0
@@ -61,35 +64,72 @@ def socket_path(pid: int | None = None, seq: int | None = None) -> str:
 _BRIDGES: list["IpcBridge"] = []
 
 
-def running_socket_path() -> str | None:
-    """Socket path of the registered running GUI, or None when none is alive.
+def current_window() -> Any | None:
+    """The main window of the GUI hosting this process, if any.
 
-    Prefers the most recently created bridge socket of that process; verifies
-    it actually accepts a connection.
+    Lets in-process code (the MCP fallback path) reach the window that owns
+    the project without importing the UI layer.
+    """
+    for bridge in reversed(_BRIDGES):
+        return bridge.window
+    return None
+
+
+def running_socket_path() -> str | None:
+    """Socket path of a running GUI, or None when none is alive.
+
+    Prefers the most recently created bridge socket of the process recorded in
+    ``instance.json``; when that file is missing or stale (a GUI started
+    without a project file never writes it) every socket in the state
+    directory is probed instead, so a live window is always found.
     """
     import glob as _glob
 
     from graphmatrix.core.instance import get as get_instance
 
+    state = _state_dir()
+    candidates: list[str] = []
     running = get_instance()
-    if not running:
-        return None
-    pattern = str(_state_dir() / f"ipc-{running['pid']}*.sock")
-    candidates = sorted(_glob.glob(pattern), key=os.path.getmtime, reverse=True)
+    if running:
+        pattern = str(state / f"ipc-{running['pid']}*.sock")
+        candidates = sorted(_glob.glob(pattern), key=os.path.getmtime, reverse=True)
+    for cand in sorted(
+        _glob.glob(str(state / "ipc-*.sock")), key=os.path.getmtime, reverse=True
+    ):
+        if cand not in candidates:
+            candidates.append(cand)
     for cand in candidates:
         try:
             s = _probe_socket(cand)
             s.close()
             return cand
         except OSError:
+            _drop_stale_socket(cand)
             continue
     return None
 
 
-def _probe_socket(path: str):
-    import socket as _socket
+def _drop_stale_socket(path: str) -> None:
+    """Remove a socket file left behind by a GUI that was killed."""
+    import errno
 
-    s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(0.5)
+        s.connect(path)
+        s.close()
+        return  # someone is listening: not stale
+    except OSError as exc:
+        if exc.errno not in (errno.ECONNREFUSED, errno.ENOENT):
+            return
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+def _probe_socket(path: str):
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(2.0)
     s.connect(path)
     return s
@@ -181,6 +221,91 @@ class IpcBridge(QObject):
 
         return {"summary": _summary(self.window.project)}
 
+    def _op_describe(self, req: dict) -> dict:
+        """A detailed, model-friendly map of the live project."""
+        from graphmatrix.core.scripting.graphs import describe_project
+
+        return {"description": describe_project(self.window.project)}
+
+    def _op_save(self, req: dict) -> dict:
+        """Save the live project, adopting ``path`` as the window's file."""
+        from pathlib import Path
+
+        path = req.get("path")
+        if path:
+            target = Path(path)
+            self.window._path = target
+        else:
+            target = self.window._path
+            if target is None:
+                raise ValueError(
+                    "op 'save' requires a 'path' (the project has never been saved)"
+                )
+        self.window.project.save(target)
+        self.window._set_dirty(False)
+        self.window._update_title()
+        return {"saved": str(target)}
+
+    def _op_export(self, req: dict) -> dict:
+        """Export graphs of the live project to files."""
+        from graphmatrix.core.scripting.graphs import export_graphs
+        from graphmatrix.ui import theme
+
+        match_screen = bool(req.get("match_screen"))
+        width_mm = float(req.get("width_mm", 100.0))
+        screen = self._screen_size_inches() if match_screen else None
+        aspect = None
+        scale = 1.0
+        if screen and screen[0] > 0 and screen[1] > 0:
+            aspect = screen[0] / screen[1]
+            # Fonts, line widths and markers are absolute (points), so the
+            # export is scaled by the page/canvas ratio: that is what keeps a
+            # small export looking like the big on-screen canvas.
+            scale = max(0.05, min(4.0, (width_mm / 25.4) / screen[0]))
+        return export_graphs(
+            self.window.project,
+            graphs=req.get("graphs"),
+            out_dir=req.get("out_dir", "."),
+            format=req.get("format", "pdf"),
+            dpi=int(req.get("dpi", 300)),
+            width_mm=width_mm,
+            height_mm=float(req.get("height_mm", 75.0)),
+            transparent=bool(req.get("transparent", False)),
+            theme=theme.current_preset(),
+            aspect=aspect,
+            scale=scale,
+        )
+
+    def _screen_size_inches(self) -> tuple[float, float] | None:
+        """Size of the graph canvas on screen, in inches.
+
+        The matplotlib navigation toolbar is not part of the figure, so it is
+        excluded.
+        """
+        window = self.window
+        views = [v for v in window._views.values() if hasattr(v, "canvas")]
+        if not views:
+            return None
+        view = window._active_graph_view
+        if view not in views:
+            view = views[0]
+        try:
+            widget = view.canvas.widget()
+            figure = getattr(view.canvas, "_fig", None)
+            toolbar = getattr(view.canvas, "_toolbar", None)
+            width = widget.width()
+            height = widget.height()
+            if toolbar is not None:
+                height -= toolbar.height()
+            dpi = float(getattr(figure, "dpi", 0) or 0) or float(
+                widget.logicalDpiX() or 96
+            )
+        except Exception:  # noqa: BLE001 - the view may be closing
+            return None
+        if width <= 0 or height <= 0:
+            return None
+        return width / dpi, height / dpi
+
     def _op_run(self, req: dict) -> dict:
         code = req.get("code")
         if not code or not isinstance(code, str):
@@ -220,7 +345,6 @@ class IpcBridge(QObject):
         path = req.get("path")
         if not path:
             raise ValueError("op 'screenshot' requires a 'path'")
-        from PySide6.QtGui import QPixmap
         pm = self.window.grab()
         out = Path(path)
         out.parent.mkdir(parents=True, exist_ok=True)

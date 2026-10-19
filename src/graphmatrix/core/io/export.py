@@ -13,33 +13,11 @@ import numpy as np
 
 from ..journals import export_rcparams, figure_size
 from ..model import Graph, PlotStyle, Project, Z_STYLES, is_3d_style
+from ..plot_themes import resolve_theme, series_color
 from ..plotting import auto_axis_labels, grid_xyz, resolve_layer
 
-_PALETTE = (
-    "#1f77b4",
-    "#d62728",
-    "#2ca02c",
-    "#9467bd",
-    "#ff7f0e",
-    "#17becf",
-    "#8c564b",
-    "#e377c2",
-)
-
-#: Plot-theme (canvas) colours mirrored from ``ui.theme`` so export stays
-#: WYSIWYG without core importing the UI layer.
-_PLOT_THEME_COLORS = {
-    "classic-dark": ("#191a1d", "#d7dae0"),
-    "classic-light": ("#ffffff", "#202124"),
-    "modern-dark": ("#0e1015", "#dde1ea"),
-    "modern-light": ("#ffffff", "#1b1e2b"),
-    "plot-classic-light": ("#ffffff", "#202124"),
-    "plot-classic-dark": ("#191a1d", "#d7dae0"),
-    "plot-seaborn": ("#f0f0f0", "#262626"),
-    "plot-earth": ("#f6f1e7", "#3b2f2f"),
-    "plot-monochrome": ("#ffffff", "#000000"),
-    "plot-publication": ("#ffffff", "#000000"),
-}
+#: Plot-theme (canvas) colours live in ``core.plot_themes`` so the live canvas
+#: and this exporter cannot drift apart.
 
 _FORMATS = {".pdf", ".svg", ".eps", ".png", ".tif", ".tiff", ".jpg", ".jpeg"}
 
@@ -70,7 +48,19 @@ def export_graph(
     dpi: int = 300,
     transparent: bool = False,
     preset: str | None = None,
+    theme: str = "",
+    aspect: float | None = None,
+    scale: float = 1.0,
 ) -> Path:
+    """Render a graph to a file.
+
+    ``theme`` is the application preset the canvas follows (the graph's own
+    ``plot_theme`` wins over it), so the exported figure looks like the
+    preview. ``aspect`` (``width / height``) overrides the requested height so
+    the file can keep the on-screen proportions. ``scale`` shrinks the
+    typography, line widths and markers by that factor, which is what keeps a
+    small export looking like a big on-screen canvas.
+    """
     import matplotlib
 
     matplotlib.use("Agg")
@@ -88,10 +78,12 @@ def export_graph(
         if height_mm is None:
             height_mm = p_height
     width_mm = 100.0 if width_mm is None else width_mm
+    if aspect:
+        height_mm = width_mm / max(0.05, float(aspect))
     height_mm = 75.0 if height_mm is None else height_mm
     figsize = (width_mm / 25.4, height_mm / 25.4)
 
-    rc = export_rcparams(preset_name) if preset_name else {}
+    rc = export_rcparams(preset_name) if preset_name else _scaled_rcparams(scale)
     use_3d = any(
         is_3d_style(spec.style)
         for graph_layer in graph.layers
@@ -109,18 +101,16 @@ def export_graph(
         else:
             axes = [fig.add_subplot(111)]
         plot_theme = getattr(graph, "plot_theme", "")
-        _colors = _PLOT_THEME_COLORS.get(plot_theme)
-        if _colors is not None:
-            bg, fg = _colors
-            fig.patch.set_facecolor(bg)
-            for ax in axes:
-                ax.set_facecolor(bg)
-                ax.tick_params(colors=fg)
-                ax.xaxis.label.set_color(fg)
-                ax.yaxis.label.set_color(fg)
-                for spine in ax.spines.values():
-                    spine.set_color(fg)
-        _render_figure(fig, axes, graph, project)
+        if plot_theme:
+            # An explicit per-graph theme wins.
+            bg, fg, grid_alpha = resolve_theme(plot_theme)
+        elif preset_name:
+            # A journal preset is a publication request: white paper, black ink.
+            bg, fg, grid_alpha = resolve_theme("plot-publication")
+        else:
+            bg, fg, grid_alpha = resolve_theme("", theme)
+        _render_figure(fig, axes, graph, project, (bg, fg, grid_alpha), scale)
+        _apply_theme(fig, bg, fg, grid_alpha)
         fmt = path.suffix.lower().lstrip(".") if path.suffix else "pdf"
         if fmt == "tiff":
             fmt = "tif"
@@ -132,17 +122,71 @@ def export_graph(
             raise ValueError(
                 f"Unsupported export format '.{fmt}'. Choose one of: {supported}."
             )
-        fig.savefig(
-            path, format=fmt, dpi=dpi, transparent=transparent, bbox_inches="tight"
-        )
+        fig.savefig(path, format=fmt, dpi=dpi, transparent=transparent)
         plt.close(fig)
     return path
 
 
-def _render_figure(fig, axes, graph: Graph, project: Project) -> None:
+def _scaled_rcparams(scale: float) -> dict[str, Any]:
+    """matplotlib defaults scaled to the exported figure.
+
+    Font sizes, line widths and marker sizes are absolute (points), so a
+    100 mm export of a figure that fills the screen would look completely
+    different unless they are scaled with the page.
+    """
+    factor = max(0.05, float(scale or 1.0))
+    if abs(factor - 1.0) < 1e-6:
+        return {}
+    return {
+        "font.size": 10.0 * factor,
+        "axes.labelsize": 10.0 * factor,
+        "axes.titlesize": 10.0 * factor,
+        "xtick.labelsize": 10.0 * factor,
+        "ytick.labelsize": 10.0 * factor,
+        "legend.fontsize": 10.0 * factor,
+        "lines.linewidth": 1.5 * factor,
+        "lines.markersize": 6.0 * factor,
+        "axes.linewidth": 0.8 * factor,
+    }
+
+
+def _apply_theme(fig, bg: str, fg: str, grid_alpha: float) -> None:
+    """Apply the canvas theme to a rendered figure.
+
+    The live canvas draws the same background, foreground, grid and legend
+    colours, so the exported file looks like the preview.
+    """
+    fig.patch.set_facecolor(bg)
+    for ax in fig.axes:
+        ax.set_facecolor(bg)
+        ax.tick_params(colors=fg)
+        for axis in (ax.xaxis, ax.yaxis):
+            if axis.label is not None:
+                axis.label.set_color(fg)
+        if ax.title is not None:
+            ax.title.set_color(fg)
+        for spine in ax.spines.values():
+            spine.set_color(fg)
+        ax.grid(True, alpha=grid_alpha, color=fg)
+        leg = ax.get_legend()
+        if leg is not None:
+            for text in leg.get_texts():
+                text.set_color(fg)
+
+
+def _render_figure(
+    fig,
+    axes,
+    graph: Graph,
+    project: Project,
+    colors: tuple[str, str, float],
+    scale: float = 1.0,
+) -> None:
     """Draw each layer onto its own panel, honouring the graph's layout type."""
     if not axes:
         return
+    _bg, fg, _grid = colors
+    factor = max(0.05, float(scale or 1.0))
     single_panel = len(axes) == 1
     graph_type = getattr(graph, "graph_type", "simple")
     right_axes: dict[int, object] = {}
@@ -164,7 +208,7 @@ def _render_figure(fig, axes, graph: Graph, project: Project) -> None:
 
         series = resolve_layer(project, layer)
         for plot_index, (spec, data) in enumerate(zip(layer.plots, series)):
-            color = spec.color or _PALETTE[plot_index % len(_PALETTE)]
+            color = spec.color or series_color(plot_index)
             _z_label = (
                 getattr(layer, "z_label", "") or getattr(data, "z_label", "") or "Value"
             )
@@ -182,6 +226,7 @@ def _render_figure(fig, axes, graph: Graph, project: Project) -> None:
                     fig=fig,
                     z_label=_z_label,
                     y_offset=offset,
+                    scale=factor,
                 )
             else:
                 _draw(
@@ -192,12 +237,13 @@ def _render_figure(fig, axes, graph: Graph, project: Project) -> None:
                     fig=fig,
                     z_label=_z_label,
                     y_offset=offset,
+                    scale=factor,
                 )
 
         label_kwargs = {}
         if getattr(layer, "label_font_family", ""):
             label_kwargs["fontfamily"] = layer.label_font_family
-        label_kwargs["fontsize"] = getattr(layer, "label_font_size", 12.0) or 12.0
+        label_kwargs["fontsize"] = (getattr(layer, "label_font_size", 12.0) or 12.0) * factor
         if getattr(layer, "label_color", ""):
             label_kwargs["color"] = layer.label_color
 
@@ -240,11 +286,11 @@ def _render_figure(fig, axes, graph: Graph, project: Project) -> None:
             )
             if ref.orientation == "v":
                 line = ax_left.axvline(
-                    position, color=ref.color, linewidth=ref.width, linestyle=style
+                    position, color=ref.color, linewidth=ref.width * factor, linestyle=style
                 )
             else:
                 line = ax_left.axhline(
-                    position, color=ref.color, linewidth=ref.width, linestyle=style
+                    position, color=ref.color, linewidth=ref.width * factor, linestyle=style
                 )
             if ref.label:
                 _label_reference_line(ax_left, ref, line)
@@ -255,7 +301,9 @@ def _render_figure(fig, axes, graph: Graph, project: Project) -> None:
                 h2, l2 = ax_right.get_legend_handles_labels()
                 handles, labels = handles + h2, labels + l2
             if labels:
-                ax_left.legend(handles, labels, loc="best", frameon=False)
+                legend = ax_left.legend(handles, labels, loc="best", frameon=False)
+                for text in legend.get_texts():
+                    text.set_color(fg)
 
     for annotation in getattr(graph, "annotations", []):
         axes[0].text(
@@ -264,7 +312,7 @@ def _render_figure(fig, axes, graph: Graph, project: Project) -> None:
             annotation.text,
             transform=axes[0].transAxes,
             color=annotation.color,
-            fontsize=annotation.size,
+            fontsize=annotation.size * factor,
             ha="left",
             va="top",
         )
@@ -273,15 +321,22 @@ def _render_figure(fig, axes, graph: Graph, project: Project) -> None:
         title_kwargs = {}
         if getattr(graph, "title_font_family", ""):
             title_kwargs["fontfamily"] = graph.title_font_family
-        title_kwargs["fontsize"] = getattr(graph, "title_font_size", 14.0) or 14.0
+        title_kwargs["fontsize"] = (getattr(graph, "title_font_size", 14.0) or 14.0) * factor
         if getattr(graph, "title_color", ""):
             title_kwargs["color"] = graph.title_color
+        else:
+            title_kwargs["color"] = fg
         fig.suptitle(graph.title, **title_kwargs)
 
-    try:
-        fig.tight_layout()
-    except Exception:  # noqa: BLE001 - 3D/tight-layout combinations can fail
-        pass
+    # No tight_layout() here: the live canvas uses matplotlib's own subplot
+    # margins, so the export must keep them to place the panels in exactly the
+    # same spots.
+    if graph.title:
+        # Reserve the same top strip the canvas reserves for the figure title.
+        try:
+            fig.subplots_adjust(top=0.90)
+        except Exception:  # noqa: BLE001
+            pass
     if len(axes) > 1:
         try:
             fig.subplots_adjust(
@@ -296,7 +351,10 @@ def _render_figure(fig, axes, graph: Graph, project: Project) -> None:
             pass
 
 
-def _draw(ax, spec, data, color, fig=None, z_label="", y_offset=0.0) -> None:
+def _draw(
+    ax, spec, data, color, fig=None, z_label="", y_offset=0.0, scale: float = 1.0
+) -> None:
+    factor = max(0.05, float(scale or 1.0))
     style = PlotStyle(spec.style)
     label = data.legend or None
     x, y = data.x, data.y
@@ -312,9 +370,9 @@ def _draw(ax, spec, data, color, fig=None, z_label="", y_offset=0.0) -> None:
             data,
             cmap=getattr(spec, "cmap", "viridis"),
             color=color,
-            width=spec.line_width,
+            width=spec.line_width * factor,
             symbol=spec.symbol,
-            symbol_size=spec.symbol_size,
+            symbol_size=spec.symbol_size * factor,
             line_style=ls,
             label=label,
             z_label=z_label or (getattr(data, "z_label", "") or "Value"),
@@ -327,20 +385,20 @@ def _draw(ax, spec, data, color, fig=None, z_label="", y_offset=0.0) -> None:
             y,
             linestyle="none",
             marker=spec.symbol,
-            markersize=spec.symbol_size * 0.6,
+            markersize=spec.symbol_size * 0.6 * factor,
             color=color,
             label=label,
         )
     elif style is PlotStyle.LINE:
-        ax.plot(x, y, color=color, linewidth=spec.line_width, linestyle=ls, label=label)
+        ax.plot(x, y, color=color, linewidth=spec.line_width * factor, linestyle=ls, label=label)
     elif style is PlotStyle.LINE_SYMBOL:
         ax.plot(
             x,
             y,
             color=color,
-            linewidth=spec.line_width,
+            linewidth=spec.line_width * factor,
             marker=spec.symbol,
-            markersize=spec.symbol_size * 0.6,
+            markersize=spec.symbol_size * 0.6 * factor,
             linestyle=ls,
             label=label,
         )
@@ -348,14 +406,14 @@ def _draw(ax, spec, data, color, fig=None, z_label="", y_offset=0.0) -> None:
         ax.bar(x, y, color=color, label=label)
     elif style is PlotStyle.AREA:
         ax.fill_between(x, y, alpha=0.3, color=color)
-        ax.plot(x, y, color=color, linewidth=spec.line_width, linestyle=ls, label=label)
+        ax.plot(x, y, color=color, linewidth=spec.line_width * factor, linestyle=ls, label=label)
     elif style is PlotStyle.STEP:
         ax.step(
             x,
             y,
             where="mid",
             color=color,
-            linewidth=spec.line_width,
+            linewidth=spec.line_width * factor,
             linestyle=ls,
             label=label,
         )
@@ -366,11 +424,11 @@ def _draw(ax, spec, data, color, fig=None, z_label="", y_offset=0.0) -> None:
             yerr=data.yerr,
             xerr=data.xerr,
             color=color,
-            linewidth=spec.line_width,
+            linewidth=spec.line_width * factor,
             linestyle=ls,
             marker=spec.symbol,
-            markersize=spec.symbol_size * 0.6,
-            capsize=3,
+            markersize=spec.symbol_size * 0.6 * factor,
+            capsize=3 * factor,
             label=label,
         )
 

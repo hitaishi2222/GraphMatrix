@@ -64,6 +64,7 @@ from graphmatrix.core.plotting import (
     make_plot_for_column,
     resolve_plot,
 )
+from graphmatrix.core.plot_themes import series_color
 from graphmatrix.ui import theme
 from graphmatrix.ui import plot_themes
 from graphmatrix.ui.canvas import create_canvas
@@ -370,7 +371,8 @@ class GraphView(QWidget):
         self.hover_check = QPushButton("Data readout: off")
         self.hover_check.setCheckable(True)
         self.hover_check.setToolTip(
-            "Show a crosshair and the nearest data point under the mouse"
+            "Show a crosshair and the nearest data point under the mouse "
+            "(the readout appears in the corner of the figure)"
         )
         self.hover_check.toggled.connect(self.set_hover)
         layout.addWidget(self.hover_check)
@@ -383,6 +385,21 @@ class GraphView(QWidget):
     def _selected_spec(self) -> PlotSpec | None:
         item = self.plot_list.currentItem()
         return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+
+    def _mark_active_panel(self) -> None:
+        """Tell the canvas which panel the user is working on.
+
+        In a grid or a stack the canvas highlights that panel and names it
+        ("Panel 2 / 4"), so the sidebar and the figure never disagree.
+        """
+        spec = self._selected_spec()
+        layer = self._layer_for_spec(spec) if spec is not None else self.graph.first_layer
+        layers = self.graph.layers
+        try:
+            index = layers.index(layer)
+        except ValueError:
+            index = 0
+        self.canvas.set_active_panel(index, len(layers))
 
     def _layer_for_spec(self, spec: PlotSpec) -> Layer:
         for layer in self.graph.layers:
@@ -669,6 +686,8 @@ class GraphView(QWidget):
     def refresh(self, select: PlotSpec | None = None) -> None:
         self._refresh_list(select)
         self.render()
+        # The render walks every panel; re-mark the edited one afterwards.
+        self._mark_active_panel()
 
     def on_theme_changed(self) -> None:
         """Re-apply the canvas colours after the app theme switched."""
@@ -727,6 +746,7 @@ class GraphView(QWidget):
 
     def _on_plot_selected(self, row: int) -> None:
         spec = self._selected_spec()
+        self._mark_active_panel()
         self._loading = True
         try:
             if spec is not None:
@@ -909,7 +929,7 @@ class GraphView(QWidget):
             self.canvas.set_scales(
                 x=AxisScale(each.x_scale).value, y=AxisScale(each.y_scale).value
             )
-            for spec in each.plots:
+            for plot_index, spec in enumerate(each.plots):
                 data = resolve_plot(self.project, spec)
                 if data is None:
                     continue
@@ -919,7 +939,9 @@ class GraphView(QWidget):
                     data.x,
                     y,
                     style=PlotStyle(spec.style).value,
-                    color=spec.color,
+                    # The colour is resolved here so a series on a secondary
+                    # axis keeps the palette colour the exporter uses.
+                    color=spec.color or series_color(plot_index),
                     width=spec.line_width,
                     symbol=spec.symbol,
                     symbol_size=spec.symbol_size,

@@ -190,9 +190,15 @@ def colors(preset_id: str | None = None) -> dict[str, str]:
 
 
 def canvas_colors(preset_id: str | None = None) -> tuple[str, str, float]:
-    """Return ``(background, foreground, grid_alpha)`` for the plot canvas."""
-    c = colors(preset_id)
-    return c["canvas_bg"], c["canvas_fg"], float(c["canvas_grid"])
+    """Return ``(background, foreground, grid_alpha)`` for the plot canvas.
+
+    The values come from :mod:`graphmatrix.core.plot_themes` so the canvas and
+    the exporter cannot drift apart.
+    """
+    from graphmatrix.core.plot_themes import APP_CANVAS_THEMES, DEFAULT_APP_THEME
+
+    key = preset_id or _current_preset
+    return APP_CANVAS_THEMES.get(key, APP_CANVAS_THEMES[DEFAULT_APP_THEME])
 
 
 # --- persistence ------------------------------------------------------------
