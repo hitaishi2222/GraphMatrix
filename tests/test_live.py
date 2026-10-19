@@ -45,6 +45,19 @@ def test_header_and_numeric_poll(tmp_path):
     assert rows == [[1.0, 3.0]]
 
 
+def test_crlf_files_are_tailed_with_exact_byte_offsets(tmp_path):
+    """Windows writes "\r\n"; the tailer must not drift on the offsets."""
+    path = tmp_path / "stream.csv"
+    path.write_bytes(b"t,sig\r\n0.0,1.0\r\n0.5,2.0\r\n")
+    src = LiveFileSource(path)
+    assert src.columns() == ["t", "sig"]
+    assert src.poll() == [[0.0, 1.0], [0.5, 2.0]]
+    assert src.poll() == []
+    with open(path, "ab") as fh:
+        fh.write(b"1.0,3.0\r\n")
+    assert src.poll() == [[1.0, 3.0]]
+
+
 def test_headerless_file_and_generic_columns(tmp_path):
     path = tmp_path / "raw.dat"
     write(path, "1 10\n2 20\n")

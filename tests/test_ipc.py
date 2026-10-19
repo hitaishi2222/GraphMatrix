@@ -31,7 +31,7 @@ def bridge(app, monkeypatch):
     bridge = IpcBridge(window)
     # Point the client at this bridge regardless of instance.json state.
     monkeypatch.setattr(
-        "graphmatrix.core.ipc.running_socket_path", lambda: bridge._path
+        "graphmatrix.core.ipc.running_endpoint", lambda: bridge.endpoint
     )
     yield bridge
     bridge.close()
@@ -239,6 +239,29 @@ def test_add_plot_can_replace_a_panel(app, bridge):
     assert res["ok"] is True, res
     graph = bridge.window.project.graph("RG")
     assert [spec.y for spec in graph.first_layer.plots] == ["Y2"]
+
+
+def test_the_tcp_transport_works_too(app, tmp_path, monkeypatch):
+    """Windows has no AF_UNIX, so the bridge can also speak loopback TCP."""
+    from graphmatrix.core.ipc import IpcBridge
+    from graphmatrix.ui.main_window import MainWindow
+
+    monkeypatch.setenv("GRAPHMATRIX_IPC_TRANSPORT", "tcp")
+    window = MainWindow()
+    window.confirm_on_close = False
+    bridge = IpcBridge(window)
+    try:
+        assert bridge.endpoint["kind"] == "tcp"
+        assert bridge.endpoint["port"] > 0
+        monkeypatch.setattr(
+            "graphmatrix.core.ipc.running_endpoint", lambda: bridge.endpoint
+        )
+        res = _rpc(app, "ping")
+        assert res["ok"] is True
+        assert res["project"] == window.project.name
+    finally:
+        bridge.close()
+        window.close()
 
 
 def test_socket_path_is_per_pid_and_unique():

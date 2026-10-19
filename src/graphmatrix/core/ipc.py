@@ -59,9 +59,72 @@ def socket_path(pid: int | None = None, seq: int | None = None) -> str:
     return str(_state_dir() / f"ipc-{pid}{suffix}.sock")
 
 
+def endpoint_path(pid: int | None = None, seq: int | None = None) -> str:
+    """Path of the file describing a GUI instance's bridge endpoint.
+
+    The endpoint is a Unix socket on POSIX and a loopback TCP port on Windows
+    (where ``socket.AF_UNIX`` does not exist), so the file is the portable way
+    for a client to find a running window.
+    """
+    pid = pid if pid is not None else os.getpid()
+    suffix = "" if seq is None else f"-{seq}"
+    return str(_state_dir() / f"ipc-{pid}{suffix}.json")
+
+
+def cleanup_state_dir() -> None:
+    """Remove the files of bridges whose window is gone.
+
+    A killed window cannot clean up after itself, so its socket and endpoint
+    files would pile up in the state directory.
+    """
+    import glob as _glob
+    import re
+
+    pattern = re.compile(r"ipc-(\d+)")
+    for path in _glob.glob(str(_state_dir() / "ipc-*")):
+        match = pattern.search(Path(path).name)
+        if not match:
+            continue
+        pid = int(match.group(1))
+        if pid == os.getpid():
+            continue
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            _unlink(path)  # the owner is gone
+        except Exception:  # noqa: BLE001 - permission problems: keep the file
+            pass
+
+
+def write_endpoint(pid: int | None = None, seq: int | None = None, **fields) -> str:
+    """Publish an endpoint description and return its path."""
+    import json
+
+    path = endpoint_path(pid, seq)
+    payload = {"pid": os.getpid(), **fields}
+    try:
+        Path(path).write_text(json.dumps(payload), encoding="utf-8")
+    except OSError:
+        pass
+    return path
+
+
+def read_endpoint(path: str) -> dict[str, Any] | None:
+    """Read an endpoint description file, or None when it is unusable."""
+    import json
+
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or "kind" not in data:
+        return None
+    return data
+
+
 #: Strong references: keep every bridge alive while its window lives, so Qt's
 #: destructor never unlinks a socket still in use.
-_BRIDGES: list["IpcBridge"] = []
+_BRIDGES: list[IpcBridge] = []
 
 
 def current_window() -> Any | None:
@@ -87,6 +150,8 @@ def running_socket_path() -> str | None:
 
     from graphmatrix.core.instance import get as get_instance
 
+    if not hasattr(socket, "AF_UNIX"):
+        return None  # Windows: the bridge uses a loopback TCP port
     state = _state_dir()
     candidates: list[str] = []
     running = get_instance()
@@ -107,6 +172,68 @@ def running_socket_path() -> str | None:
             _drop_stale_socket(cand)
             continue
     return None
+
+
+def running_endpoint() -> dict[str, Any] | None:
+    """The endpoint of a running GUI, or None when none is alive.
+
+    Looks at the endpoint description files first (they cover both the Unix
+    socket and the Windows loopback port), then falls back to the socket files
+    of older builds.
+    """
+    import glob as _glob
+
+    from graphmatrix.core.instance import get as get_instance
+
+    state = _state_dir()
+    described = sorted(
+        _glob.glob(str(state / "ipc-*.json")), key=os.path.getmtime, reverse=True
+    )
+    running = get_instance()
+    if running:
+        described.sort(key=lambda p: 0 if f"ipc-{running['pid']}" in p else 1)
+    for path in described:
+        endpoint = read_endpoint(path)
+        if endpoint is None:
+            _unlink(path)
+            continue
+        if _endpoint_alive(endpoint):
+            return endpoint
+        _unlink(path)  # the window is gone: drop its description
+    # Older builds only published a socket path.
+    sock = running_socket_path()
+    if sock:
+        return {"kind": "unix", "path": sock}
+    return None
+
+
+def _endpoint_alive(endpoint: dict[str, Any]) -> bool:
+    """True when the endpoint still answers."""
+    if endpoint.get("kind") == "tcp":
+        try:
+            host = str(endpoint.get("host", "127.0.0.1"))
+            port = int(endpoint.get("port", 0))
+            with socket.create_connection((host, port), timeout=2.0):
+                return True
+        except (OSError, ValueError):
+            return False
+    path = endpoint.get("path")
+    if not path:
+        return False
+    try:
+        s = _probe_socket(str(path))
+        s.close()
+        return True
+    except OSError:
+        _drop_stale_socket(str(path))
+        return False
+
+
+def _unlink(path: str) -> None:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
 
 
 def _drop_stale_socket(path: str) -> None:
@@ -136,7 +263,13 @@ def _probe_socket(path: str):
 
 
 class IpcBridge(QObject):
-    """Listens on a per-instance Unix socket and mutates the live window."""
+    """Listens for agents and mutates the live window.
+
+    POSIX uses a Unix-domain socket; platforms without ``socket.AF_UNIX``
+    (Windows) use a loopback TCP port instead. Either way the endpoint is
+    published in a small JSON file next to the other per-instance files, so a
+    plain-socket client can find the window.
+    """
 
     _SEQ = 0
 
@@ -146,27 +279,62 @@ class IpcBridge(QObject):
         IpcBridge._SEQ += 1
         self._seq = IpcBridge._SEQ
         self._path = socket_path(seq=self._seq)
-        self._buffers: dict[QLocalSocket, bytes] = {}
+        self._endpoint_file = endpoint_path(seq=self._seq)
+        self._buffers: dict[Any, bytes] = {}
+        self.server: Any = None
+        self.tcp_server: Any = None
 
-        QLocalServer.removeServer(self._path)  # clear stale socket files
-        self.server = QLocalServer(self)
-        if not self.server.listen(self._path):
-            raise RuntimeError(
-                f"IPC bridge failed to listen on {self._path}: "
-                f"{self.server.errorString()}"
-            )
-        try:
-            os.chmod(self._path, 0o600)  # same-user only
-        except OSError:
-            pass
-        self.server.newConnection.connect(self._on_connection)
+        force_tcp = os.environ.get("GRAPHMATRIX_IPC_TRANSPORT", "").lower() == "tcp"
+        if hasattr(socket, "AF_UNIX") and not force_tcp:
+            QLocalServer.removeServer(self._path)  # clear stale socket files
+            self.server = QLocalServer(self)
+            if not self.server.listen(self._path):
+                raise RuntimeError(
+                    f"IPC bridge failed to listen on {self._path}: "
+                    f"{self.server.errorString()}"
+                )
+            try:
+                os.chmod(self._path, 0o600)  # same-user only
+            except OSError:
+                pass
+            self.server.newConnection.connect(self._on_connection)
+            self._endpoint = {"kind": "unix", "path": self._path}
+        else:
+            from PySide6.QtNetwork import QHostAddress, QTcpServer
+
+            self.tcp_server = QTcpServer(self)
+            if not self.tcp_server.listen(QHostAddress.LocalHost, 0):
+                raise RuntimeError(
+                    "IPC bridge failed to listen on localhost: "
+                    f"{self.tcp_server.errorString()}"
+                )
+            self.tcp_server.newConnection.connect(self._on_tcp_connection)
+            self._endpoint = {
+                "kind": "tcp",
+                "host": "127.0.0.1",
+                "port": int(self.tcp_server.serverPort()),
+            }
+        write_endpoint(seq=self._seq, **self._endpoint)
+        cleanup_state_dir()
         _BRIDGES.append(self)
 
+    @property
+    def endpoint(self) -> dict[str, Any]:
+        """How a client reaches this bridge."""
+        return dict(self._endpoint)
+
     def close(self) -> None:
-        """Stop listening and unlink this bridge's own socket path."""
-        self.server.close()
+        """Stop listening and remove this bridge's own files."""
+        if self.server is not None:
+            self.server.close()
+        if self.tcp_server is not None:
+            self.tcp_server.close()
         try:
             os.unlink(self._path)
+        except OSError:
+            pass
+        try:
+            os.unlink(self._endpoint_file)
         except OSError:
             pass
         if self in _BRIDGES:
@@ -175,19 +343,25 @@ class IpcBridge(QObject):
     # -- server side ---------------------------------------------------------
     def _on_connection(self) -> None:
         while self.server.hasPendingConnections():
-            conn = self.server.nextPendingConnection()
-            conn.readyRead.connect(lambda c=conn: self._on_ready_read(c))
-            conn.disconnected.connect(lambda c=conn: self._drop(c))
-            self._buffers[conn] = b""
+            self._accept(self.server.nextPendingConnection())
 
-    def _drop(self, conn: QLocalSocket) -> None:
+    def _on_tcp_connection(self) -> None:
+        while self.tcp_server.hasPendingConnections():
+            self._accept(self.tcp_server.nextPendingConnection())
+
+    def _accept(self, conn) -> None:
+        conn.readyRead.connect(lambda c=conn: self._on_ready_read(c))
+        conn.disconnected.connect(lambda c=conn: self._drop(c))
+        self._buffers[conn] = b""
+
+    def _drop(self, conn) -> None:
         self._buffers.pop(conn, None)
         try:
             conn.deleteLater()
         except RuntimeError:
             pass  # underlying C++ object already gone
 
-    def _on_ready_read(self, conn: QLocalSocket) -> None:
+    def _on_ready_read(self, conn) -> None:
         buf = self._buffers.setdefault(conn, b"") + bytes(conn.readAll())
         while b"\n" in buf:
             line, buf = buf.split(b"\n", 1)
@@ -195,7 +369,7 @@ class IpcBridge(QObject):
                 self._handle(conn, line)
         self._buffers[conn] = buf
 
-    def _handle(self, conn: QLocalSocket, line: bytes) -> None:
+    def _handle(self, conn, line: bytes) -> None:
         try:
             req = json.loads(line.decode("utf-8"))
             op = req.get("op")
@@ -358,32 +532,44 @@ def request(
     op: str,
     *,
     sock_path: str | None = None,
+    endpoint: dict[str, Any] | None = None,
     timeout: float = DEFAULT_TIMEOUT,
     **payload: Any,
 ) -> dict[str, Any]:
     """Send one request to a running GUI's IPC bridge and return its response."""
-    import socket as _socket
-
-    path = sock_path or running_socket_path()
-    if not path:
-        raise RuntimeError("no running GraphMatrix instance to talk to")
     import time as _time
 
-    sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
-    sock.settimeout(timeout)
+    if endpoint is None and sock_path:
+        endpoint = {"kind": "unix", "path": sock_path}
+    if endpoint is None:
+        endpoint = running_endpoint()
+    if not endpoint:
+        raise RuntimeError("no running GraphMatrix instance to talk to")
+
+    kind = endpoint.get("kind", "unix")
     deadline = _time.monotonic() + timeout
-    while True:
-        try:
-            sock.connect(path)
-            break
-        except (ConnectionRefusedError, FileNotFoundError):
-            # The GUI may still be starting up or busy; retry briefly.
-            if _time.monotonic() >= deadline:
-                raise
-            sock.close()
-            sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
-            sock.settimeout(timeout)
-            _time.sleep(0.1)
+    if kind == "tcp":
+        host = str(endpoint.get("host", "127.0.0.1"))
+        port = int(endpoint.get("port", 0))
+        sock = socket.create_connection((host, port), timeout=timeout)
+    else:
+        path = str(endpoint.get("path", ""))
+        if not path:
+            raise RuntimeError("no running GraphMatrix instance to talk to")
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        while True:
+            try:
+                sock.connect(path)
+                break
+            except (ConnectionRefusedError, FileNotFoundError):
+                # The GUI may still be starting up or busy; retry briefly.
+                if _time.monotonic() >= deadline:
+                    raise
+                sock.close()
+                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                sock.settimeout(timeout)
+                _time.sleep(0.1)
     try:
         sock.sendall(json.dumps({"op": op, **payload}).encode("utf-8") + b"\n")
         buf = b""

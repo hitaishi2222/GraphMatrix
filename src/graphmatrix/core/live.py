@@ -51,11 +51,15 @@ class LiveFileSource:
         Returns ``[]`` for an empty file.
         """
         try:
-            with open(self.path, encoding="utf-8", errors="replace") as fh:
+            # Binary mode: the byte offset of the file is what we track, and
+            # text mode would rewrite "\n" as "\r\n" on Windows and make the
+            # offsets drift.
+            with open(self.path, "rb") as fh:
                 first = fh.readline()
         except OSError:
             return []
-        fields = [f.strip() for f in first.rstrip("\r\n").split(self.delimiter)]
+        line = first.decode("utf-8", errors="replace")
+        fields = [f.strip() for f in line.rstrip("\r\n").split(self.delimiter)]
         if fields and not any(looks_numeric(f) for f in fields):
             self._width = len(fields)
             return fields
@@ -73,14 +77,16 @@ class LiveFileSource:
         if size < self._offset:  # truncated/rewritten: start over
             self._offset = 0
         try:
-            with open(self.path, encoding="utf-8", errors="replace") as fh:
+            with open(self.path, "rb") as fh:
                 fh.seek(self._offset)
                 chunk = fh.read()
         except OSError:
             return []
-        self._offset = self._offset + len(chunk.encode("utf-8"))
+        # The offset counts bytes, so it stays exact whatever the newline
+        # convention of the platform is.
+        self._offset = self._offset + len(chunk)
         rows: list[list[float]] = []
-        for line in chunk.splitlines():
+        for line in chunk.decode("utf-8", errors="replace").splitlines():
             fields = [f.strip() for f in line.split(self.delimiter)]
             # Skip a (re-appearing) header line entirely.
             if fields and not any(looks_numeric(f) for f in fields):
