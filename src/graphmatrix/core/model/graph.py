@@ -270,6 +270,20 @@ class Layer:
     show_y_axis: bool = True  # hide ticks/labels/spine for clean stacked panels
     z_label: str = "Value"  # colourbar / 3D z-axis label
 
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Keep axis scales as :class:`AxisScale` even when set from UI strings.
+
+        Widgets store enum values as plain ``str`` (``"linear"``/``"log"``)
+        when the enum subclasses ``str``; normalising here means every consumer
+        (export, canvas, code generator) can rely on ``.value``.
+        """
+        if name in ("x_scale", "y_scale"):
+            try:
+                value = AxisScale(value)
+            except (TypeError, ValueError):
+                value = AxisScale.LINEAR
+        super().__setattr__(name, value)
+
     def add_plot(self, spec: PlotSpec) -> PlotSpec:
         self.plots.append(spec)
         return spec

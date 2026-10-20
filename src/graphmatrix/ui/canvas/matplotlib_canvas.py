@@ -2,17 +2,27 @@
 
 Because the live canvas and the publication exporter both render through
 matplotlib, what you see on screen is exactly what you get on export.
+
+The figure sits on a *workspace* like a sheet of paper on a desk: the
+surrounding area belongs to the application, the figure itself is a clearly
+bounded surface ("artboard"). That makes it obvious which part of the screen
+is the figure, and that part is what the exporter writes out.
 """
 
 from __future__ import annotations
 
+import math
 import sys
+
 import numpy as np
 
 sys.setrecursionlimit(10000)
 
+from PySide6.QtCore import QEvent, QObject, QPoint, Qt, Signal
+from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
+
 from .base import PlotCanvas
-from .overlay import CanvasOverlay, watch_container
+from .overlay import CanvasOverlay, CanvasTools, watch_container
 
 _LINESTYLES = {
     "solid": "-",
@@ -27,29 +37,119 @@ def _ls(name: str) -> object:
     return _LINESTYLES.get((name or "solid").lower(), "-")
 
 
+def _shade(color: str, factor: float) -> str:
+    """Darken a colour towards black (``factor`` 0 = black, 1 = unchanged)."""
+    text = (color or "").lstrip("#")
+    if len(text) != 6:
+        return color
+    try:
+        r, g, b = (int(text[i : i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        return color
+    return "#%02x%02x%02x" % (
+        int(r * factor),
+        int(g * factor),
+        int(b * factor),
+    )
+
+
+def _make_canvas_class():
+    """A matplotlib canvas that reports Ctrl+wheel zooms.
+
+    matplotlib turns the wheel into a "scroll" event, which does nothing when
+    no scrollable axes is set - so Ctrl+wheel never zoomed. The zoom is
+    handled here instead, on the panel under the pointer.
+    """
+    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+
+    class ZoomCanvas(FigureCanvasQTAgg):
+        ctrl_wheel = Signal(float, QPoint)
+
+        def wheelEvent(self, event):  # noqa: N802 - Qt override
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                steps = event.angleDelta().y() / 120.0
+                if not steps:
+                    steps = event.pixelDelta().y()
+                if steps:
+                    self.ctrl_wheel.emit(steps, event.position().toPoint())
+                event.accept()
+                return
+            super().wheelEvent(event)
+
+    return ZoomCanvas
+
+
+class _WorkspaceWatcher(QObject):
+    """Keeps the tool strip in the band above the figure."""
+
+    def __init__(self, container: QWidget, tools: CanvasTools) -> None:
+        super().__init__(container)
+        self._container = container
+        self._tools = tools
+        container.installEventFilter(self)
+        self._place()
+
+    def _place(self) -> None:
+        size = self._tools.sizeHint()
+        self._tools.resize(size)
+        margins = self._container.layout().contentsMargins()
+        band = max(margins.top(), size.height())
+        y = max(0, (band - size.height()) // 2)
+        self._tools.move(
+            max(0, self._container.width() - size.width() - 10),
+            y,
+        )
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 - Qt override
+        if event.type() == QEvent.Type.Resize:
+            self._place()
+        return False
+
+
 class MatplotlibCanvas(PlotCanvas):
     """A matplotlib FigureCanvasQTAgg-backed 2D canvas."""
 
     def __init__(self) -> None:
         from matplotlib.figure import Figure
-        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
-        from PySide6.QtWidgets import QVBoxLayout, QWidget
 
         self._fig = Figure()
-        self._canvas = FigureCanvasQTAgg(self._fig)
+        # Constrained layout keeps every panel's tick labels, axis labels and
+        # legend in their own space (the exporter uses the same engine, so the
+        # preview and the exported file agree).
+        try:
+            self._fig.set_layout_engine("constrained", wspace=0.0, hspace=0.0)
+        except Exception:  # noqa: BLE001 - older matplotlib
+            pass
+        self._canvas = _make_canvas_class()(self._fig)
+        self._canvas.ctrl_wheel.connect(self._on_ctrl_wheel)
+
+        # The workspace holds the figure like a sheet on a desk; the figure
+        # itself is the "artboard" and is what gets exported.
         self._container = QWidget()
+        self._container.setObjectName("canvasWorkspace")
         lay = QVBoxLayout(self._container)
-        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setContentsMargins(14, 46, 14, 14)
         lay.setSpacing(0)
-        lay.addWidget(self._canvas)
-        # The tool buttons, the panel marker and the readout float above the
-        # plot as plain widgets, so they can never end up in an export.
-        self._overlay = CanvasOverlay(self._container)
-        self._overlay.zoom_in_requested.connect(self.zoom_in)
-        self._overlay.zoom_out_requested.connect(self.zoom_out)
-        self._overlay.fit_requested.connect(self.fit)
-        self._overlay.hover_toggled.connect(self.set_hover)
-        self._watcher = watch_container(self._container, self._overlay)
+        self._frame = QFrame()
+        self._frame.setObjectName("canvasArtboard")
+        frame_layout = QVBoxLayout(self._frame)
+        frame_layout.setContentsMargins(0, 0, 0, 0)
+        frame_layout.setSpacing(0)
+        frame_layout.addWidget(self._canvas)
+        lay.addWidget(self._frame)
+        # The tool buttons live on the workspace, above the figure, so they
+        # never cover the plot and are always clickable.
+        self._tools = CanvasTools(self._container)
+        self._tools.zoom_in_requested.connect(self.zoom_in)
+        self._tools.zoom_out_requested.connect(self.zoom_out)
+        self._tools.fit_requested.connect(self.fit)
+        self._tools.hover_toggled.connect(self.set_hover)
+        self.zoom_changed = self._update_zoom_label
+        self._tools_watcher = _WorkspaceWatcher(self._container, self._tools)
+        # The panel marker and the hover readout float above
+        # the figure as plain widgets, so they can never end up in an export.
+        self._overlay = CanvasOverlay(self._canvas)
+        self._watcher = watch_container(self._canvas, self._overlay)
         self._grid_rows = 1
         self._grid_cols = 1
         self._gap_x = 0.0
@@ -61,13 +161,20 @@ class MatplotlibCanvas(PlotCanvas):
         self._right_axes: dict[int, object] = {}
         self._series: list[tuple[np.ndarray, np.ndarray, str]] = []
         self._series_meta: list[dict] = []  # brush/click bookkeeping per series
+        self._artists: list[dict] = []  # the drawn artist of every series
+        self._selected_series: int | None = None
+        self._hover_panel: int | None = None
         self._brush_artists: list = []
         self._hover_enabled = False
         self._hover_cid = None
         self._theme_fg = ""
+        self._theme_accent = "#4c8dff"
         self._active_panel = 0
         self._canvas.mpl_connect("button_press_event", self._on_button_press)
         self._canvas.mpl_connect("draw_event", self._on_draw)
+        # The panel under the pointer is tracked always (not only while the
+        # readout is on), so the zoom tools always act on the right panel.
+        self._canvas.mpl_connect("motion_notify_event", self._track_pointer)
         self.label_click_callback = None
         self.set_theme("classic-dark")
 
@@ -75,8 +182,33 @@ class MatplotlibCanvas(PlotCanvas):
     def widget(self):
         return self._container
 
+    def artboard(self):
+        """The widget that shows the figure itself (the exportable surface)."""
+        return self._frame
+
+    def current_limits(self) -> list[tuple[float, float, float, float]]:
+        """The limits of every panel, in the order the panels are drawn.
+
+        The exporter uses them so a zoomed or panned view is exported the
+        way it is on screen (what you see is what you get).
+        """
+        limits: list[tuple[float, float, float, float]] = []
+        for ax in self._axes:
+            try:
+                x0, x1 = ax.get_xlim()
+                y0, y1 = ax.get_ylim()
+            except Exception:  # noqa: BLE001 - the panel may not be scaled yet
+                limits.append((0.0, 1.0, 0.0, 1.0))
+                continue
+            limits.append((float(x0), float(x1), float(y0), float(y1)))
+        return limits
+
     def clear(self) -> None:
         self._fig.clear()
+        try:
+            self._fig.set_layout_engine("constrained", wspace=self._gap_x, hspace=self._gap_y)
+        except Exception:  # noqa: BLE001 - older matplotlib
+            pass
         rows = max(1, getattr(self, "_grid_rows", 1))
         cols = max(1, getattr(self, "_grid_cols", 1))
         if rows * cols > 1:
@@ -89,6 +221,9 @@ class MatplotlibCanvas(PlotCanvas):
         self._right_axes = {}
         self._series = []
         self._series_meta = []
+        self._artists = []
+        self._selected_series = None
+        self._hover_panel = None
         self._brush_artists = []
         # re-apply theme colours to the fresh axes
         try:
@@ -111,9 +246,15 @@ class MatplotlibCanvas(PlotCanvas):
         self._canvas.draw_idle()
 
     def _apply_gaps(self) -> None:
+        # The panel gaps are the spacing between the panels of the constrained
+        # layout engine. (Calling subplots_adjust() would switch the engine
+        # off, so the gaps go through the engine instead.)
+        engine = self._fig.get_layout_engine()
+        if engine is None or not hasattr(engine, "set"):
+            return
         try:
-            self._fig.subplots_adjust(wspace=self._gap_x, hspace=self._gap_y)
-        except Exception:  # noqa: BLE001 - no subplots yet / tight layout pending
+            engine.set(wspace=self._gap_x, hspace=self._gap_y)
+        except Exception:  # noqa: BLE001 - no subplots yet
             pass
 
     def set_current_panel(self, index: int) -> None:
@@ -198,15 +339,12 @@ class MatplotlibCanvas(PlotCanvas):
                 label=lbl,
                 z_label="Value",
             )
-            try:
-                self._fig.tight_layout()
-            except Exception:  # noqa: BLE001
-                pass
+            # The constrained layout engine handles the spacing here too.
             self._canvas.draw_idle()
             return
 
         if style == "scatter":
-            ax.plot(
+            artist = ax.plot(
                 xs,
                 ys,
                 linestyle="none",
@@ -214,11 +352,13 @@ class MatplotlibCanvas(PlotCanvas):
                 markersize=ms,
                 color=col,
                 label=lbl,
-            )
+            )[0]
         elif style == "line":
-            ax.plot(xs, ys, color=col, linewidth=width, linestyle=ls, label=lbl)
+            artist = ax.plot(
+                xs, ys, color=col, linewidth=width, linestyle=ls, label=lbl
+            )[0]
         elif style == "line+symbol" or style == "line_symbol":
-            ax.plot(
+            artist = ax.plot(
                 xs,
                 ys,
                 color=col,
@@ -227,18 +367,20 @@ class MatplotlibCanvas(PlotCanvas):
                 markersize=ms,
                 linestyle=ls,
                 label=lbl,
-            )
+            )[0]
         elif style == "bar":
-            ax.bar(xs, ys, color=col, label=lbl)
+            artist = ax.bar(xs, ys, color=col, label=lbl)
         elif style == "area":
             ax.fill_between(xs, ys, alpha=0.3, color=col)
-            ax.plot(xs, ys, color=col, linewidth=width, linestyle=ls, label=lbl)
+            artist = ax.plot(
+                xs, ys, color=col, linewidth=width, linestyle=ls, label=lbl
+            )[0]
         elif style == "step":
-            ax.step(
+            artist = ax.step(
                 xs, ys, where="mid", color=col, linewidth=width, linestyle=ls, label=lbl
-            )
+            )[0]
         elif style == "errorbar" or style == "error bar":
-            ax.errorbar(
+            artist = ax.errorbar(
                 xs,
                 ys,
                 yerr=yerr,
@@ -250,9 +392,11 @@ class MatplotlibCanvas(PlotCanvas):
                 markersize=ms,
                 capsize=3,
                 label=lbl,
-            )
+            )[0]
         else:
-            ax.plot(xs, ys, color=col, linewidth=width, linestyle=ls, label=lbl)
+            artist = ax.plot(
+                xs, ys, color=col, linewidth=width, linestyle=ls, label=lbl
+            )[0]
 
         if yerr is not None and style not in ("errorbar", "error bar"):
             ax.errorbar(
@@ -269,6 +413,36 @@ class MatplotlibCanvas(PlotCanvas):
 
         self._record_series_meta(xs_s, ys_s, rows_s, ax, ms)
         self._series.append((xs_s, ys_s, name or ""))
+        self._artists.append(
+            {"artist": artist, "marker_size": ms, "width": width, "axes": ax}
+        )
+        self._canvas.draw_idle()
+
+    # -- selection ----------------------------------------------------------
+    def set_selected_series(self, index: int | None) -> None:
+        """Highlight the series that is selected in the sidebar.
+
+        The chosen curve gets bigger symbols and a halo, so it is obvious
+        which line the properties are about.
+        """
+        self._selected_series = index
+        accent = self._theme_accent or "#4c8dff"
+        for position, info in enumerate(self._artists):
+            artist = info.get("artist")
+            if artist is None:
+                continue
+            chosen = position == index
+            try:
+                artist.set_markersize(
+                    float(info.get("marker_size", 6.0)) * (1.9 if chosen else 1.0)
+                )
+                artist.set_markeredgecolor(accent if chosen else "none")
+                artist.set_markeredgewidth(1.4)
+                artist.set_linewidth(
+                    float(info.get("width", 1.5)) * (1.7 if chosen else 1.0)
+                )
+            except Exception:  # noqa: BLE001 - collections have no markers
+                continue
         self._canvas.draw_idle()
 
     # -- overlay (tools, panel marker, readout) -----------------------------
@@ -287,6 +461,14 @@ class MatplotlibCanvas(PlotCanvas):
             len(axes),
             self._panel_rect(axes[index]),
         )
+        self._update_zoom_label()
+
+    def _update_zoom_label(self) -> None:
+        """Show the current zoom of the panel in the tool strip."""
+        try:
+            self._tools.set_zoom_level(self.zoom_factor())
+        except Exception:  # noqa: BLE001 - the label must never break a draw
+            pass
 
     def set_active_panel(self, index: int, total: int | None = None) -> None:
         """Mark the panel the user is editing (grid / stack layouts)."""
@@ -296,12 +478,23 @@ class MatplotlibCanvas(PlotCanvas):
         ax = axes[self._active_panel] if self._active_panel < len(axes) else self._ax_left
         self._overlay.set_panel(self._active_panel, count, self._panel_rect(ax))
 
-    def _display_ratio(self) -> float:
-        """Device pixels per logical pixel (HiDPI screens report 1.25, 1.5, …)."""
-        try:
-            return float(self._canvas.devicePixelRatioF() or 1.0)
-        except Exception:  # noqa: BLE001
-            return 1.0
+    def _display_to_widget(self, x: float, y: float) -> QPoint:
+        """Matplotlib display coordinates -> widget pixels.
+
+        Matplotlib measures from the bottom left of the figure, Qt from the
+        top left, so the y axis is flipped. The scale is the geometric one:
+        the figure's drawing area mapped onto the widget, which is exact
+        whatever the dpi and the device pixel ratio happen to be.
+        """
+        bbox = self._fig.bbox
+        fig_w = float(bbox.width) or 1.0
+        fig_h = float(bbox.height) or 1.0
+        widget_w = float(self._canvas.width()) or 1.0
+        widget_h = float(self._canvas.height()) or 1.0
+        return QPoint(
+            int(round(float(x) / fig_w * widget_w)),
+            int(round((fig_h - float(y)) / fig_h * widget_h)),
+        )
 
     def _panel_rect(self, ax) -> object:
         """The axes' area in widget pixels (Qt origin: top left)."""
@@ -313,44 +506,193 @@ class MatplotlibCanvas(PlotCanvas):
             bbox = ax.get_window_extent()
         except Exception:  # noqa: BLE001 - the figure may not be laid out yet
             return None
-        ratio = self._display_ratio()
-        height = float(self._fig.bbox.height)
+        top_left = self._display_to_widget(bbox.x0, bbox.y1)
+        bottom_right = self._display_to_widget(bbox.x1, bbox.y0)
         return QRect(
-            int(bbox.x0 / ratio),
-            int((height - bbox.y1) / ratio),
-            max(0, int(bbox.width / ratio)),
-            max(0, int(bbox.height / ratio)),
+            int(top_left.x()),
+            int(top_left.y()),
+            max(0, int(bottom_right.x() - top_left.x())),
+            max(0, int(bottom_right.y() - top_left.y())),
         )
 
     def zoom_in(self) -> None:
         """Zoom the current panel in around its centre."""
         self._scale_limits(1 / 1.25)
+        self._notify_zoom_changed()
 
     def zoom_out(self) -> None:
         """Zoom the current panel out around its centre."""
         self._scale_limits(1.25)
+        self._notify_zoom_changed()
+
+    def zoom_factor(self) -> float:
+        """How much of the data the panel shows (``1.0`` = all of it).
+
+        The ratio is taken from the axes' data limits, so it follows the real
+        data instead of counting button presses.
+        """
+        ax = self._zoom_target()
+        if ax is None:
+            return 1.0
+        try:
+            x0, x1 = ax.get_xlim()
+            y0, y1 = ax.get_ylim()
+            data = ax.dataLim
+            dx = float(data.width)
+            dy = float(data.height)
+        except Exception:  # noqa: BLE001 - the axes may not be scaled yet
+            return 1.0
+        factors = []
+        if dx > 0:
+            factors.append(dx / abs(x1 - x0))
+        if dy > 0:
+            factors.append(dy / abs(y1 - y0))
+        if not factors:
+            return 1.0
+        return max(1.0, min(factors))
+
+    def _zoom_target(self):
+        """The panel the tools act on.
+
+        It is the panel the pointer was over last; if the pointer never was
+        over the figure, the panel that is being edited is used.
+        """
+        if self._hover_panel is not None and 0 <= self._hover_panel < len(self._axes):
+            return self._axes[self._hover_panel]
+        return self._ax_left
+
+    def _target_and_twin(self):
+        """The panel the tools act on and its secondary axis."""
+        ax = self._zoom_target()
+        right = None
+        for index, candidate in enumerate(self._axes):
+            if candidate is ax:
+                right = self._right_axes.get(index)
+                break
+        return ax, right
 
     def _scale_limits(self, factor: float) -> None:
-        for ax in (self._ax_left, self._ax_right):
-            if ax is None:
+        ax, right = self._target_and_twin()
+        for target in (ax, right):
+            if target is None:
                 continue
             try:
-                x0, x1 = ax.get_xlim()
-                y0, y1 = ax.get_ylim()
+                x0, x1 = target.get_xlim()
+                y0, y1 = target.get_ylim()
             except Exception:  # noqa: BLE001
                 continue
             cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
-            ax.set_xlim(cx + (x0 - cx) * factor, cx + (x1 - cx) * factor)
-            ax.set_ylim(cy + (y0 - cy) * factor, cy + (y1 - cy) * factor)
+            target.set_xlim(cx + (x0 - cx) * factor, cx + (x1 - cx) * factor)
+            target.set_ylim(cy + (y0 - cy) * factor, cy + (y1 - cy) * factor)
         self._canvas.draw_idle()
 
     def fit(self) -> None:
         """Reset the panel to the data's own limits."""
-        for ax in (self._ax_left, self._ax_right):
+        ax, right = self._target_and_twin()
+        for target in (ax, right):
+            if target is None:
+                continue
+            try:
+                target.autoscale()
+            except Exception:  # noqa: BLE001
+                continue
+        self._canvas.draw_idle()
+        self._notify_zoom_changed()
+
+    # -- Ctrl+wheel zoom ----------------------------------------------------
+    def _on_ctrl_wheel(self, steps: float, position: QPoint) -> None:
+        """Zoom the panel under the pointer (Ctrl+wheel).
+
+        The pointer stays on the same data point, so the zoom reads like
+        moving a magnifying glass over the plot.
+        """
+        from graphmatrix.ui import preferences
+
+        if not preferences.get("canvas/wheel_zoom", True):
+            return
+        ax = self._axes_at(position)
+        if ax is None:
+            return
+        factor = 1.25 ** (-float(steps))
+        try:
+            xdata, ydata = ax.transData.inverted().transform(
+                (position.x(), position.y())
+            )
+        except Exception:  # noqa: BLE001 - the axes may not be scaled yet
+            return
+        self._zoom_axis(ax, "x", xdata, factor)
+        self._zoom_axis(ax, "y", ydata, factor)
+        self._canvas.draw_idle()
+        self._notify_zoom_changed()
+
+    def _axes_at(self, position: QPoint):
+        """The panel of the figure under a widget position."""
+        for ax in self._axes:
             if ax is None:
                 continue
             try:
-                ax.autoscale()
+                bbox = ax.get_window_extent()
+            except Exception:  # noqa: BLE001 - the figure may not be laid out
+                continue
+            if bbox.contains(position.x(), position.y()):
+                return ax
+        return None
+
+    def _zoom_axis(self, ax, which: str, center: float, factor: float) -> None:
+        """Scale one axis around ``center`` (data or log space)."""
+        try:
+            if which == "x":
+                low, high = ax.get_xlim()
+                scale = ax.get_xscale()
+            else:
+                low, high = ax.get_ylim()
+                scale = ax.get_yscale()
+        except Exception:  # noqa: BLE001
+            return
+        if scale == "log":
+            if center <= 0 or low <= 0 or high <= 0:
+                return
+            log_center = math.log10(center)
+            new_low = 10 ** (log_center + (math.log10(low) - log_center) * factor)
+            new_high = 10 ** (log_center + (math.log10(high) - log_center) * factor)
+        else:
+            new_low = center + (low - center) * factor
+            new_high = center + (high - center) * factor
+        if new_low == new_high:
+            return
+        try:
+            if which == "x":
+                ax.set_xlim(new_low, new_high)
+            else:
+                ax.set_ylim(new_low, new_high)
+        except Exception:  # noqa: BLE001
+            return
+
+    def share_y_across_panels(self) -> None:
+        """Give every panel the same Y range (the X-Twin layout).
+
+        An X-Twin shows two panels side by side that share their Y axis, so
+        both must be scaled to the same data range - otherwise the halves
+        cannot be compared by eye.
+        """
+        low = None
+        high = None
+        for ax in self._axes:
+            if ax is None:
+                continue
+            try:
+                bottom, top = ax.get_ylim()
+            except Exception:  # noqa: BLE001 - not scaled yet
+                continue
+            low = bottom if low is None else min(low, bottom)
+            high = top if high is None else max(high, top)
+        if low is None or high is None or low == high:
+            return
+        for ax in self._axes:
+            if ax is None:
+                continue
+            try:
+                ax.set_ylim(low, high)
             except Exception:  # noqa: BLE001
                 continue
         self._canvas.draw_idle()
@@ -471,8 +813,17 @@ class MatplotlibCanvas(PlotCanvas):
         self._canvas.draw_idle()
 
     def set_hover(self, enabled: bool) -> None:
-        self._hover_enabled = bool(enabled)
+        enabled = bool(enabled)
+        changed = enabled != self._hover_enabled
+        self._hover_enabled = enabled
         self._overlay.set_hover_enabled(self._hover_enabled)
+        self._tools.set_hover_checked(self._hover_enabled)
+        if changed:
+            # Tell the owner, so the sidebar button and the menu entry show
+            # the same state as the button on the canvas.
+            callback = getattr(self, "hover_state_changed", None)
+            if callable(callback):
+                callback(enabled)
         if enabled and self._hover_cid is None:
             self._hover_cid = self._canvas.mpl_connect(
                 "motion_notify_event", self._on_hover
@@ -480,7 +831,7 @@ class MatplotlibCanvas(PlotCanvas):
         elif (not enabled) and self._hover_cid is not None:
             self._canvas.mpl_disconnect(self._hover_cid)
             self._hover_cid = None
-            self._remove_crosshair()
+            self._clear_readout()
             self._canvas.draw_idle()
 
     def add_annotation(self, text, x, y, *, color="#000000", size=11.0) -> None:
@@ -512,12 +863,8 @@ class MatplotlibCanvas(PlotCanvas):
         # readable on a dark canvas.
         kwargs["color"] = color or getattr(self, "_theme_fg", "") or "#000000"
         self._fig.suptitle(text, **kwargs)
-        # Reserve a strip at the top so a centred figure title never overlaps
-        # the first row of panels (grid/stack/x-twin layouts).
-        try:
-            self._fig.subplots_adjust(top=0.90)
-        except Exception:  # noqa: BLE001 - no axes yet / matplotlib edge cases
-            pass
+        # The constrained layout engine reserves the strip the figure title
+        # needs, so the title never overlaps the first row of panels.
         self._canvas.draw_idle()
 
     def set_labels(
@@ -615,6 +962,10 @@ class MatplotlibCanvas(PlotCanvas):
                 legend = self._ax_left.legend(
                     handles, labels, loc="best", frameon=False
                 )
+                # The tool strip floats in the top-right corner of the figure,
+                # so a legend that would land there moves out of its way.
+                if getattr(legend, "_loc", 0) == 1:  # "upper right"
+                    legend.set_loc("lower right")
                 # Keep the legend readable on a dark canvas.
                 fg = getattr(self, "_theme_fg", "")
                 if fg:
@@ -632,8 +983,11 @@ class MatplotlibCanvas(PlotCanvas):
 
         bg, fg, grid_alpha = resolve_theme(preset, theme.current_preset())
         self._theme_fg = fg
+        self._theme_accent = theme.colors().get("accent", "#4c8dff")
         self._fig.patch.set_facecolor(bg)
         self._overlay.set_colors(bg, fg)
+        self._tools.refresh_theme()
+        self._apply_workspace_colors(bg)
         axes = list(getattr(self, "_axes", []))
         for right in getattr(self, "_right_axes", {}).values():
             if right is not None and right not in axes:
@@ -657,23 +1011,90 @@ class MatplotlibCanvas(PlotCanvas):
         self._canvas.draw_idle()
 
     # -- hover helpers ------------------------------------------------------
+    def _apply_workspace_colors(self, figure_bg: str) -> None:
+        """Paint the workspace around the figure and the frame of the artboard.
+
+        The workspace uses the application colours, the artboard the figure's
+        own background, so the figure reads as a sheet on a desk.
+        """
+        from graphmatrix.ui import theme
+
+        palette = theme.colors()
+        workspace = _shade(palette.get("window", "#202124"), 0.6)
+        border = palette.get("border", "#3a3d42")
+        self._container.setStyleSheet(
+            f"QWidget#canvasWorkspace {{ background: {workspace}; }}"
+        )
+        self._frame.setStyleSheet(
+            f"QFrame#canvasArtboard {{ background: {figure_bg};"
+            f" border: 1px solid {border}; }}"
+        )
+
+    def _track_pointer(self, event) -> None:
+        """Remember the panel the pointer is over (for the zoom tools)."""
+        axes = getattr(event, "inaxes", None)
+        if axes is None:
+            return
+        try:
+            self._hover_panel = self._axes.index(axes)
+        except ValueError:
+            self._hover_panel = None
+
+    def _show_picked_point(self, series_index: int, row: int) -> None:
+        """Show the values of the point the user just clicked."""
+        if not 0 <= series_index < len(self._series):
+            return
+        xs, ys, name = self._series[series_index]
+        meta = (
+            self._series_meta[series_index]
+            if series_index < len(self._series_meta)
+            else None
+        )
+        index = None
+        if meta is not None and "rows" in meta:
+            matches = np.where(np.asarray(meta["rows"]) == int(row))[0]
+            if matches.size:
+                index = int(matches[0])
+        if index is None:
+            index = int(np.argmin(np.abs(xs - (xs[0] if xs.size else 0.0))))
+        if not xs.size:
+            return
+        self._overlay.set_readout(
+            f"{name}:   x = {float(xs[index]):.4g}    y = {float(ys[index]):.4g}",
+            force=True,
+        )
+
     def _on_hover(self, event) -> None:
         from PySide6.QtCore import QPoint
 
         if not self._hover_enabled:
             return
-        if event.inaxes not in (self._ax_left, self._ax_right):
+        axes = getattr(event, "inaxes", None)
+        if axes is None:
             return
-        # The crosshair is drawn by the overlay (a plain widget), not by
-        # matplotlib, so it can never end up in an exported figure.
-        ratio = self._display_ratio()
-        self._overlay.set_crosshair(
-            QPoint(int(event.x / ratio), int(event.y / ratio))
-        )
-
+        # The pointer may be over any panel of the figure, not only the one
+        # that is being edited.
+        panels = set(self._axes) | {
+            ax for ax in self._right_axes.values() if ax is not None
+        }
+        if axes not in panels:
+            return
+        # Remember the panel under the pointer: the zoom and the fit work on
+        # it, like every other drawing program.
+        try:
+            self._hover_panel = self._axes.index(axes)
+        except ValueError:
+            self._hover_panel = None
+        # The readout of the point under the pointer. There is deliberately no
+        # crosshair: a cross that spans the whole figure would pretend that
+        # a stack, a twin or a grid of panels is one single plot.
         best = None
-        for xs, ys, name in self._series:
+        for index, (xs, ys, name) in enumerate(self._series):
             if xs.size == 0:
+                continue
+            # Only the series of the panel under the pointer are candidates.
+            meta = self._series_meta[index] if index < len(self._series_meta) else None
+            if meta is not None and meta.get("ax") is not axes:
                 continue
             idx = int(np.searchsorted(xs, event.xdata))
             for cand in (idx - 1, idx):
@@ -689,9 +1110,8 @@ class MatplotlibCanvas(PlotCanvas):
             self._overlay.set_readout("")
         self._canvas.draw_idle()
 
-    def _remove_crosshair(self) -> None:
-        """Clear the crosshair and the readout (the overlay owns both)."""
-        self._overlay.set_crosshair(None)
+    def _clear_readout(self) -> None:
+        """Clear the readout (the overlay owns it)."""
         self._overlay.set_readout("")
 
     def _on_button_press(self, event) -> None:
@@ -705,6 +1125,7 @@ class MatplotlibCanvas(PlotCanvas):
             ):
                 picked = self._pick_point(event)
                 if picked is not None:
+                    self._show_picked_point(picked[0], picked[1])
                     self.point_picked(*picked)
                     return
         except Exception:  # noqa: BLE001 - picking must never break plotting

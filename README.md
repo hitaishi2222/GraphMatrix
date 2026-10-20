@@ -127,6 +127,12 @@ testable, headless-batchable, and free to be accelerated later without touching 
   import, and a batch analysis pipeline (recipe → per-file report + figure).
 - **Appearance** — four theme presets (Classic/Modern × Dark/Light) with matching
   plot-canvas colours, switchable from **View → Theme** and remembered between runs.
+- **Preferences** — **View → Preferences…** (`Ctrl+,`) holds the theme, the
+  decimals of new columns, the `Ctrl`+wheel zoom, the default export format /
+  DPI / size, and whether unsaved changes may be discarded silently.
+- **Discoverability** — the toolbar shows an icon and a label for every action
+  (and its shortcut in the tooltip), the welcome page lists the shortcuts worth
+  knowing, and **F1** opens a searchable list of all of them.
 
 ## Command-line interface
 
@@ -224,11 +230,16 @@ A ready-made skill for assistants lives in
 
 - `Ctrl+N` New project · `Ctrl+O` Open · `Ctrl+S` Save
 - `Ctrl+Z` / `Ctrl+Shift+Z` Undo / Redo
-- `Ctrl+Shift+P` Command palette
+- `Ctrl+Shift+P` Command palette · `F1` All keyboard shortcuts
+- `Ctrl+W` Close tab · `Ctrl+E` Export the active graph · `Ctrl+,` Preferences
+- `Ctrl+=` / `Ctrl+-` / `Ctrl+0` Zoom in / out / fit the active panel
 - `F2` Rename selected object / column
 - `Ctrl+Alt+N` / `Ctrl+Alt+C` Add row / column at the end of the active sheet
 - `Ctrl+Alt+=` Insert rows above the selection
 - `Ctrl+Alt+-` / `Ctrl+Alt+Shift+-` Delete selected rows / columns
+
+`Help → Keyboard Shortcuts…` shows the full, searchable list. On macOS the
+`Ctrl` keys are the Command key.
 
 ## Troubleshooting
 

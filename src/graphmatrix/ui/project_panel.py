@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from PySide6.QtCore import QByteArray, Qt, Signal
+from PySide6.QtCore import QByteArray, QEvent, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QMenu,
@@ -68,6 +68,9 @@ class ProjectPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._project: Project | None = None
+        #: True while the tree rebuilds itself, so the restored selection does
+        #: not look like a user click (which would switch the active tab).
+        self._restoring = False
         #: Keep Python references to context-menu submenus; PySide otherwise
         #: deletes them when the local wrapper is garbage-collected.
         self._menu_refs: list[QMenu] = []
@@ -83,6 +86,8 @@ class ProjectPanel(QWidget):
         self.tree.customContextMenuRequested.connect(self._on_context_menu)
         self.tree.itemDoubleClicked.connect(self._on_double_click)
         self.tree.itemSelectionChanged.connect(self._on_selection_changed)
+        self.tree.installEventFilter(self)
+        self.tree.viewport().installEventFilter(self)
         layout.addWidget(self.tree)
 
     # -- public API ----------------------------------------------------------
@@ -95,8 +100,14 @@ class ProjectPanel(QWidget):
         return item.data(0, _ROLE_OBJ) if item is not None else None
 
     def refresh(self) -> None:
+        # Keep the selection across a rebuild: the tree is rebuilt after
+        # every edit, and losing the selection would empty the Properties
+        # panel and switch the canvas away from the object being edited.
+        selected = self.current_object()
+        self._restoring = True
         self.tree.clear()
         if self._project is None:
+            self._restoring = False
             return
 
         project_item = QTreeWidgetItem([self._project.name])
@@ -147,7 +158,66 @@ class ProjectPanel(QWidget):
             for j in range(child.childCount()):
                 child.child(j).setExpanded(True)
 
+        if selected is not None:
+            item = self._find_item(selected)
+            if item is not None:
+                self.tree.setCurrentItem(item)
+        self._restoring = False
+
+    def select_object(self, obj) -> None:
+        """Select ``obj`` in the tree without reacting to the selection.
+
+        Used to keep the tree in step with the active tab, so the tree, the
+        Properties panel and the canvas always talk about the same object.
+        """
+        if obj is None:
+            return
+        item = self._find_item(obj)
+        if item is None:
+            return
+        self._restoring = True
+        try:
+            self.tree.setCurrentItem(item)
+        finally:
+            self._restoring = False
+
+    def _find_item(self, obj) -> QTreeWidgetItem | None:
+        """The tree item that stands for ``obj`` (by identity)."""
+        root = self.tree.invisibleRootItem()
+        for index in range(root.childCount()):
+            item = root.child(index)
+            found = self._find_item_in(item, obj)
+            if found is not None:
+                return found
+        return None
+
+    @staticmethod
+    def _find_item_in(item: QTreeWidgetItem, obj) -> QTreeWidgetItem | None:
+        if item.data(0, _ROLE_OBJ) is obj:
+            return item
+        for index in range(item.childCount()):
+            found = ProjectPanel._find_item_in(item.child(index), obj)
+            if found is not None:
+                return found
+        return None
+
     # -- internals -----------------------------------------------------------
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802 - Qt override
+        """Catch F2 in the tree.
+
+        The tree view swallows the key (it tries to edit the item), so the
+        application-wide "Rename…" action never sees it. Renaming is handled
+        right here instead.
+        """
+        if (
+            obj in (self.tree, self.tree.viewport())
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() == Qt.Key.Key_F2
+        ):
+            self.rename_requested.emit(self.current_object())
+            return True
+        return False
+
     def build_context_menu(self, obj) -> QMenu:
         """Build the right-click menu for ``obj`` (also used by the tests)."""
         menu = QMenu(self.tree)
@@ -229,4 +299,8 @@ class ProjectPanel(QWidget):
             self.object_activated.emit(obj)
 
     def _on_selection_changed(self) -> None:
+        if self._restoring:
+            # The tree rebuilt itself and restored the selection; that is
+            # not a user click, so nothing else may react to it.
+            return
         self.selection_changed.emit(self.current_object())

@@ -1,16 +1,22 @@
 """Chrome drawn on top of a plot canvas — tools, panel marker, data readout.
 
 Everything in here is a plain Qt widget, never a matplotlib artist. That is the
-whole point: the readout, the crosshair and the tool buttons are *interface*,
-not figure content, so they can never leak into an exported file (the
-exporter renders the matplotlib figure, not the widget tree).
+whole point: the readout and the tool buttons are *interface*, not figure
+content, so they can never leak into an exported file (the exporter renders
+the matplotlib figure, not the widget tree).
 
-The overlay is a child of the canvas container and floats above the plot:
+The canvas is split in two parts:
 
-* top right — zoom in / zoom out / fit / readout toggle;
-* top left — which panel you are editing ("Panel 2 / 4");
-* bottom left — the hover readout;
-* a thin accent frame around the panel that is currently being edited.
+* :class:`CanvasTools` - the zoom / fit / readout buttons. They live on the
+  *workspace* around the figure, so they never cover the plot and never
+  hide part of the figure (and they always work: they are ordinary widgets).
+* :class:`CanvasOverlay` - the panel marker ("Panel 2 / 4"), the readout of
+  the point under the pointer and the frame around the panel being edited.
+  It floats over the figure and is transparent for the mouse, so the canvas
+  keeps every click.
+
+There is deliberately **no crosshair**: a cross that spans the whole figure
+pretends that a stack, a twin or a grid of panels is one single plot.
 """
 
 from __future__ import annotations
@@ -18,7 +24,6 @@ from __future__ import annotations
 from PySide6.QtCore import (
     QEvent,
     QObject,
-    QPoint,
     QPropertyAnimation,
     QRect,
     QSize,
@@ -26,7 +31,7 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QGraphicsOpacityEffect,
@@ -36,8 +41,168 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from graphmatrix.ui import theme
+from graphmatrix.ui.icons import ui_icon
+
 #: How long the overlay stays visible after the pointer leaves the canvas.
 FADE_DELAY_MS = 1200
+
+
+def _chrome(dark: bool) -> dict[str, str]:
+    """The colours of the floating chrome, for the dark or the light theme."""
+    if dark:
+        return {
+            "bg": "rgba(20,21,25,215)",
+            "solid": "rgb(20,21,25)",
+            "fg": "#d7dae0",
+            "border": "rgba(255,255,255,28)",
+            "hover": "rgba(255,255,255,30)",
+            "checked": "rgba(76,141,255,70)",
+        }
+    return {
+        "bg": "rgba(255,255,255,235)",
+        "solid": "rgb(255,255,255)",
+        "fg": "#3a3f47",
+        "border": "rgba(0,0,0,45)",
+        "hover": "rgba(0,0,0,25)",
+        "checked": "rgba(47,111,235,45)",
+    }
+
+
+def tools_qss() -> str:
+    """Style sheet of the tool strip, drawn in the current theme's colours."""
+    c = _chrome(theme.is_dark())
+    return (
+        f"QFrame {{ background: {c['bg']}; border: 1px solid {c['border']};"
+        " border-radius: 6px; }"
+        f"QToolButton {{ background: transparent; border: none; padding: 2px 6px;"
+        f" color: {c['fg']}; font-size: 12pt; }}"
+        f"QToolButton:hover {{ background: {c['hover']}; border-radius: 4px; }}"
+        f"QToolButton:checked {{ background: {c['checked']}; border-radius: 4px; }}"
+    )
+
+
+def _data_point_icon(size: int = 14, color: str = "#d7dae0") -> QIcon:
+    """A small drawn data point (a dot in a ring), for the readout toggle."""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(QColor(color))
+    pen.setWidth(1)
+    painter.setPen(pen)
+    mid = size / 2.0
+    painter.drawEllipse(
+        int(mid - size / 2.0) + 1,
+        int(mid - size / 2.0) + 1,
+        size - 2,
+        size - 2,
+    )
+    painter.setBrush(QColor(color))
+    painter.drawEllipse(
+        int(mid - size / 6.0),
+        int(mid - size / 6.0),
+        int(size / 3.0),
+        int(size / 3.0),
+    )
+    painter.end()
+    return QIcon(pixmap)
+
+
+class CanvasTools(QFrame):
+    """The zoom / fit / readout buttons of a canvas.
+
+    They are ordinary widgets: whatever they are placed on stays clickable,
+    and they never cover the figure itself.
+    """
+
+    zoom_in_requested = Signal()
+    zoom_out_requested = Signal()
+    fit_requested = Signal()
+    hover_toggled = Signal(bool)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("canvasTools")
+        self.refresh_theme()
+        row = QHBoxLayout(self)
+        row.setContentsMargins(3, 1, 3, 1)
+        row.setSpacing(1)
+        self._zoom_in = self._tool_button(
+            ui_icon("zoom-in"), "Zoom in (Ctrl++)", self.zoom_in_requested.emit
+        )
+        self._zoom_out = self._tool_button(
+            ui_icon("zoom-out"), "Zoom out (Ctrl+-)", self.zoom_out_requested.emit
+        )
+        self._fit = self._tool_button(
+            ui_icon("scan"),
+            "Fit the data to the panel (Ctrl+0)",
+            self.fit_requested.emit,
+        )
+        # The current zoom, shown as a button: clicking it fits the data
+        # again, so the number is also the way back.
+        self._zoom_label = QToolButton(self)
+        self._zoom_label.setText("100%")
+        self._zoom_label.setToolTip(
+            "Current zoom of the panel. Click to fit the data to it."
+        )
+        self._zoom_label.setAutoRaise(True)
+        self._zoom_label.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._zoom_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._zoom_label.clicked.connect(self.fit_requested.emit)
+        self._hover = self._tool_button(
+            ui_icon("crosshair"), "Data readout (hover a point)", self._toggle_hover
+        )
+        self._hover.setCheckable(True)
+        self._hover.setChecked(True)
+        for button in (
+            self._zoom_in,
+            self._zoom_out,
+            self._fit,
+            self._zoom_label,
+            self._hover,
+        ):
+            row.addWidget(button)
+
+    def refresh_theme(self) -> None:
+        """Re-draw the strip in the colours of the current theme."""
+        self.setStyleSheet(tools_qss())
+
+    def _tool_button(self, icon: QIcon, tip: str, slot) -> QToolButton:
+        button = QToolButton(self)
+        button.setIcon(icon)
+        button.setToolTip(tip)
+        button.setAutoRaise(True)
+        button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.clicked.connect(slot)
+        return button
+
+    def set_zoom_level(self, factor: float) -> None:
+        """Show how far the panel is zoomed in (``1.0`` = the data's own range)."""
+        try:
+            percent = int(round(float(factor) * 100))
+        except (TypeError, ValueError):  # pragma: no cover - defensive
+            percent = 100
+        self._zoom_label.setText(f"{percent}%")
+        self._zoom_label.setToolTip(
+            f"Zoom: {percent}% of the data range. Click to fit the data to the panel."
+        )
+
+    def _toggle_hover(self) -> None:
+        self.hover_toggled.emit(self._hover.isChecked())
+
+    def set_hover_checked(self, checked: bool) -> None:
+        """Show the readout toggle in the state the canvas is in."""
+        self._hover.setChecked(bool(checked))
+
+    def place(self, container: QWidget, *, margin: int = 8, top: bool = True) -> None:
+        """Put the strip in a corner of ``container``."""
+        size = self.sizeHint()
+        self.resize(size)
+        x = max(0, container.width() - size.width() - margin)
+        y = margin if top else max(0, container.height() - size.height() - margin)
+        self.move(x, y)
 
 
 class CanvasOverlay(QWidget):
@@ -50,8 +215,10 @@ class CanvasOverlay(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        # The overlay itself must never swallow pointer events meant for the
-        # plot; its buttons stay interactive because they are child widgets.
+        # The overlay floats over the whole figure, so it must not swallow the
+        # pointer events meant for the canvas (hover readout, point picking).
+        # It has no interactive children any more, so the transparent
+        # attribute is exactly right here.
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
         self.setMouseTracking(True)
@@ -62,47 +229,16 @@ class CanvasOverlay(QWidget):
         self._panel_rect: QRect | None = None
         self._panel_text = ""
         self._readout_text = ""
-        self._crosshair: QPoint | None = None
         self._hover_enabled = True
         self._user_visible = True
 
-        # -- tool buttons ---------------------------------------------------
-        self._tools = QFrame(self)
-        self._tools.setObjectName("canvasTools")
-        self._tools.setStyleSheet(
-            "QFrame { background: rgba(20,21,25,215); border: 1px solid rgba(255,255,255,28);"
-            " border-radius: 6px; }"
-            "QToolButton { background: transparent; border: none; padding: 2px 6px;"
-            " color: #d7dae0; font-size: 12pt; }"
-            "QToolButton:hover { background: rgba(255,255,255,30); border-radius: 4px; }"
-            "QToolButton:checked { background: rgba(76,141,255,70); border-radius: 4px; }"
-        )
-        row = QHBoxLayout(self._tools)
-        row.setContentsMargins(3, 1, 3, 1)
-        row.setSpacing(1)
-        self._zoom_in = self._tool_button("＋", "Zoom in", self.zoom_in_requested.emit)
-        self._zoom_out = self._tool_button("－", "Zoom out", self.zoom_out_requested.emit)
-        self._fit = self._tool_button("⤢", "Fit the data to the panel", self.fit_requested.emit)
-        self._hover = self._tool_button("✛", "Data readout", self._toggle_hover)
-        self._hover.setCheckable(True)
-        self._hover.setChecked(True)
-        for button in (self._zoom_in, self._zoom_out, self._fit, self._hover):
-            row.addWidget(button)
-
         # -- labels ---------------------------------------------------------
         self._panel_label = QLabel(self)
-        self._panel_label.setStyleSheet(
-            "background: rgba(20,21,25,200); color: #d7dae0; border-radius: 4px;"
-            " padding: 1px 6px; font-size: 10pt;"
-        )
         self._panel_label.hide()
 
         self._readout_label = QLabel(self)
-        self._readout_label.setStyleSheet(
-            "background: rgba(20,21,25,215); color: #e8eaed; border-radius: 4px;"
-            " padding: 2px 7px; font-size: 10pt;"
-        )
         self._readout_label.hide()
+        self._apply_label_styles()
 
         # -- opacity (fade in/out) ------------------------------------------
         self._effect = QGraphicsOpacityEffect(self)
@@ -122,15 +258,21 @@ class CanvasOverlay(QWidget):
         self._fg = foreground
         if accent:
             self._accent = accent
+        self._apply_label_styles()
+        self.update()
+
+    def _apply_label_styles(self) -> None:
+        """Draw the floating labels in the colours of the current theme."""
+        c = _chrome(theme.is_dark())
+        text = self._fg or c["fg"]
         self._readout_label.setStyleSheet(
-            f"background: rgba(20,21,25,215); color: {foreground}; border-radius: 4px;"
+            f"background: {c['bg']}; color: {text}; border-radius: 4px;"
             " padding: 2px 7px; font-size: 10pt;"
         )
         self._panel_label.setStyleSheet(
-            f"background: rgba(20,21,25,200); color: {foreground}; border-radius: 4px;"
+            f"background: {c['bg']}; color: {text}; border-radius: 4px;"
             " padding: 1px 6px; font-size: 10pt;"
         )
-        self.update()
 
     def set_panel(self, index: int, total: int, rect: QRect | None = None) -> None:
         """Mark the panel being edited.
@@ -146,28 +288,31 @@ class CanvasOverlay(QWidget):
             self._panel_rect = rect
         self._panel_label.setText(self._panel_text)
         self._panel_label.setVisible(bool(self._panel_text) and self.isVisible())
+        self._layout_children()
         self.update()
 
-    def set_readout(self, text: str) -> None:
-        """Show the hover readout (an empty string hides it)."""
+    def set_readout(self, text: str, force: bool = False) -> None:
+        """Show the hover readout (an empty string hides it).
+
+        ``force`` keeps the text up even when the readout is switched off -
+        that is how the values of a clicked point stay visible.
+        """
         self._readout_text = text or ""
         self._readout_label.setText(self._readout_text)
         self._readout_label.setVisible(
-            bool(self._readout_text) and self._hover_enabled and self.isVisible()
+            bool(self._readout_text)
+            and (self._hover_enabled or force)
+            and self.isVisible()
         )
-
-    def set_crosshair(self, point: QPoint | None) -> None:
-        """Position the crosshair (widget pixels) or hide it with ``None``."""
-        self._crosshair = point
-        self.update()
+        # The text is longer than the placeholder, so the label has to be
+        # measured and placed again - otherwise it stays one character wide.
+        self._layout_children()
 
     def set_hover_enabled(self, enabled: bool) -> None:
-        """Turn the readout (and its crosshair) on or off."""
+        """Turn the readout on or off."""
         self._hover_enabled = bool(enabled)
-        self._hover.setChecked(self._hover_enabled)
         if not self._hover_enabled:
             self._readout_text = ""
-            self._crosshair = None
             self._readout_label.hide()
             self.update()
 
@@ -191,14 +336,8 @@ class CanvasOverlay(QWidget):
             # Inset a little so the frame hugs the panel without touching the
             # neighbouring axes' labels.
             painter.drawRect(self._panel_rect.adjusted(1, 1, -2, -2))
-        if self._crosshair is not None and self._hover_enabled:
-            pen = QPen(QColor(self._fg))
-            pen.setWidth(1)
-            painter.setPen(pen)
-            x, y = self._crosshair.x(), self._crosshair.y()
-            painter.drawLine(x, 0, x, self.height())
-            painter.drawLine(0, y, self.width(), y)
         painter.end()
+
 
     # -- geometry ------------------------------------------------------------
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
@@ -207,34 +346,11 @@ class CanvasOverlay(QWidget):
 
     def _layout_children(self) -> None:
         margin = 8
-        tools = self._tools.sizeHint()
-        self._tools.move(self.width() - tools.width() - margin, margin)
         if self._panel_label.text():
             self._panel_label.adjustSize()
             self._panel_label.move(margin, margin)
         self._readout_label.adjustSize()
         self._readout_label.move(margin, max(0, self.height() - self._readout_label.height() - margin))
-
-    # -- helpers -------------------------------------------------------------
-    def _tool_button(self, text: str, tip: str, slot) -> QToolButton:
-        button = QToolButton(self)
-        button.setText(text)
-        button.setToolTip(tip)
-        button.setAutoRaise(True)
-        button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        button.setCursor(Qt.CursorShape.PointingHandCursor)
-        button.clicked.connect(slot)
-        return button
-
-    def _toggle_hover(self) -> None:
-        enabled = self._hover.isChecked()
-        self._hover_enabled = enabled
-        if not enabled:
-            self._readout_text = ""
-            self._readout_label.hide()
-            self._crosshair = None
-            self.update()
-        self.hover_toggled.emit(enabled)
 
     def _fade_in(self) -> None:
         self._fade_timer.stop()
@@ -274,14 +390,22 @@ class CanvasOverlay(QWidget):
 class _ContainerWatcher(QObject):
     """Keeps the overlay sized and visible in step with its container."""
 
-    def __init__(self, overlay: CanvasOverlay, parent: QObject) -> None:
+    def __init__(
+        self,
+        overlay: CanvasOverlay,
+        parent: QObject,
+        tools: CanvasTools | None = None,
+    ) -> None:
         super().__init__(parent)
         self._overlay = overlay
+        self._tools = tools
 
     def eventFilter(self, obj, event) -> bool:  # noqa: N802 - Qt override
         kind = event.type()
         if kind == QEvent.Type.Resize:
             self._overlay.setGeometry(obj.rect())
+            if self._tools is not None:
+                self._tools.place(obj)
         elif kind == QEvent.Type.Enter:
             self._overlay.set_user_visible(True)
         elif kind == QEvent.Type.Leave:
@@ -289,12 +413,23 @@ class _ContainerWatcher(QObject):
         return False
 
 
-def watch_container(container: QWidget, overlay: CanvasOverlay) -> _ContainerWatcher:
+def watch_container(
+    container: QWidget,
+    overlay: CanvasOverlay,
+    tools: CanvasTools | None = None,
+) -> _ContainerWatcher:
     """Attach an overlay to a container: sized with it, shown on hover."""
-    watcher = _ContainerWatcher(overlay, container)
+    watcher = _ContainerWatcher(overlay, container, tools)
     container.installEventFilter(watcher)
     overlay.setGeometry(container.rect())
+    if tools is not None:
+        tools.place(container)
     return watcher
 
 
-__all__ = ["FADE_DELAY_MS", "CanvasOverlay", "watch_container"]
+__all__ = [
+    "FADE_DELAY_MS",
+    "CanvasOverlay",
+    "CanvasTools",
+    "watch_container",
+]

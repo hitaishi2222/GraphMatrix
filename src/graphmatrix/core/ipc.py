@@ -448,6 +448,7 @@ class IpcBridge(QObject):
             theme=theme.current_preset(),
             aspect=aspect,
             scale=scale,
+            white_background=bool(req.get("white_background", False)),
         )
 
     def _screen_size_inches(self) -> tuple[float, float] | None:
@@ -464,7 +465,8 @@ class IpcBridge(QObject):
         if view not in views:
             view = views[0]
         try:
-            widget = view.canvas.widget()
+            surface = getattr(view.canvas, "artboard", None)
+            widget = surface() if callable(surface) else view.canvas.widget()
             figure = getattr(view.canvas, "_fig", None)
             toolbar = getattr(view.canvas, "_toolbar", None)
             width = widget.width()

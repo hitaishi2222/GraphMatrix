@@ -14,7 +14,7 @@ import pyqtgraph as pg
 from PySide6.QtCore import QRectF, Qt
 
 from .base import PlotCanvas
-from .overlay import CanvasOverlay, watch_container
+from .overlay import CanvasOverlay, CanvasTools, watch_container
 from .. import theme
 
 from graphmatrix.core.plot_themes import DEFAULT_PALETTE as PALETTE
@@ -39,10 +39,12 @@ class PyQtGraphCanvas(PlotCanvas):
         pg.setConfigOptions(antialias=True)
         self._widget = pg.PlotWidget()
         self._overlay = CanvasOverlay(self._widget)
-        self._overlay.zoom_in_requested.connect(self.zoom_in)
-        self._overlay.zoom_out_requested.connect(self.zoom_out)
-        self._overlay.fit_requested.connect(self.fit)
-        self._overlay.hover_toggled.connect(self.set_hover)
+        self._tools = CanvasTools(self._widget)
+        self._tools.zoom_in_requested.connect(self.zoom_in)
+        self._tools.zoom_out_requested.connect(self.zoom_out)
+        self._tools.fit_requested.connect(self.fit)
+        self._tools.hover_toggled.connect(self.set_hover)
+        self.zoom_changed = self._update_zoom_label
         self._plot_item = self._widget.getPlotItem()
         self._main_view = self._plot_item.getViewBox()
         self._legend = None
@@ -58,8 +60,7 @@ class PyQtGraphCanvas(PlotCanvas):
 
         # Hover readout: created lazily so the cost is zero when it is off.
         self._hover_enabled = False
-        self._crosshair_v: Any = None
-        self._crosshair_h: Any = None
+        self._hover_label: Any = None
         self._hover_label: Any = None
         self._hover_marker: Any = None
         self._hover_proxy: Any = None
@@ -74,7 +75,7 @@ class PyQtGraphCanvas(PlotCanvas):
         self._view_right.setXLink(self._plot_item)
         self._main_view.sigResized.connect(self._sync_right_view)
         self._sync_right_view()
-        self._watcher = watch_container(self._widget, self._overlay)
+        self._watcher = watch_container(self._widget, self._overlay, self._tools)
         self.set_downsampling(True)
         self.set_theme(theme.current_preset())
 
@@ -292,13 +293,41 @@ class PyQtGraphCanvas(PlotCanvas):
         """The floating chrome drawn on top of the plot."""
         return self._overlay
 
+    def _update_zoom_label(self) -> None:
+        """Show the current zoom of the view in the tool strip."""
+        try:
+            self._tools.set_zoom_level(self.zoom_factor())
+        except Exception:  # noqa: BLE001 - the label must never break a draw
+            pass
+
     def zoom_in(self) -> None:
         """Zoom the view in around its centre."""
         self._scale_view(1 / 1.25)
+        self._notify_zoom_changed()
 
     def zoom_out(self) -> None:
         """Zoom the view out around its centre."""
         self._scale_view(1.25)
+        self._notify_zoom_changed()
+
+    def zoom_factor(self) -> float:
+        """How much of the data the view shows (``1.0`` = all of it)."""
+        view = self._main_view
+        try:
+            (x0, x1), (y0, y1) = view.viewRange()
+            bounds = view.childrenBounds()
+            dx = float(bounds.width())
+            dy = float(bounds.height())
+        except Exception:  # noqa: BLE001
+            return 1.0
+        factors = []
+        if dx > 0:
+            factors.append(dx / abs(x1 - x0))
+        if dy > 0:
+            factors.append(dy / abs(y1 - y0))
+        if not factors:
+            return 1.0
+        return max(1.0, min(factors))
 
     def _scale_view(self, factor: float) -> None:
         for view in (self._main_view, self._view_right):
@@ -323,20 +352,28 @@ class PyQtGraphCanvas(PlotCanvas):
                 view.autoRange()
             except Exception:  # noqa: BLE001
                 continue
+        self._notify_zoom_changed()
 
     # -- hover readout -------------------------------------------------------
     def set_hover(self, enabled: bool) -> None:
-        self._hover_enabled = bool(enabled)
+        enabled = bool(enabled)
+        changed = enabled != self._hover_enabled
+        self._hover_enabled = enabled
+        self._tools.set_hover_checked(self._hover_enabled)
         if self._hover_enabled:
             self._ensure_hover()
         else:
             self._show_hover(None)
+        if changed:
+            callback = getattr(self, "hover_state_changed", None)
+            if callable(callback):
+                callback(enabled)
 
     def _ensure_hover(self) -> None:
-        if self._crosshair_v is None:
-            pen = pg.mkPen(self._fg, width=1, style=Qt.PenStyle.DashLine)
-            self._crosshair_v = pg.InfiniteLine(angle=90, movable=False, pen=pen)
-            self._crosshair_h = pg.InfiniteLine(angle=0, movable=False, pen=pen)
+        if self._hover_label is None:
+            # There is no crosshair: a cross that spans the whole plot would
+            # pretend that several panels are one single plot. The point under
+            # the pointer is marked, and its values are shown.
             self._hover_label = pg.TextItem("", color=self._fg, anchor=(0, 1))
             self._hover_marker = pg.ScatterPlotItem(
                 size=9,
@@ -344,12 +381,7 @@ class PyQtGraphCanvas(PlotCanvas):
                 pen=pg.mkPen(self._fg, width=1),
                 brush=pg.mkBrush(255, 196, 0, 220),
             )
-            for item in (
-                self._crosshair_v,
-                self._crosshair_h,
-                self._hover_label,
-                self._hover_marker,
-            ):
+            for item in (self._hover_label, self._hover_marker):
                 self._main_view.addItem(item, ignoreBounds=True)
         if self._hover_proxy is None:
             self._hover_proxy = pg.SignalProxy(
@@ -360,35 +392,24 @@ class PyQtGraphCanvas(PlotCanvas):
         self._show_hover(None)
 
     def _teardown_hover(self) -> None:
-        for item in (
-            self._crosshair_v,
-            self._crosshair_h,
-            self._hover_label,
-            self._hover_marker,
-        ):
+        for item in (self._hover_label, self._hover_marker):
             if item is None:
                 continue
             try:
                 self._main_view.removeItem(item)
             except Exception:  # noqa: BLE001
                 pass
-        self._crosshair_v = self._crosshair_h = self._hover_label = (
-            self._hover_marker
-        ) = None
+        self._hover_label = self._hover_marker = None
 
     def _show_hover(self, point: tuple[float, float, str] | None) -> None:
-        if self._crosshair_v is None:
+        if self._hover_label is None:
             return
         if point is None:
-            self._crosshair_v.setVisible(False)
-            self._crosshair_h.setVisible(False)
             self._hover_label.setVisible(False)
             self._hover_marker.setVisible(False)
             self._overlay.set_readout("")
             return
         x, y, name = point
-        self._crosshair_v.setPos(x)
-        self._crosshair_h.setPos(y)
         self._hover_marker.setData([x], [y])
         text = f"{x:.6g}, {y:.6g}"
         if name:
@@ -396,16 +417,11 @@ class PyQtGraphCanvas(PlotCanvas):
         self._hover_label.setText(text)
         self._overlay.set_readout(text.replace("\n", ":   "))
         self._hover_label.setPos(x, y)
-        for item in (
-            self._crosshair_v,
-            self._crosshair_h,
-            self._hover_label,
-            self._hover_marker,
-        ):
+        for item in (self._hover_label, self._hover_marker):
             item.setVisible(True)
 
     def _on_mouse_moved(self, event) -> None:
-        if not self._hover_enabled or self._crosshair_v is None:
+        if not self._hover_enabled or self._hover_label is None:
             return
         try:
             scene_pos = event[0]
@@ -515,6 +531,7 @@ class PyQtGraphCanvas(PlotCanvas):
         bg, fg, grid_alpha = theme.canvas_colors(preset)
         self._fg = fg
         self._overlay.set_colors(bg, fg)
+        self._tools.refresh_theme()
         try:
             pg.setConfigOptions(background=bg, foreground=fg)
         except Exception:  # noqa: BLE001
@@ -538,8 +555,5 @@ class PyQtGraphCanvas(PlotCanvas):
                 legend.setLabelTextColor(fg)
             except Exception:  # noqa: BLE001
                 pass
-        if self._crosshair_v is not None:
-            pen = pg.mkPen(fg, width=1, style=Qt.PenStyle.DashLine)
-            self._crosshair_v.setPen(pen)
-            self._crosshair_h.setPen(pen)
+        if self._hover_label is not None:
             self._hover_label.setColor(fg)

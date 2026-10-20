@@ -71,6 +71,10 @@ class PlotCanvas(ABC):
     #: plotted points (linked brushing: graph -> sheet).
     point_picked = None
 
+    #: Set to a callable ``() -> None`` to be told that the zoom changed, so
+    #: the canvas tools can show the current zoom level.
+    zoom_changed = None
+
     @abstractmethod
     def add_reference_line(
         self,
@@ -86,7 +90,7 @@ class PlotCanvas(ABC):
 
     @abstractmethod
     def set_hover(self, enabled: bool) -> None:
-        """Turn the hover crosshair + nearest-point readout on or off."""
+        """Turn the nearest-point readout on or off."""
 
     @abstractmethod
     def add_annotation(
@@ -181,6 +185,24 @@ class PlotCanvas(ABC):
 
     def fit(self) -> None:
         """Reset the current panel to the data's own limits."""
+
+    def zoom_factor(self) -> float:
+        """How far the current panel is zoomed in.
+
+        ``1.0`` means the panel shows the data's own range; ``2.0`` means it
+        shows half of it. Backends that cannot tell report ``1.0``.
+        """
+        return 1.0
+
+    def _notify_zoom_changed(self) -> None:
+        """Tell the UI that the zoom level moved."""
+        callback = self.zoom_changed
+        if callback is None:
+            return
+        try:
+            callback()
+        except Exception:  # noqa: BLE001 - a UI callback must not break the plot
+            pass
 
     @abstractmethod
     def set_theme(self, preset: str) -> None:

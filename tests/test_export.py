@@ -199,8 +199,17 @@ def test_a_scaled_export_draws_smaller_type(tmp_path):
             rgb = np.asarray(im.convert("RGB"))
         background = rgb[1, 1]
         mask = (rgb != background).any(axis=2)
-        band = mask[: max(1, int(mask.shape[0] * 0.08)), :]
-        return int(band.sum())
+        # The title is the first block of inked rows at the top of the figure.
+        rows = np.where(mask.any(axis=1))[0]
+        if rows.size == 0:
+            return 0
+        first = int(rows[0])
+        last = first
+        for row in rows[1:]:
+            if int(row) != last + 1:
+                break
+            last = int(row)
+        return int(mask[first : last + 1, :].sum())
 
     big = export_graph(
         graph, project, tmp_path / "big.png", width_mm=100, dpi=100, scale=1.0

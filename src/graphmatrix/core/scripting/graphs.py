@@ -701,12 +701,15 @@ def export_graphs(
     theme: str = "",
     aspect: float | None = None,
     scale: float = 1.0,
+    white_background: bool = False,
 ) -> dict[str, Any]:
     """Export graphs to files and return the list of written paths.
 
     ``theme`` is the application theme the canvas follows, so the files look
     like the preview; ``aspect`` keeps the on-screen proportions and ``scale``
     shrinks the typography so a small page shows the same proportions.
+    ``white_background`` forces the print-safe palette (white paper, black
+    ink) whatever the application theme looks like.
     """
     from pathlib import Path
 
@@ -736,6 +739,7 @@ def export_graphs(
             theme=theme,
             aspect=aspect,
             scale=scale,
+            white_background=white_background,
         )
         written.append(str(target))
     return {"files": written}

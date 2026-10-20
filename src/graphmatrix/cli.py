@@ -133,7 +133,15 @@ def run_cmd(paths: tuple[str, ...], open_graph: str | None) -> None:
 @click.option("--width", default=100.0, type=float, help="Figure width in mm.")
 @click.option("--height", default=75.0, type=float, help="Figure height in mm.")
 @click.option("--transparent", is_flag=True, help="Transparent background.")
-def export_cmd(project, graphs, fmt, out_dir, dpi, width, height, transparent) -> None:
+@click.option(
+    "--white",
+    "white_background",
+    is_flag=True,
+    help="Draw on white paper with black ink (print-safe), whatever the app theme is.",
+)
+def export_cmd(
+    project, graphs, fmt, out_dir, dpi, width, height, transparent, white_background
+) -> None:
     """Export graphs from a project file."""
     from graphmatrix.core.io.export import export_graph
     from graphmatrix.core.model import Project
@@ -159,6 +167,7 @@ def export_cmd(project, graphs, fmt, out_dir, dpi, width, height, transparent) -
             height_mm=height,
             dpi=dpi,
             transparent=transparent,
+            white_background=white_background,
         )
         click.echo(f"exported: {target}")
 

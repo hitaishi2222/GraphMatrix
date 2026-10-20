@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from ..journals import export_rcparams, figure_size
-from ..model import Graph, PlotStyle, Project, Z_STYLES, is_3d_style
+from ..model import AxisScale, Graph, PlotStyle, Project, Z_STYLES, is_3d_style
 from ..plot_themes import resolve_theme, series_color
 from ..plotting import auto_axis_labels, grid_xyz, resolve_layer
 
@@ -38,6 +38,14 @@ def _linestyle(name: str) -> object:
     return _LINESTYLES.get((name or "solid").lower(), "-")
 
 
+def _axis_is_log(value: object) -> bool:
+    """True when an axis-scale value means "log" (enum or plain string)."""
+    try:
+        return AxisScale(value).value == "log"
+    except (TypeError, ValueError):
+        return False
+
+
 def export_graph(
     graph: Graph,
     project: Project,
@@ -51,6 +59,8 @@ def export_graph(
     theme: str = "",
     aspect: float | None = None,
     scale: float = 1.0,
+    white_background: bool = False,
+    view_limits: dict[int, tuple[float, float, float, float]] | None = None,
 ) -> Path:
     """Render a graph to a file.
 
@@ -60,6 +70,15 @@ def export_graph(
     the file can keep the on-screen proportions. ``scale`` shrinks the
     typography, line widths and markers by that factor, which is what keeps a
     small export looking like a big on-screen canvas.
+
+    ``white_background`` forces the print-safe palette (white paper, black
+    ink). A dark application theme otherwise produces a black-background
+    figure, which is fine on screen but unusable in a paper.
+
+    ``view_limits`` maps a layer index to the limits
+    ``(x_min, x_max, y_min, y_max)`` of the view on screen. Passing them
+    keeps the "what you see is what you get" rule for a figure that was
+    zoomed or panned.
     """
     import matplotlib
 
@@ -91,6 +110,7 @@ def export_graph(
     )
     with mpl.rc_context(rc):
         fig = plt.figure(figsize=figsize, dpi=dpi)
+        _use_constrained_layout(fig, graph)
         rows = max(1, int(getattr(graph, "layout_rows", 1) or 1))
         cols = max(1, int(getattr(graph, "layout_cols", 1) or 1))
         if use_3d:
@@ -101,7 +121,10 @@ def export_graph(
         else:
             axes = [fig.add_subplot(111)]
         plot_theme = getattr(graph, "plot_theme", "")
-        if plot_theme:
+        if white_background:
+            # Print request: white paper, black ink, whatever the app looks like.
+            bg, fg, grid_alpha = resolve_theme("plot-publication")
+        elif plot_theme:
             # An explicit per-graph theme wins.
             bg, fg, grid_alpha = resolve_theme(plot_theme)
         elif preset_name:
@@ -109,7 +132,15 @@ def export_graph(
             bg, fg, grid_alpha = resolve_theme("plot-publication")
         else:
             bg, fg, grid_alpha = resolve_theme("", theme)
-        _render_figure(fig, axes, graph, project, (bg, fg, grid_alpha), scale)
+        _render_figure(
+            fig,
+            axes,
+            graph,
+            project,
+            (bg, fg, grid_alpha),
+            scale,
+            view_limits=view_limits,
+        )
         _apply_theme(fig, bg, fg, grid_alpha)
         fmt = path.suffix.lower().lstrip(".") if path.suffix else "pdf"
         if fmt == "tiff":
@@ -125,6 +156,50 @@ def export_graph(
         fig.savefig(path, format=fmt, dpi=dpi, transparent=transparent)
         plt.close(fig)
     return path
+
+
+def _use_constrained_layout(fig, graph: Graph) -> None:
+    """Let matplotlib lay the panels out without label collisions.
+
+    The constrained-layout engine reserves the space each panel's tick
+    labels, axis labels and legend need, so a figure exported at print size
+    (where the panels are small) never draws one panel's labels on top of
+    its neighbour. The panel gaps of the graph are passed on as the spacing
+    between the panels, so the layout still follows the user's settings.
+    """
+    gap_x = max(0.0, float(getattr(graph, "panel_gap_x", 12.0) or 0.0) / 100.0)
+    gap_y = max(0.0, float(getattr(graph, "panel_gap_y", 12.0) or 0.0) / 100.0)
+    try:
+        fig.set_layout_engine("constrained", wspace=gap_x, hspace=gap_y)
+    except Exception:  # noqa: BLE001 - very old matplotlib: keep the default
+        pass
+
+
+def _share_y_for_twins(fig, axes, graph: Graph) -> None:
+    """Give every panel of an X-Twin graph the same Y range.
+
+    An X-Twin is defined by panels that share their Y axis, so the panels
+    must be scaled to the same data range - otherwise the two halves of the
+    figure cannot be compared by eye.
+    """
+    if str(getattr(graph, "graph_type", "")) != "x-twin":
+        return
+    low = None
+    high = None
+    for ax in axes:
+        try:
+            bottom, top = ax.get_ylim()
+        except Exception:  # noqa: BLE001 - axes may not be scaled yet
+            continue
+        low = bottom if low is None else min(low, bottom)
+        high = top if high is None else max(high, top)
+    if low is None or high is None or low == high:
+        return
+    for ax in axes:
+        try:
+            ax.set_ylim(low, high)
+        except Exception:  # noqa: BLE001
+            continue
 
 
 def _scaled_rcparams(scale: float) -> dict[str, Any]:
@@ -181,6 +256,7 @@ def _render_figure(
     project: Project,
     colors: tuple[str, str, float],
     scale: float = 1.0,
+    view_limits: dict[int, tuple[float, float, float, float]] | None = None,
 ) -> None:
     """Draw each layer onto its own panel, honouring the graph's layout type."""
     if not axes:
@@ -199,9 +275,9 @@ def _render_figure(
         ax_right = right_axes.get(axis_index)
         offset = panel_index * y_delta if offset_panels else 0.0
 
-        if layer.x_scale.value == "log":
+        if _axis_is_log(layer.x_scale):
             ax_left.set_xscale("log")
-        if layer.y_scale.value == "log":
+        if _axis_is_log(layer.y_scale):
             ax_left.set_yscale("log")
             if ax_right is not None:
                 ax_right.set_yscale("log")
@@ -216,7 +292,7 @@ def _render_figure(
                 if ax_right is None:
                     ax_right = ax_left.twinx()
                     right_axes[axis_index] = ax_right
-                    if layer.y_scale.value == "log":
+                    if _axis_is_log(layer.y_scale):
                         ax_right.set_yscale("log")
                 _draw(
                     ax_right,
@@ -249,6 +325,12 @@ def _render_figure(
 
         x_label, y_label = auto_axis_labels(project, layer)
         last_panel = panel_index == len(graph.layers) - 1
+        if graph_type == "stack" and not last_panel:
+            # A stack shares one X axis: the upper panels hide theirs, exactly
+            # as the live canvas does.
+            ax_left.tick_params(axis="x", which="both", bottom=False, labelbottom=False)
+            ax_left.spines["bottom"].set_visible(False)
+            ax_left.xaxis.label.set_visible(False)
         if x_label and not (graph_type == "stack" and not last_panel):
             ax_left.set_xlabel(x_label, **label_kwargs)
         if y_label and not (graph_type == "x-twin" and panel_index != 0):
@@ -260,6 +342,15 @@ def _render_figure(
             ax_left.set_xlim(left=layer.x_min, right=layer.x_max)
         if layer.y_min is not None or layer.y_max is not None:
             ax_left.set_ylim(bottom=layer.y_min, top=layer.y_max)
+        view = (view_limits or {}).get(panel_index)
+        if view is not None:
+            # The view on screen wins: a zoomed or panned figure is exported
+            # the way it is seen.
+            try:
+                ax_left.set_xlim(view[0], view[1])
+                ax_left.set_ylim(view[2], view[3])
+            except Exception:  # noqa: BLE001 - bad limits: keep the auto range
+                pass
 
         # Minor ticks + tick direction (publication polish).
         direction = getattr(layer, "tick_direction", "out") or "out"
@@ -328,27 +419,13 @@ def _render_figure(
             title_kwargs["color"] = fg
         fig.suptitle(graph.title, **title_kwargs)
 
-    # No tight_layout() here: the live canvas uses matplotlib's own subplot
-    # margins, so the export must keep them to place the panels in exactly the
-    # same spots.
-    if graph.title:
-        # Reserve the same top strip the canvas reserves for the figure title.
-        try:
-            fig.subplots_adjust(top=0.90)
-        except Exception:  # noqa: BLE001
-            pass
+    # The panels are laid out by matplotlib's constrained layout engine: it
+    # reserves room for tick labels, axis labels and the title, so a small
+    # print-size figure never draws one panel's tick labels on top of its
+    # neighbour. The live canvas uses the same engine with the same panel
+    # gaps, so the preview and the file agree.
     if len(axes) > 1:
-        try:
-            fig.subplots_adjust(
-                wspace=max(
-                    0.0, float(getattr(graph, "panel_gap_x", 12.0) or 0.0) / 100.0
-                ),
-                hspace=max(
-                    0.0, float(getattr(graph, "panel_gap_y", 12.0) or 0.0) / 100.0
-                ),
-            )
-        except Exception:  # noqa: BLE001
-            pass
+        _share_y_for_twins(fig, axes, graph)
 
 
 def _draw(

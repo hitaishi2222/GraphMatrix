@@ -2,12 +2,37 @@
 
 from __future__ import annotations
 
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QComboBox
 
 from graphmatrix.core.model import ColumnType, Project, Worksheet
 
 #: MIME type used when dragging a single column from the Project Explorer onto a graph.
 COLUMN_MIME = "application/x-graphmatrix-column"
+
+
+def contrast_text_color(background: str) -> str:
+    """Black or white - whichever stays readable on ``background``.
+
+    Colour buttons paint themselves in the colour they hold, so the label has
+    to be legible on that colour instead of the application's text colour.
+    """
+    color = QColor(background)
+    if not color.isValid():
+        return "#000000"
+    luminance = (
+        0.299 * color.red() + 0.587 * color.green() + 0.114 * color.blue()
+    )
+    return "#000000" if luminance > 140 else "#ffffff"
+
+
+def color_button_style(background: str, text: str) -> str:
+    """Style sheet for a button that shows ``background`` as a colour swatch."""
+    fg = contrast_text_color(background)
+    return (
+        f"background-color: {background}; color: {fg};"
+        " border: 1px solid palette(mid); border-radius: 6px; padding: 4px 10px;"
+    )
 
 
 def sheet_label(project: Project, sheet: Worksheet) -> str:

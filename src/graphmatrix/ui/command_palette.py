@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from .actions import ActionRegistry
+from .actions import ActionRegistry, shortcut_text
 
 
 def _score(query: str, text: str) -> int | None:
@@ -62,8 +62,9 @@ class CommandPalette(QDialog):
 
         for spec in registry.specs():
             label = spec.text
-            if spec.shortcut:
-                label = f"{label}  ({spec.shortcut})"
+            shortcut = shortcut_text(spec.shortcut)
+            if shortcut:
+                label = f"{label}  ({shortcut})"
             if spec.menu:
                 label = f"{label}  ·  {spec.menu}"
             self._entries.append((label, spec.id))

@@ -499,13 +499,16 @@ def live_export(
     height_mm: float = 75.0,
     transparent: bool = False,
     match_screen: bool = True,
+    white_background: bool = False,
 ) -> dict[str, Any]:
     """Export graphs of the live project (default: all) to a directory.
 
     ``graphs`` is a selection like ``"1,3-4"`` (1-based positions in the live
     project) or ``""`` for every graph. The export follows the theme of the
     running window and, with ``match_screen``, keeps the on-screen proportions
-    of the graph, so the file looks like the preview.
+    of the graph, so the file looks like the preview. With
+    ``white_background`` the figure is drawn on white paper with black ink
+    (print-safe) whatever the window's theme is.
     """
     names = None
     if graphs:
@@ -521,6 +524,7 @@ def live_export(
             height_mm=height_mm,
             transparent=transparent,
             match_screen=bool(match_screen),
+            white_background=bool(white_background),
         )
     except UnsupportedOp:
         return _live_call(
@@ -532,6 +536,7 @@ def live_export(
             width_mm=width_mm,
             height_mm=height_mm,
             transparent=transparent,
+            white_background=bool(white_background),
         )
 
 

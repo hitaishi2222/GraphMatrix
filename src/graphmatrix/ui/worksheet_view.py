@@ -112,6 +112,10 @@ class WorksheetView(QWidget):
         header.sectionMoved.connect(lambda *_: self._position_add_column_button())
         header.geometriesChanged.connect(self._position_add_column_button)
         header.installEventFilter(self)
+        # Clicking a column header selects the column, so F2 renames it.
+        header.sectionClicked.connect(self._on_header_clicked)
+        # The key events of a table arrive at its viewport, not at the table.
+        self.table.viewport().installEventFilter(self)
         self.table.horizontalScrollBar().valueChanged.connect(
             self._position_add_column_button
         )
@@ -193,6 +197,16 @@ class WorksheetView(QWidget):
     def eventFilter(self, obj, event) -> bool:  # noqa: N802 - Qt override
         if obj is self.table.horizontalHeader() and event.type() == QEvent.Type.Resize:
             self._position_add_column_button()
+            return False
+        if (
+            obj is self.table.viewport()
+            and event.type() == QEvent.Type.KeyPress
+            and event.key() == Qt.Key.Key_F2
+        ):
+            # The table swallows F2 (it tries to edit the item), so the
+            # shortcut never gets a chance: rename the column here.
+            self._rename_selected_column()
+            return True
         return super().eventFilter(obj, event)
 
     # -- row / column controls ----------------------------------------------
@@ -254,7 +268,14 @@ class WorksheetView(QWidget):
 
     def _add_column(self, index: int | None = None) -> None:
         """Insert a new Y column immediately, with an auto-generated name."""
-        column = Column(self.sheet.next_column_name(ColumnType.Y), ColumnType.Y, [])
+        from graphmatrix.ui import preferences
+
+        column = Column(
+            self.sheet.next_column_name(ColumnType.Y),
+            ColumnType.Y,
+            [],
+            decimal=preferences.new_column_decimals(),
+        )
         self.commands.push(
             AddColumnCommand(self.sheet, column, index=index, source=self.source)
         )
@@ -507,6 +528,19 @@ class WorksheetView(QWidget):
             return
         self.commands.push(ReorderColumnsCommand(self.sheet, order))
 
+    def _on_header_clicked(self, logical: int) -> None:
+        """Select the whole column the user clicked in the header."""
+        if logical < 0 or logical >= self.sheet.num_columns:
+            return
+        # The column selection is not a row selection, so it must not feed
+        # the linked brush.
+        self._broadcasting = True
+        try:
+            self.table.selectColumn(logical)
+            self.table.setCurrentCell(0, logical)
+        finally:
+            self._broadcasting = False
+
     def _rename_selected_column(self) -> None:
         cols = self._selected_column_indices()
         if not cols:
@@ -605,6 +639,8 @@ class WorksheetView(QWidget):
         )
 
     def _insert_column(self, index: int) -> None:
+        from graphmatrix.ui import preferences
+
         name, ok = QInputDialog.getText(
             self,
             "Insert Column",
@@ -612,7 +648,9 @@ class WorksheetView(QWidget):
             text=self.sheet.next_column_name(ColumnType.Y),
         )
         if ok and name:
-            column = Column(name, ColumnType.Y, [])
+            column = Column(
+                name, ColumnType.Y, [], decimal=preferences.new_column_decimals()
+            )
             self.commands.push(
                 AddColumnCommand(self.sheet, column, index=index, source=self.source)
             )

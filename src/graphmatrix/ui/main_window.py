@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 from PySide6.QtCore import QFileSystemWatcher, QSize, Qt
-from PySide6.QtGui import QAction, QActionGroup, QFont
+from PySide6.QtGui import QAction, QActionGroup, QFont, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QTabWidget,
@@ -86,6 +88,7 @@ from graphmatrix.core.scripting.record import MacroRecorder
 from graphmatrix.core.templates import apply_template, load_template, save_template
 from graphmatrix.ui.theme import (
     apply_theme,
+    colors as theme_colors,
     current_preset,
     load_saved_preset,
     presets,
@@ -108,6 +111,7 @@ from graphmatrix.ui.console import ConsoleView
 from graphmatrix.ui.digitize_dialog import DigitizeDialog
 from graphmatrix.ui.brushing import BrushSelection
 from graphmatrix.ui.graph_view import GraphView
+from graphmatrix.ui.icons import ui_icon
 from graphmatrix.ui.live_dialog import LiveController
 from graphmatrix.ui.project_panel import ProjectPanel
 from graphmatrix.ui.properties_panel import PropertiesPanel
@@ -117,8 +121,19 @@ from graphmatrix.ui.worksheet_view import WorksheetView
 APP_TITLE = "GraphMatrix"
 PROJECT_FILTER = "GraphMatrix Project (*.rsproj);;All Files (*)"
 GRAPH_FILTER = (
-    "PDF (*.pdf);;SVG (*.svg);;EPS (*.eps);;PNG (*.png);;TIFF (*.tif);;All Files (*)"
+    "PDF (*.pdf);;SVG (*.svg);;EPS (*.eps);;PNG (*.png);;TIFF (*.tif);;"
+    "JPEG (*.jpg);;All Files (*)"
 )
+
+#: File-dialog filter per export format.
+_EXPORT_FILTERS = {
+    "pdf": "PDF (*.pdf)",
+    "svg": "SVG (*.svg)",
+    "eps": "EPS (*.eps)",
+    "png": "PNG (*.png)",
+    "tif": "TIFF (*.tif)",
+    "jpg": "JPEG (*.jpg)",
+}
 
 _DATA_FILTER = (
     "Data files ("
@@ -144,36 +159,98 @@ def _slug(text: str) -> str:
     return "".join(c.lower() if c.isalnum() else "_" for c in text).strip("_")
 
 
-def _normalized_export_path(path: str) -> str:
+#: Icon (see :mod:`graphmatrix.ui.icons`) for every action that can appear on
+#: the toolbar or in a dialog button bar.
+_ACTION_ICONS = {
+    "file.new": "file-plus",
+    "file.open": "folder-open",
+    "file.save": "save",
+    "file.import": "upload",
+    "edit.undo": "undo",
+    "edit.redo": "redo",
+    "data.add_workbook": "book-plus",
+    "data.add_worksheet": "table",
+    "data.add_graph": "line-chart",
+    "data.sample": "flask",
+    "analyze.fit": "sigma",
+    "export.graph": "download",
+    "export.all_graphs": "download",
+    "export.sheet": "download",
+    "tools.palette": "command",
+    "tools.console": "terminal",
+    "view.preferences": "settings",
+    "help.shortcuts": "keyboard",
+    "help.about": "palette",
+}
+
+#: Shorter labels for the toolbar. The menu keeps the full wording ("New
+#: Project"), the toolbar says "New" so that the whole row fits on a laptop
+#: screen without hiding the graph controls behind an overflow arrow.
+_ACTION_SHORT_TEXT = {
+    "file.new": "New",
+    "file.open": "Open",
+    "file.save": "Save",
+    "file.import": "Import",
+    "edit.undo": "Undo",
+    "edit.redo": "Redo",
+    "data.add_workbook": "Workbook",
+    "data.add_worksheet": "Worksheet",
+    "data.add_graph": "Graph",
+    "data.sample": "Sample",
+    "analyze.fit": "Fit",
+}
+
+
+def _normalized_export_path(path: str, default: str = "pdf") -> str:
     """Give ``path`` a supported export extension, defaulting to ``.pdf``.
 
     Guards against a stray extension typed under the "All Files" filter (e.g.
-    ``figure.bmp``), which would otherwise make matplotlib raise.
+    ``figure.bmp``), which would otherwise make matplotlib raise. A name
+    without an extension gets the format that was chosen in the export
+    dialog.
     """
     suffix = Path(path).suffix.lower()
     if suffix in _EXPORT_SUFFIXES:
         return path
     if suffix:
-        return str(Path(path).with_suffix(".pdf"))
-    return path + ".pdf"
+        return str(Path(path).with_suffix(f".{default}"))
+    return path + f".{default}"
 
 
 class ExportGraphDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Export Graph")
+        from graphmatrix.ui import preferences
+
         self.width = QDoubleSpinBox()
         self.width.setRange(10, 500)
-        self.width.setValue(100.0)
+        self.width.setValue(float(preferences.get("export/width_mm", 100.0)))
         self.width.setSuffix(" mm")
         self.height = QDoubleSpinBox()
         self.height.setRange(10, 500)
-        self.height.setValue(75.0)
+        self.height.setValue(float(preferences.get("export/height_mm", 75.0)))
         self.height.setSuffix(" mm")
         self.dpi = QSpinBox()
         self.dpi.setRange(72, 1200)
-        self.dpi.setValue(300)
+        self.dpi.setValue(int(preferences.get("export/dpi", 300)))
+        self.format = QComboBox()
+        preferred = str(preferences.get("export/format", "pdf"))
+        for fmt in ("pdf", "svg", "eps", "png", "tif", "jpg"):
+            self.format.addItem(fmt, fmt)
+        index = self.format.findData(preferred)
+        if index >= 0:
+            self.format.setCurrentIndex(index)
+        self.format.setToolTip(
+            "File format of the export. PDF and SVG keep vector text; "
+            "PNG/TIFF/JPEG are raster images."
+        )
         self.transparent = QCheckBox("Transparent background")
+        self.white_background = QCheckBox("White background (print)")
+        self.white_background.setToolTip(
+            "Draw the figure on white paper with black ink, whatever the "
+            "application theme looks like. Use this for papers and journals."
+        )
         self.match_screen = QCheckBox("Match on-screen proportions")
         self.match_screen.setChecked(True)
         self.match_screen.setToolTip(
@@ -183,10 +260,12 @@ class ExportGraphDialog(QDialog):
             "figures with standard (point-sized) typography."
         )
         form = QFormLayout()
+        form.addRow("Format:", self.format)
         form.addRow("Width:", self.width)
         form.addRow("Height:", self.height)
         form.addRow("DPI:", self.dpi)
         form.addRow(self.transparent)
+        form.addRow(self.white_background)
         form.addRow(self.match_screen)
 
         # One-click aspect-ratio presets.
@@ -216,6 +295,88 @@ class ExportGraphDialog(QDialog):
     def _apply_ratio(self, ratio: float) -> None:
         width = self.width.value()
         self.height.setValue(round(width / ratio, 2))
+
+class WelcomePanel(QWidget):
+    """The first thing an empty project shows: what to do next.
+
+    A blank canvas says nothing; this page offers the four actions that
+    start a session (import data, add sample data, add a graph, open a
+    project) and lists the shortcuts worth knowing.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("welcomePanel")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(40, 40, 40, 40)
+        layout.setSpacing(10)
+
+        title = QLabel("GraphMatrix")
+        title.setStyleSheet("font-size: 22pt; font-weight: 600;")
+        subtitle = QLabel(
+            "Scientific data analysis and graphing. Start with a data file, "
+            "a sample dataset, or an empty graph."
+        )
+        subtitle.setWordWrap(True)
+        subtitle.setStyleSheet(f"color: {theme_colors()['muted']};")
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+        layout.addSpacing(16)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        self.import_button = QPushButton("Import Data…")
+        self.import_button.setToolTip("Import a CSV, Excel, Parquet or HDF5 file")
+        self.sample_button = QPushButton("Add Sample Data")
+        self.sample_button.setToolTip("Fill the first worksheet with a sine curve")
+        self.graph_button = QPushButton("Add Graph")
+        self.open_button = QPushButton("Open Project…")
+        self.palette_button = QPushButton("Command Palette…")
+        self.palette_button.setToolTip(
+            "Run any command by name (Ctrl+Shift+P)"
+        )
+        for button in (
+            self.import_button,
+            self.sample_button,
+            self.graph_button,
+            self.open_button,
+            self.palette_button,
+        ):
+            buttons.addWidget(button)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+        layout.addSpacing(20)
+
+        # The shortcuts worth knowing, as key chips: a wall of monospace text
+        # is a wall nobody reads.
+        hints_title = QLabel("Shortcuts")
+        hints_title.setStyleSheet("font-weight: 600;")
+        layout.addWidget(hints_title)
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(18)
+        grid.setVerticalSpacing(6)
+        shortcuts = (
+            ("Ctrl+N", "New project"),
+            ("Ctrl+O", "Open project"),
+            ("Ctrl+S", "Save project"),
+            ("Ctrl+Z", "Undo"),
+            ("Ctrl+Shift+P", "Command palette"),
+            ("F1", "All shortcuts"),
+            ("F2", "Rename"),
+            ("Ctrl+Alt+N / C", "Add row / column"),
+        )
+        for index, (key, description) in enumerate(shortcuts):
+            row = index % 4
+            column = (index // 4) * 2
+            chip = QLabel(key)
+            chip.setObjectName("keyChip")
+            chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            chip.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+            grid.addWidget(chip, row, column)
+            grid.addWidget(QLabel(description), row, column + 1)
+        layout.addLayout(grid)
+        layout.addStretch(1)
+
 
 class MainWindow(QMainWindow):
     def __init__(self, project: Project | None = None) -> None:
@@ -310,6 +471,23 @@ class MainWindow(QMainWindow):
         self.axes_layout.setContentsMargins(2, 2, 2, 2)
         self.axes_layout.setSpacing(4)
 
+        # Placeholders: without a graph open the two side panels would be
+        # blank boxes with no hint of what they are for.
+        self._plot_placeholder = QLabel(
+            "Open a graph to edit its plots,\nreference lines and styles."
+        )
+        self._axes_placeholder = QLabel(
+            "Open a graph to edit its axes:\nscales, labels, fonts and layout."
+        )
+        for label in (self._plot_placeholder, self._axes_placeholder):
+            label.setWordWrap(True)
+            label.setAlignment(
+                Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+            )
+            label.setContentsMargins(10, 12, 10, 10)
+        self._plot_host_layout.addWidget(self._plot_placeholder)
+        self.axes_layout.addWidget(self._axes_placeholder)
+
         self._graph_tabs = QTabWidget()
         self._graph_tabs.setDocumentMode(True)
         self._graph_tabs.addTab(self._plot_host, "Plot")
@@ -332,6 +510,7 @@ class MainWindow(QMainWindow):
         self.project_panel = ProjectPanel()
         self.project_panel.object_activated.connect(self._on_object_activated)
         self.project_panel.selection_changed.connect(self.properties_panel.show_object)
+        self.project_panel.selection_changed.connect(self._on_tree_selection)
         self.project_panel.rename_requested.connect(self._action_rename_for)
         self.project_panel.delete_requested.connect(self._action_delete_object)
         self.project_panel.add_requested.connect(self._on_tree_add_requested)
@@ -365,12 +544,36 @@ class MainWindow(QMainWindow):
         self.tabs.tabCloseRequested.connect(self._on_tab_closed)
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self.setCentralWidget(self.tabs)
+        self._welcome = WelcomePanel(self)
+        self._welcome.import_button.clicked.connect(self._action_import)
+        self._welcome.sample_button.clicked.connect(self._action_sample_data)
+        self._welcome.graph_button.clicked.connect(self._action_add_graph)
+        self._welcome.open_button.clicked.connect(self._action_open)
+        self._welcome.palette_button.clicked.connect(self._action_command_palette)
+
+    def _show_welcome(self) -> None:
+        """Show the welcome page (only while nothing else is open)."""
+        if self.tabs.count():
+            return
+        self.tabs.addTab(self._welcome, "Welcome")
+        # The welcome page stays open until something else is opened.
+        self.tabs.setTabsClosable(False)
+
+    def _hide_welcome(self) -> None:
+        for index in range(self.tabs.count()):
+            if self.tabs.widget(index) is self._welcome:
+                self.tabs.removeTab(index)
+                break
+        self.tabs.setTabsClosable(True)
 
     def _build_toolbar(self) -> None:
         toolbar = QToolBar("Main", self)
         toolbar.setObjectName("toolbar.main")
         toolbar.setMovable(False)
-        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        # Icons carry the meaning, the label carries the words: a button that
+        # only shows "＋" is a puzzle, a button that only shows a glyph is
+        # only readable once you have learned the glyph.
+        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         toolbar.setIconSize(QSize(18, 18))
         self.addToolBar(toolbar)
         groups = (
@@ -382,13 +585,15 @@ class MainWindow(QMainWindow):
                 "data.add_graph",
                 "data.sample",
             ),
-            ("analyze.fit",),
         )
         for index, group in enumerate(groups):
             if index:
                 toolbar.addSeparator()
             for action_id in group:
+                self._decorate_action(action_id)
                 toolbar.addAction(self.registry.action(action_id))
+
+        # The layout template belongs next to the graph actions it applies to.
         toolbar.addSeparator()
         type_label = QLabel("Graph type:")
         type_label.setContentsMargins(6, 0, 4, 0)
@@ -409,9 +614,15 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self.graph_type_combo)
 
         toolbar.addSeparator()
+        self._decorate_action("analyze.fit")
+        toolbar.addAction(self.registry.action("analyze.fit"))
+
+        toolbar.addSeparator()
         theme_button = QToolButton()
         theme_button.setText("Theme")
-        theme_button.setToolTip("Switch the colour scheme")
+        theme_button.setIcon(ui_icon("palette"))
+        theme_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        theme_button.setToolTip("Theme: switch the colour scheme")
         theme_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         theme_button.setMenu(self._theme_menu)
         toolbar.addWidget(theme_button)
@@ -419,19 +630,58 @@ class MainWindow(QMainWindow):
         self._version_menu = QMenu("Version", self)
         version_button = QToolButton()
         version_button.setText("Version")
-        version_button.setToolTip("Manage project versions")
+        version_button.setIcon(ui_icon("history"))
+        version_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        version_button.setToolTip("Versions: manage project versions")
         version_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         version_button.setMenu(self._version_menu)
         toolbar.addWidget(version_button)
         self._version_button = version_button
         self.toolbar = toolbar
 
+    def _decorate_action(self, action_id: str, icon: str | None = None) -> None:
+        """Give an action an icon and a tooltip that shows its shortcut.
+
+        A toolbar button without its shortcut spelled out is a button the
+        user has to try; the tooltip removes the guessing.
+        """
+        action = self.registry.action(action_id)
+        name = icon or _ACTION_ICONS.get(action_id)
+        if name:
+            action.setIcon(ui_icon(name))
+        short = _ACTION_SHORT_TEXT.get(action_id)
+        if short:
+            action.setIconText(short)
+        shortcut = action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
+        if shortcut:
+            tip = action.toolTip() or action.text()
+            action.setToolTip(f"{tip} ({shortcut})")
+            action.setStatusTip(tip)
+
     def _register_actions(self) -> None:
         r = self.registry
         file_actions = [
-            ("file.new", "New Project", "Ctrl+N", self._action_new, False),
-            ("file.open", "Open Project...", "Ctrl+O", self._action_open, False),
-            ("file.save", "Save Project", "Ctrl+S", self._action_save, False),
+            (
+                "file.new",
+                "New Project",
+                QKeySequence.StandardKey.New,
+                self._action_new,
+                False,
+            ),
+            (
+                "file.open",
+                "Open Project...",
+                QKeySequence.StandardKey.Open,
+                self._action_open,
+                False,
+            ),
+            (
+                "file.save",
+                "Save Project",
+                QKeySequence.StandardKey.Save,
+                self._action_save,
+                False,
+            ),
             (
                 "file.save_as",
                 "Save Project As...",
@@ -440,6 +690,7 @@ class MainWindow(QMainWindow):
                 False,
             ),
             ("file.import", "Import Data...", "Ctrl+I", self._action_import, True),
+            ("file.close", "Close Tab", "Ctrl+W", self._action_close_tab, False),
             ("file.exit", "Exit", "Ctrl+Q", self.close, True),
         ]
         for action_id, text, shortcut, slot, sep in file_actions:
@@ -451,7 +702,7 @@ class MainWindow(QMainWindow):
             )
 
         r.register(
-            ActionSpec("edit.undo", "Undo", "Ctrl+Z", menu="Edit"),
+            ActionSpec("edit.undo", "Undo", QKeySequence.StandardKey.Undo, menu="Edit"),
             self._action_undo,
             enabled=False,
         )
@@ -667,6 +918,25 @@ class MainWindow(QMainWindow):
             )
         self.registry.action("graph.hover").setCheckable(True)
 
+        # Canvas zoom. The same three actions work from the canvas tool
+        # strip and from the keyboard; they act on the panel that is being
+        # edited.
+        for action_id, text, shortcut, slot in (
+            ("graph.zoom_in", "Zoom In", "Ctrl+=", self._action_zoom_in),
+            ("graph.zoom_out", "Zoom Out", "Ctrl+-", self._action_zoom_out),
+            ("graph.zoom_fit", "Fit Data to Panel", "Ctrl+0", self._action_zoom_fit),
+        ):
+            r.register(
+                ActionSpec(
+                    action_id,
+                    text,
+                    shortcut,
+                    menu="Graph",
+                    tooltip=f"{text} of the active graph panel",
+                ),
+                slot,
+            )
+
         for action_id, text, slot, sep in (
             (
                 "analyze.descriptive",
@@ -710,7 +980,12 @@ class MainWindow(QMainWindow):
             )
 
         r.register(
-            ActionSpec("export.graph", "Export Active Graph...", None, menu="Export"),
+            ActionSpec(
+                "export.graph",
+                "Export Active Graph...",
+                "Ctrl+E",
+                menu="Export",
+            ),
             self._action_export_graph,
         )
         r.register(
@@ -805,6 +1080,25 @@ class MainWindow(QMainWindow):
                 "tools.live", "Live Data...", None, menu="Tools", separator_before=True
             ),
             self._action_live_data,
+        )
+        r.register(
+            ActionSpec(
+                "view.preferences",
+                "Preferences...",
+                "Ctrl+,",
+                menu="View",
+                separator_before=True,
+            ),
+            self._action_preferences,
+        )
+        r.register(
+            ActionSpec(
+                "help.shortcuts",
+                "Keyboard Shortcuts...",
+                QKeySequence.StandardKey.HelpContents,
+                menu="Help",
+            ),
+            self._action_shortcuts,
         )
         r.register(
             ActionSpec("help.about", "About GraphMatrix", None, menu="Help"),
@@ -961,6 +1255,7 @@ class MainWindow(QMainWindow):
         book = project.add_workbook(Workbook("Book1"))
         book.add_sheet(Worksheet("Sheet1"))
         self._set_project(project, path=None)
+        self._show_welcome()
         return True
 
     def _action_new(self) -> None:
@@ -980,7 +1275,22 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Open failed", f"Could not open project:\n{exc}")
             return
         self._set_project(project, path=Path(path))
+        self._show_first_object()
         self.statusBar().showMessage(f"Opened {path}", 4000)
+
+    def _show_first_object(self) -> None:
+        """Open the first graph (or worksheet) so the window is not blank.
+
+        Opening a project used to leave the central area empty, which looks
+        like the file failed to load.
+        """
+        if self.project.graphs:
+            self._open_graph_tab(self.project.graphs[0])
+            return
+        for book in self.project.workbooks:
+            if book.sheets:
+                self._open_sheet_tab(book.sheets[0])
+                return
 
     def _action_save(self) -> bool:
         if self._path is None:
@@ -1385,6 +1695,14 @@ class MainWindow(QMainWindow):
         redo.setText("Redo")
         undo.setToolTip(f"Undo {self.commands.undo_label}".strip())
         redo.setToolTip(f"Redo {self.commands.redo_label}".strip())
+        # Keep the shortcut in the tooltip: it says what will be undone *and*
+        # how to undo it again.
+        for action in (undo, redo):
+            shortcut = action.shortcut().toString(
+                QKeySequence.SequenceFormat.NativeText
+            )
+            if shortcut:
+                action.setToolTip(f"{action.toolTip()} ({shortcut})")
         if self.project is not None:
             self.project_panel.set_project(self.project)
             self._refresh_open_views()
@@ -1768,15 +2086,21 @@ class MainWindow(QMainWindow):
         if graph is None:
             QMessageBox.information(self, "No graph", "Open a graph first.")
             return
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export Graph As", f"{graph.name}.pdf", GRAPH_FILTER
-        )
-        if not path:
-            return
-        path = _normalized_export_path(path)
+        # The options come first: the format chosen here decides the file
+        # name and the filter of the save dialog.
         options = ExportGraphDialog(self)
         if not options.exec():
             return
+        fmt = options.format.currentData() or "pdf"
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Graph As",
+            f"{graph.name}.{fmt}",
+            _EXPORT_FILTERS.get(fmt, GRAPH_FILTER),
+        )
+        if not path:
+            return
+        path = _normalized_export_path(path, default=fmt)
         aspect, scale = self._export_geometry(options)
         try:
             export_graph(
@@ -1790,6 +2114,8 @@ class MainWindow(QMainWindow):
                 theme=current_preset(),
                 aspect=aspect,
                 scale=scale,
+                white_background=options.white_background.isChecked(),
+                view_limits=self._view_limits_for(graph),
             )
         except Exception as exc:  # noqa: BLE001
             traceback.print_exc()
@@ -1797,23 +2123,35 @@ class MainWindow(QMainWindow):
             return
         self.statusBar().showMessage(f"Exported {path}", 4000)
 
+    def _view_limits_for(self, graph: Graph) -> dict:
+        """The limits of the graph's view on screen, per layer.
+
+        Exporting what is on screen (a zoomed or panned figure included) is
+        what keeps the "what you see is what you get" rule.
+        """
+        view = self._views.get(id(graph))
+        if isinstance(view, GraphView):
+            return view.current_limits()
+        return {}
+
     def _action_export_all_graphs(self) -> None:
         if not self.project.graphs:
             QMessageBox.information(self, "No graphs", "This project has no graphs.")
             return
+        options = ExportGraphDialog(self)
+        if not options.exec():
+            return
+        fmt = options.format.currentData() or "pdf"
         directory = QFileDialog.getExistingDirectory(
             self, "Export All Graphs To Folder"
         )
         if not directory:
             return
-        options = ExportGraphDialog(self)
-        if not options.exec():
-            return
         out_dir = Path(directory)
         exported = 0
         aspect, scale = self._export_geometry(options)
         for graph in self.project.graphs:
-            target = out_dir / f"{graph.name}.pdf"
+            target = out_dir / f"{graph.name}.{fmt}"
             try:
                 export_graph(
                     graph,
@@ -1826,11 +2164,15 @@ class MainWindow(QMainWindow):
                     theme=current_preset(),
                     aspect=aspect,
                     scale=scale,
+                    white_background=options.white_background.isChecked(),
+                    view_limits=self._view_limits_for(graph),
                 )
                 exported += 1
             except Exception as exc:  # noqa: BLE001
                 self.statusBar().showMessage(f"Failed {graph.name}: {exc}", 6000)
-        self.statusBar().showMessage(f"Exported {exported} graph(s) to {out_dir}", 5000)
+        self.statusBar().showMessage(
+            f"Exported {exported} graph(s) as {fmt.upper()} to {out_dir}", 5000
+        )
 
     def _export_geometry(self, options) -> tuple[float | None, float]:
         """Aspect ratio and typography scale for an export.
@@ -1846,7 +2188,7 @@ class MainWindow(QMainWindow):
         if view is None or not hasattr(view, "canvas"):
             return None, 1.0
         try:
-            widget = view.canvas.widget()
+            widget = self._export_surface(view)
             figure = getattr(view.canvas, "_fig", None)
             toolbar = getattr(view.canvas, "_toolbar", None)
             width = widget.width()
@@ -1865,6 +2207,22 @@ class MainWindow(QMainWindow):
         options.height.setValue(round(options.width.value() / aspect, 2))
         scale = (options.width.value() / 25.4) / screen_w
         return aspect, max(0.05, min(4.0, scale))
+
+    def _export_surface(self, view) -> object:
+        """The widget that shows the figure (the exportable surface).
+
+        The matplotlib canvas draws its figure on an "artboard" inside a
+        workspace; the artboard is what the file shows, so its size decides
+        the proportions of the export.
+        """
+        canvas = view.canvas
+        surface = getattr(canvas, "artboard", None)
+        if callable(surface):
+            try:
+                return surface()
+            except Exception:  # noqa: BLE001 - fall back to the whole widget
+                pass
+        return canvas.widget()
 
     def _action_export_sheet(self) -> None:
         sheet = self._current_sheet()
@@ -1983,6 +2341,50 @@ class MainWindow(QMainWindow):
             "Milestones M1–M6: worksheets, graphs, analysis, export, scripting, batch.",
         )
 
+    def _action_close_tab(self) -> None:
+        """Close the tab in front of the user (Ctrl+W)."""
+        index = self.tabs.currentIndex()
+        if index < 0:
+            return
+        self._on_tab_closed(index)
+
+    # -- canvas zoom ---------------------------------------------------------
+    def _zoom_target(self):
+        """The canvas the zoom actions work on, or None."""
+        view = self._active_graph_view
+        if view is None:
+            return None
+        canvas = getattr(view, "canvas", None)
+        return canvas
+
+    def _action_zoom_in(self) -> None:
+        canvas = self._zoom_target()
+        if canvas is not None:
+            canvas.zoom_in()
+
+    def _action_zoom_out(self) -> None:
+        canvas = self._zoom_target()
+        if canvas is not None:
+            canvas.zoom_out()
+
+    def _action_zoom_fit(self) -> None:
+        canvas = self._zoom_target()
+        if canvas is not None:
+            canvas.fit()
+
+    def _action_preferences(self) -> None:
+        from graphmatrix.ui.preferences import PreferencesDialog
+
+        dialog = PreferencesDialog(self)
+        if dialog.exec():
+            self.statusBar().showMessage("Preferences saved", 4000)
+
+    def _action_shortcuts(self) -> None:
+        from graphmatrix.ui.shortcuts_dialog import ShortcutsDialog
+
+        dialog = ShortcutsDialog(self.registry, self)
+        dialog.exec()
+
     # ---------------------------------------------------------------- helpers
     def _current_workbook(self) -> Workbook | None:
         sel = self.project_panel.current_object()
@@ -2027,11 +2429,22 @@ class MainWindow(QMainWindow):
             w = item.widget()
             if w is not None:
                 w.setParent(None)
+        self._plot_host_layout.addWidget(self._plot_placeholder)
+        self.axes_layout.addWidget(self._axes_placeholder)
         if isinstance(widget, GraphView):
             self._plot_host_layout.addWidget(widget.plot_panel)
             self.axes_layout.addWidget(widget.group_axis)
+            self._plot_placeholder.hide()
+            self._axes_placeholder.hide()
+        else:
+            self._plot_placeholder.show()
+            self._axes_placeholder.show()
         if isinstance(widget, GraphView):
             self._active_graph_view = widget
+            # Keep the tree (and with it the Properties panel) on the graph
+            # that is open, so everything talks about the same object.
+            self.project_panel.select_object(widget.graph)
+            self.properties_panel.show_object(widget.graph)
             action = self.registry.action("graph.hover")
             action.blockSignals(True)
             action.setChecked(widget.hover_enabled)
@@ -2070,6 +2483,16 @@ class MainWindow(QMainWindow):
             elif isinstance(view, GraphView):
                 view.apply_brush(source, rows)
 
+    def _on_tree_selection(self, obj) -> None:
+        """Selecting a graph in the Project Explorer activates its tab.
+
+        The canvas, the tools and the Properties panel then all talk about
+        the graph that is selected - clicking the other graph in the tree
+        really switches to it.
+        """
+        if isinstance(obj, Graph):
+            self._open_graph_tab(obj)
+
     def _on_object_activated(self, obj) -> None:
         if isinstance(obj, Worksheet):
             self._open_sheet_tab(obj)
@@ -2083,6 +2506,7 @@ class MainWindow(QMainWindow):
         if view is not None:
             self.tabs.setCurrentWidget(view)
             return
+        self._hide_welcome()
         view = WorksheetView(sheet, self.commands, sheet_label(self.project, sheet))
         view.plot_column_requested.connect(
             lambda name, s=sheet: self._plot_column(sheet_label(self.project, s), name)
@@ -2100,6 +2524,7 @@ class MainWindow(QMainWindow):
             self.tabs.setCurrentWidget(view)
             self._active_graph_view = view
             return
+        self._hide_welcome()
         view = GraphView(graph, self.project, self.commands, on_change=self._mark_dirty)
         view.hover_changed.connect(self._on_graph_hover_changed)
         view.brush_requested.connect(self._on_brush_requested)
@@ -2130,6 +2555,11 @@ class MainWindow(QMainWindow):
         self.tabs.clear()
         self._views.clear()
         self._active_graph_view = None
+        # An empty project gets the welcome page instead of a blank canvas.
+        if not self.project.graphs and not any(
+            book.sheets for book in self.project.workbooks
+        ):
+            self._show_welcome()
 
     # ---------------------------------------------------------------- plugins
     def _load_plugins(self) -> None:

@@ -328,12 +328,47 @@ preset is active.
 | New project                | Ctrl+N                   |
 | Open project               | Ctrl+O                   |
 | Save project               | Ctrl+S                   |
+| Save project as            | Ctrl+Shift+S             |
 | Import data                | Ctrl+I                   |
+| Close tab                  | Ctrl+W                   |
 | Copy / Cut / Paste (cells) | Ctrl+C / Ctrl+X / Ctrl+V |
 | Undo / Redo                | Ctrl+Z / Ctrl+Shift+Z    |
 | Rename selected item       | F2                       |
+| Export active graph        | Ctrl+E                   |
 | Command palette            | Ctrl+Shift+P             |
+| Preferences                | Ctrl+,                   |
+| All keyboard shortcuts     | F1                       |
+| Zoom in / out / fit panel  | Ctrl+= / Ctrl+- / Ctrl+0 |
 | Quit                       | Ctrl+Q                   |
+
+**Help → Keyboard Shortcuts…** (F1) lists every command with its key, and the list
+can be filtered as you type. On macOS the `Ctrl` keys are the Command key and
+`F1` is the platform's help key.
+
+## Preferences
+
+**View → Preferences…** (Ctrl+,) holds the settings that are yours to choose:
+
+| Tab         | Setting                                                     |
+| ----------- | ----------------------------------------------------------- |
+| Appearance  | Theme (the same four presets as View → Theme)                |
+| Worksheet   | Decimals of newly created columns                            |
+| Canvas      | Whether `Ctrl` + mouse wheel zooms the panel under the pointer |
+| Export      | Default file format, resolution (DPI) and size in millimetres |
+| General     | Whether to ask before unsaved changes are discarded           |
+
+The values are stored with the theme preset and are remembered between runs.
+**Restore Defaults** puts every setting back to its original value.
+
+## Zooming a graph
+
+Every graph panel has a small tool strip above the figure with **zoom in**,
+**zoom out**, **fit** and the **data readout** switch. The percentage next to
+them shows how much of the data the panel shows (100 % is the full range);
+clicking it fits the data again. The same three commands are on the keyboard
+(`Ctrl+=`, `Ctrl+-`, `Ctrl+0`) and act on the panel that is being edited, so a
+stack or a grid zooms one panel at a time. `Ctrl` + mouse wheel zooms around
+the pointer.
 
 ## Project files
 

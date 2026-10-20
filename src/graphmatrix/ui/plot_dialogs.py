@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QDoubleSpinBox,
     QFormLayout,
+    QLabel,
     QLineEdit,
     QPushButton,
     QVBoxLayout,
@@ -24,7 +25,12 @@ from graphmatrix.core.model import (
     ReferenceLine,
     Z_STYLES,
 )
-from graphmatrix.ui.widgets import fill_column_combo, fill_sheet_combo, sheet_label
+from graphmatrix.ui.widgets import (
+    color_button_style,
+    fill_column_combo,
+    fill_sheet_combo,
+    sheet_label,
+)
 
 
 class AddPlotDialog(QDialog):
@@ -62,11 +68,46 @@ class AddPlotDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
+        self.hint = QLabel("")
+        self.hint.setWordWrap(True)
+        self.hint.setStyleSheet("color: palette(mid);")
+        layout.addWidget(self.hint)
         layout.addWidget(buttons)
 
         self.sheet_combo.currentIndexChanged.connect(self._refresh_columns)
         self.style_combo.currentIndexChanged.connect(self._sync_z_visibility)
+        self._select_sheet_with_data()
         self._refresh_columns()
+
+    def _select_sheet_with_data(self) -> None:
+        """Start on a worksheet that actually has columns in it.
+
+        The first sheet of a project is usually the empty one the project was
+        created with, so plotting from it would look like the dialog is broken.
+        """
+        for index in range(self.sheet_combo.count()):
+            sheet = self.sheet_combo.itemData(index)
+            if sheet is not None and sheet.num_columns:
+                self.sheet_combo.setCurrentIndex(index)
+                return
+
+    def _update_hint(self) -> None:
+        sheet = self.sheet_combo.currentData()
+        if sheet is None:
+            self.hint.setText("This project has no worksheet yet.")
+            return
+        if not sheet.num_columns:
+            self.hint.setText(
+                "This worksheet is empty. Import a data file or use "
+                "Data → Add Sample Data first."
+            )
+            return
+        if not self.x_combo.currentData() or not self.y_combo.currentData():
+            self.hint.setText(
+                "This worksheet needs one X column and one Y column to plot."
+            )
+            return
+        self.hint.setText("")
 
     def _refresh_columns(self) -> None:
         sheet = self.sheet_combo.currentData()
@@ -79,6 +120,7 @@ class AddPlotDialog(QDialog):
             self.z_combo, sheet, types=(ColumnType.Z, ColumnType.Y), include_none=True
         )
         self._sync_z_visibility()
+        self._update_hint()
 
     def _sync_z_visibility(self) -> None:
         needs_z = PlotStyle(self.style_combo.currentData()) in Z_STYLES
@@ -154,7 +196,10 @@ class ReferenceLineDialog(QDialog):
             self._update_color_button()
 
     def _update_color_button(self) -> None:
-        self.color_button.setStyleSheet(f"background-color: {self._color}")
+        # The button paints itself in the line colour, so its label needs a
+        # colour that stays readable on that swatch.
+        self.color_button.setText(self._color)
+        self.color_button.setStyleSheet(color_button_style(self._color, self._color))
 
     def reference_line(self) -> ReferenceLine:
         return ReferenceLine(

@@ -1,7 +1,7 @@
 """Canvas chrome: the floating overlay, panel marker, zoom tools, readout.
 
-The overlay is a plain widget, so the readout and the crosshair can never leak
-into an exported figure — that is checked here as well.
+The overlay is a plain widget, so the readout can never leak into an exported
+figure — that is checked here as well.
 """
 
 from __future__ import annotations
@@ -46,8 +46,17 @@ class _Event:
 def test_the_canvas_has_a_floating_overlay(canvas):
     overlay = canvas.overlay()
     assert overlay is not None
-    # The overlay lives above the plot but never eats pointer events.
-    assert overlay.testAttribute(__import__("PySide6.QtCore", fromlist=["Qt"]).Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+    # The overlay lives above the plot, so it must not eat the pointer events
+    # meant for the canvas.
+    assert overlay.testAttribute(
+        __import__("PySide6.QtCore", fromlist=["Qt"]).Qt.WidgetAttribute.WA_TransparentForMouseEvents
+    )
+    # The tool buttons are ordinary widgets on the workspace around the
+    # figure: they are always clickable and never cover the plot.
+    tools = canvas._tools
+    assert tools.parent() is canvas.widget()
+    for button in (tools._zoom_in, tools._zoom_out, tools._fit, tools._hover):
+        assert button.isEnabled()
 
 
 def test_the_hover_readout_lives_in_the_overlay_not_in_the_figure(canvas):
@@ -64,7 +73,7 @@ def test_the_readout_is_removed_when_the_hover_leaves(canvas):
     canvas.set_hover(True)
     canvas._on_hover(_Event(canvas._ax_left, 1.0, 1.0))
     assert canvas.overlay()._readout_label.text()
-    canvas._remove_crosshair()
+    canvas._clear_readout()
     assert canvas.overlay()._readout_label.text() == ""
 
 

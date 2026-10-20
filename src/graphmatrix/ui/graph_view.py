@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QTabWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -68,8 +69,9 @@ from graphmatrix.core.plot_themes import series_color
 from graphmatrix.ui import theme
 from graphmatrix.ui import plot_themes
 from graphmatrix.ui.canvas import create_canvas
+from graphmatrix.ui.icons import ui_icon
 from graphmatrix.ui.plot_dialogs import AddPlotDialog, ReferenceLineDialog
-from graphmatrix.ui.widgets import COLUMN_MIME, fill_column_combo
+from graphmatrix.ui.widgets import COLUMN_MIME, color_button_style, fill_column_combo
 
 _SYMBOLS = ["o", "s", "^", "v", "d", "+", "x", "*", ""]
 
@@ -98,10 +100,19 @@ class GraphView(QWidget):
         self.canvas = create_canvas(self._preferred_backend())
         self.canvas.label_click_callback = self._on_label_click
         self.canvas.point_picked = self._on_canvas_point_picked
+        # The canvas tells the sidebar when its readout is switched on or off
+        # (the button on the canvas can do it too).
+        try:
+            self.canvas.hover_state_changed = self._on_canvas_hover_changed
+        except Exception:  # noqa: BLE001 - backends without the hook
+            pass
         self._series_sources: list[str] = []  # per canvas series, for brushing
+        self._series_specs: list[PlotSpec] = []  # the spec behind every series
         self.plot_list = QListWidget()
         self.plot_list.currentRowChanged.connect(self._on_plot_selected)
-        self.hover_enabled = False
+        # The readout is on by default: the value under the pointer is the
+        # most wanted piece of information while looking at a plot.
+        self.hover_enabled = True
 
         # Side panel lives in the main window's Properties dock (swapped per
         # graph view), not inside this tab: the tab shows only the canvas.
@@ -135,6 +146,28 @@ class GraphView(QWidget):
         side = QVBoxLayout(panel)
         side.setContentsMargins(4, 4, 4, 4)
         side.setSpacing(6)
+        # The readout switch belongs to the figure, not to the reference
+        # lines, so it sits on top of the panel. It is a small toggle, not a
+        # banner: a full-width blue button reads as "press me", while this is
+        # a switch that is simply on.
+        self.hover_check = QToolButton()
+        self.hover_check.setObjectName("readoutToggle")
+        self.hover_check.setText("Readout")
+        self.hover_check.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+        )
+        self.hover_check.setIcon(ui_icon("crosshair"))
+        self.hover_check.setCheckable(True)
+        self.hover_check.setToolTip(
+            "Show the nearest data point under the mouse "
+            "(the values appear in the corner of the figure)"
+        )
+        self.hover_check.toggled.connect(self.set_hover)
+        readout_row = QHBoxLayout()
+        readout_row.setContentsMargins(0, 0, 0, 0)
+        readout_row.addWidget(self.hover_check)
+        readout_row.addStretch(1)
+        side.addLayout(readout_row)
         side.addWidget(self._plot_group)
         side.addWidget(self._build_plot_group())
         side.addWidget(self._build_ref_group())
@@ -150,7 +183,8 @@ class GraphView(QWidget):
         self.linestyle_combo = QComboBox()
         for line_style in LINE_STYLES:
             self.linestyle_combo.addItem(line_style, line_style)
-        self.color_button = QPushButton("color")
+        self.color_button = QPushButton("automatic")
+        self.color_button.setToolTip("Colour of this series")
         self.color_button.clicked.connect(self._pick_color)
         self.z_combo = QComboBox()
         self.width_spin = QDoubleSpinBox()
@@ -367,15 +401,6 @@ class GraphView(QWidget):
         for button in (self.add_h_button, self.add_v_button, self.remove_ref_button):
             buttons.addWidget(button)
         layout.addLayout(buttons)
-
-        self.hover_check = QPushButton("Data readout: off")
-        self.hover_check.setCheckable(True)
-        self.hover_check.setToolTip(
-            "Show a crosshair and the nearest data point under the mouse "
-            "(the readout appears in the corner of the figure)"
-        )
-        self.hover_check.toggled.connect(self.set_hover)
-        layout.addWidget(self.hover_check)
         return self.group_ref
 
     def _update_ref_buttons(self) -> None:
@@ -386,20 +411,32 @@ class GraphView(QWidget):
         item = self.plot_list.currentItem()
         return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
 
+    def _active_panel_index(self) -> int:
+        """The index of the panel the user is working on.
+
+        It is the panel that holds the series selected in the plot list, so
+        the sidebar, the canvas marker and the tools always talk about the
+        same panel.
+        """
+        spec = self._selected_spec()
+        layer = self._layer_for_spec(spec) if spec is not None else self.graph.first_layer
+        try:
+            return self.graph.layers.index(layer)
+        except ValueError:
+            return 0
+
     def _mark_active_panel(self) -> None:
         """Tell the canvas which panel the user is working on.
 
         In a grid or a stack the canvas highlights that panel and names it
-        ("Panel 2 / 4"), so the sidebar and the figure never disagree.
+        ("Panel 2 / 4"), so the sidebar and the figure never disagree. The
+        canvas also *follows* the selection: the zoom, the fit and the axis
+        settings then work on the panel that is being edited, not on the
+        first one.
         """
-        spec = self._selected_spec()
-        layer = self._layer_for_spec(spec) if spec is not None else self.graph.first_layer
-        layers = self.graph.layers
-        try:
-            index = layers.index(layer)
-        except ValueError:
-            index = 0
-        self.canvas.set_active_panel(index, len(layers))
+        index = self._active_panel_index()
+        self.canvas.set_active_panel(index, len(self.graph.layers))
+        self.canvas.set_current_panel(index)
 
     def _layer_for_spec(self, spec: PlotSpec) -> Layer:
         for layer in self.graph.layers:
@@ -504,11 +541,20 @@ class GraphView(QWidget):
             self.hover_check.blockSignals(True)
             self.hover_check.setChecked(self.hover_enabled)
             self.hover_check.blockSignals(False)
-        self.hover_check.setText(
-            f"Data readout: {'on' if self.hover_enabled else 'off'}"
+        self.hover_check.setText("Readout")
+        self.hover_check.setToolTip(
+            "Show the nearest data point under the mouse "
+            "(the values appear in the corner of the figure)"
+            if self.hover_enabled
+            else "The data readout is off. Click to switch it on."
         )
         self.canvas.set_hover(self.hover_enabled)
         self.hover_changed.emit(self.hover_enabled)
+
+    def _on_canvas_hover_changed(self, enabled: bool) -> None:
+        """The canvas switched its readout on or off: follow it."""
+        if bool(enabled) != bool(self.hover_enabled):
+            self.set_hover(bool(enabled))
 
     def add_column_plot(self, source: str, column_name: str) -> None:
         """Plot a single column (used by drag-and-drop from the Project Explorer)."""
@@ -560,7 +606,18 @@ class GraphView(QWidget):
             self._apply_axis_props()
 
     def _update_color_button(self) -> None:
-        self.color_button.setStyleSheet(f"background-color: {self._color or '#ffffff'}")
+        """Show the series colour as a swatch with a readable label."""
+        if self._color:
+            self.color_button.setText(self._color)
+            self.color_button.setStyleSheet(color_button_style(self._color, self._color))
+        else:
+            # No explicit colour: the palette colour is used, so the button
+            # keeps the theme's own look instead of a white slab.
+            self.color_button.setText("automatic")
+            self.color_button.setStyleSheet(
+                "background: palette(window); color: palette(windowText);"
+                " border: 1px solid palette(mid); border-radius: 6px; padding: 4px 10px;"
+            )
 
     # -- apply edits ---------------------------------------------------------
     def _populate_z_combo(self, spec: PlotSpec | None) -> None:
@@ -615,8 +672,8 @@ class GraphView(QWidget):
                     SetAttributesCommand(
                         layer,
                         "Edit Axes",
-                        x_scale=self.xscale_combo.currentData(),
-                        y_scale=self.yscale_combo.currentData(),
+                        x_scale=AxisScale(self.xscale_combo.currentData()),
+                        y_scale=AxisScale(self.yscale_combo.currentData()),
                         x_label=self.xlabel_edit.text(),
                         y_label=self.ylabel_edit.text(),
                         y2_label=self.y2label_edit.text(),
@@ -688,6 +745,9 @@ class GraphView(QWidget):
         self.render()
         # The render walks every panel; re-mark the edited one afterwards.
         self._mark_active_panel()
+        # The figure was redrawn, so the selected curve needs its highlight
+        # again.
+        self._highlight_selected_series(self._selected_spec())
 
     def on_theme_changed(self) -> None:
         """Re-apply the canvas colours after the app theme switched."""
@@ -747,6 +807,7 @@ class GraphView(QWidget):
     def _on_plot_selected(self, row: int) -> None:
         spec = self._selected_spec()
         self._mark_active_panel()
+        self._highlight_selected_series(spec)
         self._loading = True
         try:
             if spec is not None:
@@ -763,6 +824,31 @@ class GraphView(QWidget):
         finally:
             self._loading = False
         self._update_color_button()
+
+    def _highlight_selected_series(self, spec: PlotSpec | None) -> None:
+        """Mark the selected curve in the figure.
+
+        The sidebar and the plot then show the same series, so it is obvious
+        which line the properties and the tools are about.
+        """
+        setter = getattr(self.canvas, "set_selected_series", None)
+        if not callable(setter):
+            return
+        index = -1
+        if spec is not None:
+            for position, candidate in enumerate(self._series_specs):
+                if candidate is spec:
+                    index = position
+                    break
+        setter(index if index >= 0 else None)
+
+    def select_plot(self, spec: PlotSpec) -> None:
+        """Select ``spec`` in the plot list (used when a curve is clicked)."""
+        for row in range(self.plot_list.count()):
+            item = self.plot_list.item(row)
+            if item.data(Qt.ItemDataRole.UserRole) is spec:
+                self.plot_list.setCurrentRow(row)
+                return
 
     def _load_axis_fields(self, layer: Layer) -> None:
         self.xscale_combo.setCurrentText(AxisScale(layer.x_scale).value)
@@ -903,6 +989,7 @@ class GraphView(QWidget):
     def render(self) -> None:
         self._ensure_backend()
         self._series_sources = []
+        self._series_specs = []
         self.canvas.set_grid(
             getattr(self.graph, "layout_rows", 1), getattr(self.graph, "layout_cols", 1)
         )
@@ -935,6 +1022,7 @@ class GraphView(QWidget):
                     continue
                 y = data.y if not offset else np.asarray(data.y, dtype=float) + offset
                 self._series_sources.append(spec.source)
+                self._series_specs.append(spec)
                 self.canvas.plot(
                     data.x,
                     y,
@@ -1009,7 +1097,12 @@ class GraphView(QWidget):
             # Add the legend after the plots so its handles exist.
             self.canvas.show_legend(each.show_legend)
 
-        self.canvas.set_current_panel(0)
+        self.canvas.set_current_panel(self._active_panel_index())
+        if gtype == GraphType.X_TWIN:
+            # The panels of an X-Twin share their Y axis.
+            share_y = getattr(self.canvas, "share_y_across_panels", None)
+            if callable(share_y):
+                share_y()
         if self.graph.title:
             self.canvas.set_title(
                 self.graph.title,
@@ -1017,7 +1110,9 @@ class GraphView(QWidget):
                 fontsize=self.graph.title_font_size,
                 color=self.graph.title_color,
             )
-        self.canvas.set_hover(self.hover_enabled)
+        # The graph view owns the switch, so the sidebar button, the menu and
+        # the canvas always show the same state.
+        self.set_hover(self.hover_enabled)
 
         for annotation in self.graph.annotations:
             color = annotation.color
@@ -1035,6 +1130,26 @@ class GraphView(QWidget):
         self._apply_last_brush()
 
     # -- linked brushing -----------------------------------------------------
+    def current_limits(self) -> dict[int, tuple[float, float, float, float]]:
+        """The limits of every panel of the *current view*, per layer.
+
+        The exporter uses them, so a figure that was zoomed or panned on
+        screen is written out the way it looks (what you see is what you get).
+        """
+        getter = getattr(self.canvas, "current_limits", None)
+        if not callable(getter):
+            return {}
+        try:
+            values = list(getter())
+        except Exception:  # noqa: BLE001 - the canvas may not be ready
+            return {}
+        if not values:
+            return {}
+        limits: dict[int, tuple[float, float, float, float]] = {}
+        for index in range(len(self.graph.layers)):
+            limits[index] = values[index % len(values)]
+        return limits
+
     def _on_canvas_point_picked(self, series_index: int, row: int) -> None:
         """A plotted point was clicked: broadcast the row to the linked views."""
         source = (
@@ -1044,6 +1159,15 @@ class GraphView(QWidget):
         )
         if source:
             self.brush_requested.emit(source, [int(row)])
+        # Clicking a curve also selects it, so the properties, the tools and
+        # the highlighted line all belong to the same series.
+        spec = (
+            self._series_specs[series_index]
+            if 0 <= series_index < len(self._series_specs)
+            else None
+        )
+        if spec is not None:
+            self.select_plot(spec)
 
     def apply_brush(self, source: str, rows: list[int]) -> None:
         """Highlight this graph's series whose source matches the brush."""

@@ -267,6 +267,13 @@ QPushButton#headerAddButton {
 QPushButton#headerAddButton:hover { background: $accent; color: $accent_text; border-color: $accent; }
 QPushButton#headerAddButton:pressed { background: $accent; color: $accent_text; border-color: $accent; }
 
+/* ---- key chips (welcome page) ---- */
+QLabel#keyChip {
+    background: $alt; color: $text; border: 1px solid $border;
+    border-radius: 5px; padding: 2px 9px;
+    font-family: monospace; font-weight: 600;
+}
+
 /* ---- status bar ---- */
 QStatusBar { background: $panel; color: $muted; border-top: 1px solid $border; }
 QStatusBar::item { border: none; }
@@ -311,6 +318,18 @@ QPushButton:pressed { background: $accent; color: $accent_text; border-color: $a
 QPushButton:default { border-color: $accent; }
 QPushButton:disabled { color: $disabled; background: $window; border-color: $border; }
 QPushButton:checked { background: $accent; color: $accent_text; }
+QPushButton:focus { border-color: $accent; }
+
+/* The readout switch is a switch, not a call to action: it only lights up
+   while it is on, and it never spans the whole panel. */
+QToolButton#readoutToggle {
+    background: transparent; border: 1px solid $border; border-radius: 6px;
+    padding: 4px 12px; color: $muted;
+}
+QToolButton#readoutToggle:hover { background: $hover; color: $text; }
+QToolButton#readoutToggle:checked {
+    background: $accent; color: $accent_text; border-color: $accent;
+}
 
 /* ---- text inputs and item views ---- */
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QPlainTextEdit, QTextEdit,

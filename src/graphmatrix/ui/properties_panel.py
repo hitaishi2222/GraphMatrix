@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
+    QLabel,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -66,6 +67,21 @@ class PropertiesPanel(QWidget):
         self._table.itemChanged.connect(self._on_item_changed)
         layout.addWidget(self._table)
 
+        # Without a selection the table would be an empty box with a header
+        # and nothing in it; this says what to do instead.
+        self._hint = QLabel(
+            "Select a project, workbook, worksheet, column or graph in the\n"
+            "Project Explorer to see its properties here."
+        )
+        self._hint.setWordWrap(True)
+        self._hint.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self._hint.setContentsMargins(8, 10, 8, 8)
+        layout.addWidget(self._hint)
+        layout.setStretch(0, 1)
+        # A fresh panel shows the hint, not an empty table.
+        self._table.setVisible(False)
+        self._hint.setVisible(True)
+
     def show_object(self, obj) -> None:
         self._obj = obj
         rows = self._describe(obj) if obj is not None else []
@@ -89,6 +105,8 @@ class PropertiesPanel(QWidget):
                 self._table.setItem(row, 1, value_item)
         finally:
             self._loading = False
+        self._hint.setVisible(obj is None)
+        self._table.setVisible(obj is not None)
 
     # -- internals -----------------------------------------------------------
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
