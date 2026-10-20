@@ -32,6 +32,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from graphmatrix.core.bands import (
+    Y_MODE_ABSOLUTE,
+    Y_MODE_NORMALIZED,
+    band_baselines,
+    layer_band_transform,
+    layer_is_normalized,
+)
 from graphmatrix.core.commands import (
     AddAnnotationCommand,
     AddLayerCommand,
@@ -74,6 +81,14 @@ from graphmatrix.ui.plot_dialogs import AddPlotDialog, ReferenceLineDialog
 from graphmatrix.ui.widgets import COLUMN_MIME, color_button_style, fill_column_combo
 
 _SYMBOLS = ["o", "s", "^", "v", "d", "+", "x", "*", ""]
+
+
+def _layer_values(resolved) -> np.ndarray:
+    """The Y values of a layer, as one array (empty when it has no data)."""
+    arrays = [np.asarray(data.y, dtype=float) for _spec, data in resolved]
+    if not arrays:
+        return np.array([], dtype=float)
+    return np.concatenate(arrays)
 
 
 class GraphView(QWidget):
@@ -269,6 +284,14 @@ class GraphView(QWidget):
         self.yaxis_visible_check.setToolTip(
             "Hide the Y axis (line, ticks, labels) for a clean stacked panel."
         )
+        self.ymode_combo = QComboBox()
+        self.ymode_combo.addItem("Absolute", Y_MODE_ABSOLUTE)
+        self.ymode_combo.addItem("Normalized (0-1)", Y_MODE_NORMALIZED)
+        self.ymode_combo.setToolTip(
+            "Absolute draws the values as they are. Normalized scales the "
+            "layer to 0-1 over its own range, so the trend is readable "
+            "whatever the absolute values are."
+        )
         self.plot_theme_combo = QComboBox()
         self.plot_theme_combo.addItem("Follow app theme", "")
         for pt in plot_themes.PLOT_THEMES.values():
@@ -279,6 +302,7 @@ class GraphView(QWidget):
         form.addRow("X max:", self.xmax_edit)
         form.addRow("Y min:", self.ymin_edit)
         form.addRow("Y max:", self.ymax_edit)
+        form.addRow("Y mode:", self.ymode_combo)
         form.addRow("Legend:", self.legend_check)
         form.addRow("Plot theme:", self.plot_theme_combo)
 
@@ -313,6 +337,13 @@ class GraphView(QWidget):
             "Vertical offset added to each successive stacked/twin panel's data "
             "(a waterfall-style stack)."
         )
+        self.band_offset_spin = QDoubleSpinBox()
+        self.band_offset_spin.setRange(0.1, 100.0)
+        self.band_offset_spin.setDecimals(2)
+        self.band_offset_spin.setSingleStep(0.1)
+        self.band_offset_spin.setToolTip(
+            "Distance between two bands of a stacked-line figure, in band units."
+        )
         self.graphtype_hint = QLabel("")
         self.graphtype_hint.setWordWrap(True)
         self.graphtype_hint.setStyleSheet("color: palette(mid);")
@@ -322,6 +353,7 @@ class GraphView(QWidget):
         plform.addRow("Panel gap X:", self.panel_gapx_spin)
         plform.addRow("Panel gap Y:", self.panel_gapy_spin)
         plform.addRow("Y delta:", self.ydelta_spin)
+        plform.addRow("Band pitch:", self.band_offset_spin)
         plform.addRow(self.graphtype_hint)
 
         self.group_axis.addTab(scales_tab, "Scales/Range")
@@ -351,6 +383,7 @@ class GraphView(QWidget):
             self.minor_ticks_check,
             self.tick_direction_combo,
             self.yaxis_visible_check,
+            self.ymode_combo,
         ):
             widget.currentIndexChanged.connect(self._apply_axis_props)
         self.graphtype_combo.currentIndexChanged.connect(self._apply_graph_type)
@@ -358,6 +391,7 @@ class GraphView(QWidget):
             self.panel_gapx_spin,
             self.panel_gapy_spin,
             self.ydelta_spin,
+            self.band_offset_spin,
         ):
             gap_widget.valueChanged.connect(self._apply_axis_props)
         self.plot_theme_combo.currentIndexChanged.connect(self._apply_plot_theme)
@@ -416,8 +450,11 @@ class GraphView(QWidget):
 
         It is the panel that holds the series selected in the plot list, so
         the sidebar, the canvas marker and the tools always talk about the
-        same panel.
+        same panel. A stacked-line figure has one panel: its layers are the
+        bands inside it.
         """
+        if getattr(self.graph, "graph_type", "") == GraphType.STACK_LINE.value:
+            return 0
         spec = self._selected_spec()
         layer = self._layer_for_spec(spec) if spec is not None else self.graph.first_layer
         try:
@@ -435,7 +472,12 @@ class GraphView(QWidget):
         first one.
         """
         index = self._active_panel_index()
-        self.canvas.set_active_panel(index, len(self.graph.layers))
+        total = (
+            1
+            if getattr(self.graph, "graph_type", "") == GraphType.STACK_LINE.value
+            else len(self.graph.layers)
+        )
+        self.canvas.set_active_panel(index, total)
         self.canvas.set_current_panel(index)
 
     def _layer_for_spec(self, spec: PlotSpec) -> Layer:
@@ -475,6 +517,9 @@ class GraphView(QWidget):
 
     def add_layer(self) -> None:
         layer = Layer(f"Layer {self.graph.num_layers + 1}")
+        if getattr(self.graph, "graph_type", "") == GraphType.STACK_LINE.value:
+            # A new band of a stacked-line figure is normalized like the rest.
+            layer.y_mode = Y_MODE_NORMALIZED
         self.commands.push(AddLayerCommand(self.graph, layer))
         self.refresh()
 
@@ -686,6 +731,7 @@ class GraphView(QWidget):
                         minor_ticks=self.minor_ticks_check.currentData(),
                         tick_direction=self.tick_direction_combo.currentText(),
                         show_y_axis=self.yaxis_visible_check.currentData(),
+                        y_mode=self.ymode_combo.currentData(),
                         label_font_family=self.font_family_combo.currentText(),
                         label_font_size=float(self.label_font_size_spin.value()),
                         label_color=getattr(self, "_label_color", ""),
@@ -702,6 +748,7 @@ class GraphView(QWidget):
                         panel_gap_x=float(self.panel_gapx_spin.value()),
                         panel_gap_y=float(self.panel_gapy_spin.value()),
                         y_delta=float(self.ydelta_spin.value()),
+                        stack_offset=float(self.band_offset_spin.value()),
                     ),
                 ],
                 label="Edit Axes",
@@ -881,6 +928,7 @@ class GraphView(QWidget):
             (self.panel_gapx_spin, getattr(self.graph, "panel_gap_x", 12.0)),
             (self.panel_gapy_spin, getattr(self.graph, "panel_gap_y", 12.0)),
             (self.ydelta_spin, getattr(self.graph, "y_delta", 0.0)),
+            (self.band_offset_spin, getattr(self.graph, "stack_offset", 1.2)),
         ):
             widget.blockSignals(True)
             widget.setValue(float(value or 0.0))
@@ -897,6 +945,12 @@ class GraphView(QWidget):
         self.yaxis_visible_check.setCurrentIndex(
             0 if getattr(layer, "show_y_axis", True) else 1
         )
+        ymode_index = self.ymode_combo.findData(
+            getattr(layer, "y_mode", Y_MODE_ABSOLUTE)
+        )
+        self.ymode_combo.blockSignals(True)
+        self.ymode_combo.setCurrentIndex(max(ymode_index, 0))
+        self.ymode_combo.blockSignals(False)
         idx = self.tick_direction_combo.findText(
             getattr(layer, "tick_direction", "out")
         )
@@ -925,15 +979,22 @@ class GraphView(QWidget):
         show_grid_size = gtype == GraphType.GRID
         show_gaps = gtype in (GraphType.GRID, GraphType.X_TWIN)
         show_delta = gtype in (GraphType.STACK, GraphType.X_TWIN)
+        show_band_pitch = gtype == GraphType.STACK_LINE
         self.layout_rows_spin.setEnabled(show_grid_size)
         self.layout_cols_spin.setEnabled(show_grid_size)
         self.panel_gapx_spin.setEnabled(show_gaps)
         self.panel_gapy_spin.setEnabled(show_gaps)
         self.ydelta_spin.setEnabled(show_delta)
+        self.band_offset_spin.setEnabled(show_band_pitch)
         hints = {
             GraphType.SIMPLE: "One plot frame.",
             GraphType.STACK: (
                 "Layers are stacked in a single column (add layers to add panels)."
+            ),
+            GraphType.STACK_LINE: (
+                "One frame, one band per layer (add layers to add curves). "
+                "Set a layer's Y mode to Normalized to follow the trend "
+                "instead of the absolute values."
             ),
             GraphType.DOUBLE_Y: (
                 "One frame with a secondary (right) Y axis — set a plot's Y axis to Right."
@@ -990,9 +1051,20 @@ class GraphView(QWidget):
         self._ensure_backend()
         self._series_sources = []
         self._series_specs = []
-        self.canvas.set_grid(
-            getattr(self.graph, "layout_rows", 1), getattr(self.graph, "layout_cols", 1)
-        )
+        try:
+            gtype = GraphType(getattr(self.graph, "graph_type", GraphType.SIMPLE.value))
+        except ValueError:
+            gtype = GraphType.SIMPLE
+        # A stacked-line figure holds every curve in one panel: the layers
+        # are the bands, not the panels.
+        stack_line = gtype == GraphType.STACK_LINE
+        if stack_line:
+            self.canvas.set_grid(1, 1)
+        else:
+            self.canvas.set_grid(
+                getattr(self.graph, "layout_rows", 1),
+                getattr(self.graph, "layout_cols", 1),
+            )
         self.canvas.set_panel_gaps(
             getattr(self.graph, "panel_gap_x", 0.0) / 100.0,
             getattr(self.graph, "panel_gap_y", 0.0) / 100.0,
@@ -1001,26 +1073,86 @@ class GraphView(QWidget):
         three_d = any(
             is_3d_style(spec.style) for each in self.graph.layers for spec in each.plots
         )
-        try:
-            gtype = GraphType(getattr(self.graph, "graph_type", GraphType.SIMPLE.value))
-        except ValueError:
-            gtype = GraphType.SIMPLE
         # A stack / x-twin can shift each successive panel vertically, producing
         # the classic waterfall arrangement without changing the worksheet data.
         y_delta = float(getattr(self.graph, "y_delta", 0.0) or 0.0)
         offset_panels = gtype in (GraphType.STACK, GraphType.X_TWIN)
 
+        # The data of every layer, resolved once: a band needs the layer's own
+        # range before it can be scaled.
+        layer_data: dict[int, list[tuple[PlotSpec, object]]] = {}
+        for index, each in enumerate(self.graph.layers):
+            resolved = []
+            for spec in each.plots:
+                data = resolve_plot(self.project, spec)
+                if data is not None:
+                    resolved.append((spec, data))
+            layer_data[index] = resolved
+
+        # How each layer's values are drawn, and where its band starts.
+        layer_transform: dict[int, object] = {}
+        layer_err_factor: dict[int, float] = {}
+        band_base: dict[int, float] = {}
+        if stack_line:
+            heights: list[float] = []
+            for index, each in enumerate(self.graph.layers):
+                values = _layer_values(layer_data.get(index, []))
+                transform, height, err_factor = layer_band_transform(
+                    values,
+                    mode=str(getattr(each, "y_mode", "absolute") or "absolute"),
+                    log=AxisScale(each.y_scale) == AxisScale.LOG,
+                )
+                layer_transform[index] = transform
+                layer_err_factor[index] = err_factor
+                heights.append(height)
+            pitch = float(getattr(self.graph, "stack_offset", 1.2) or 1.2)
+            for index, base in enumerate(band_baselines(heights, pitch)):
+                band_base[index] = base
+        else:
+            for index, each in enumerate(self.graph.layers):
+                # A log layer keeps its own values: the log scale is the axis's
+                # job there, so it is never rescaled.
+                if not layer_is_normalized(each):
+                    continue
+                if AxisScale(each.y_scale) == AxisScale.LOG:
+                    continue
+                values = _layer_values(layer_data.get(index, []))
+                transform, _height, err_factor = layer_band_transform(
+                    values, mode="normalized", log=False
+                )
+                layer_transform[index] = transform
+                layer_err_factor[index] = err_factor
+
         for panel_index, each in enumerate(self.graph.layers):
-            self.canvas.set_current_panel(panel_index)
+            if stack_line:
+                # Every band shares the one panel of the figure.
+                self.canvas.set_current_panel(0)
+            else:
+                self.canvas.set_current_panel(panel_index)
             offset = panel_index * y_delta if offset_panels else 0.0
+            base = band_base.get(panel_index, 0.0)
+            transform = layer_transform.get(panel_index)
             self.canvas.set_scales(
-                x=AxisScale(each.x_scale).value, y=AxisScale(each.y_scale).value
+                x=AxisScale(each.x_scale).value,
+                # The bands live in linear band units, so the shared Y axis of
+                # a stacked-line figure is always linear.
+                y=("linear" if stack_line else AxisScale(each.y_scale).value),
             )
             for plot_index, spec in enumerate(each.plots):
                 data = resolve_plot(self.project, spec)
                 if data is None:
                     continue
-                y = data.y if not offset else np.asarray(data.y, dtype=float) + offset
+                raw = np.asarray(data.y, dtype=float)
+                y = transform(raw) if transform is not None else raw
+                if offset:
+                    y = np.asarray(y, dtype=float) + offset
+                if base:
+                    y = np.asarray(y, dtype=float) + base
+                # The error bars follow the values they belong to.
+                yerr = data.yerr
+                factor = layer_err_factor.get(panel_index, 1.0)
+                if yerr is not None and factor != 1.0:
+                    yerr = np.asarray(yerr, dtype=float) * factor
                 self._series_sources.append(spec.source)
                 self._series_specs.append(spec)
                 self.canvas.plot(
@@ -1028,18 +1160,28 @@ class GraphView(QWidget):
                     y,
                     style=PlotStyle(spec.style).value,
                     # The colour is resolved here so a series on a secondary
-                    # axis keeps the palette colour the exporter uses.
-                    color=spec.color or series_color(plot_index),
+                    # axis keeps the palette colour the exporter uses. In a
+                    # stacked-line figure every band is another curve, so the
+                    # bands take the palette colours one after the other.
+                    color=spec.color
+                    or series_color(
+                        (panel_index if stack_line else 0) + plot_index
+                    ),
                     width=spec.line_width,
                     symbol=spec.symbol,
                     symbol_size=spec.symbol_size,
                     name=data.legend,
-                    yerr=data.yerr,
+                    yerr=yerr,
                     xerr=data.xerr,
-                    y_axis=spec.y_axis,
+                    # A stacked-line figure has one Y axis: a series that asks
+                    # for the secondary axis is drawn on the shared one.
+                    y_axis=("left" if stack_line else spec.y_axis),
                     line_style=spec.line_style,
                     z=data.z if PlotStyle(spec.style) in Z_STYLES else None,
                     rows=np.arange(0, min(len(data.x), len(data.y))),
+                    # The readout shows the worksheet values, not the drawn
+                    # (scaled or offset) ones.
+                    raw_y=raw,
                 )
 
             for ref in each.ref_lines:
@@ -1056,6 +1198,9 @@ class GraphView(QWidget):
                     if ref.orientation == "h" and offset
                     else ref.position
                 )
+                if base and ref.orientation == "h":
+                    # The guide belongs to its band, so it moves with it.
+                    position = position + base
                 self.canvas.add_reference_line(
                     ref.orientation,
                     position,
@@ -1071,6 +1216,11 @@ class GraphView(QWidget):
                 gtype == GraphType.STACK and panel_index != len(self.graph.layers) - 1
             )
             show_y = not (gtype == GraphType.X_TWIN and panel_index != 0)
+            if stack_line:
+                # One panel for every band: the X axis belongs to the figure,
+                # and the Y axis carries no unit (the bands are relative).
+                show_x = True
+                show_y = False
             self.canvas.set_labels(
                 bottom=(x_label if show_x else None) or None,
                 left=(y_label if show_y else None) or None,
@@ -1080,7 +1230,10 @@ class GraphView(QWidget):
                 color=each.label_color,
             )
             self.canvas.set_limits(
-                x=(each.x_min, each.x_max), y=(each.y_min, each.y_max)
+                x=(each.x_min, each.x_max),
+                # The bands share one Y axis, so a layer's own Y limits do not
+                # apply to it.
+                y=None if stack_line else (each.y_min, each.y_max),
             )
             self.canvas.set_ticks(
                 minor=getattr(each, "minor_ticks", True),
@@ -1089,15 +1242,32 @@ class GraphView(QWidget):
             self.canvas.set_axis_visibility(
                 bottom=show_x,
                 left=getattr(each, "show_y_axis", True),
-                right=any(
-                    getattr(spec, "y_axis", "left") == "right"
-                    for spec in each.plots
+                right=(
+                    False
+                    if stack_line
+                    else any(
+                        getattr(spec, "y_axis", "left") == "right"
+                        for spec in each.plots
+                    )
                 ),
             )
+            if stack_line:
+                # The numbers on the Y axis would be misleading (the bands are
+                # relative), but the axis line and its ticks stay.
+                self.canvas.set_y_tick_labels_visible(False)
             # Add the legend after the plots so its handles exist.
-            self.canvas.show_legend(each.show_legend)
+            if not stack_line:
+                self.canvas.show_legend(each.show_legend)
 
-        self.canvas.set_current_panel(self._active_panel_index())
+        if stack_line:
+            # One legend for the whole figure: every band is in the same panel.
+            self.canvas.show_legend(
+                any(getattr(each, "show_legend", True) for each in self.graph.layers)
+            )
+
+        self.canvas.set_current_panel(
+            0 if stack_line else self._active_panel_index()
+        )
         if gtype == GraphType.X_TWIN:
             # The panels of an X-Twin share their Y axis.
             share_y = getattr(self.canvas, "share_y_across_panels", None)

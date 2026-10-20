@@ -123,7 +123,7 @@ class GraphMatrixAPI:
         """Create a graph, optionally with its first plot.
 
         ``graph_type`` selects the figure template: ``simple``, ``stack``,
-        ``double-y``, ``x-twin`` or ``grid`` (see
+        ``stack-line``, ``double-y``, ``x-twin`` or ``grid`` (see
         :mod:`graphmatrix.core.scripting.graphs`).
         """
         from .graphs import create_graph

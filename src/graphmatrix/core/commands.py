@@ -17,6 +17,7 @@ from .model import (
     Column,
     ColumnType,
     Graph,
+    GraphType,
     Layer,
     PlotSpec,
     PlotStyle,
@@ -529,10 +530,14 @@ class AddLayerCommand(Command):
 
 
 class SetGraphTypeCommand(Command):
-    """Switch a graph's layout template (simple/stack/2Y/x-twin/grid).
+    """Switch a graph's layout template (simple/stack/stack-line/2Y/x-twin/grid).
 
     Only the graph type and its derived panel grid change; layers and plots are
     left intact, so switching back and forth never loses data.
+
+    A stacked-line figure is read as a set of shapes, so its layers are drawn
+    normalized (0..1) when the template is chosen; the previous modes are
+    restored when the command is undone.
     """
 
     label = "Graph Type"
@@ -543,6 +548,7 @@ class SetGraphTypeCommand(Command):
         self._old: str | None = None
         self._old_rows: int | None = None
         self._old_cols: int | None = None
+        self._old_modes: list[str] = []
 
     def execute(self) -> None:
         self._old = self._graph.graph_type
@@ -550,6 +556,12 @@ class SetGraphTypeCommand(Command):
         self._old_cols = self._graph.layout_cols
         self._graph.graph_type = self._new
         self._graph.sync_layout()
+        if self._new == GraphType.STACK_LINE.value:
+            self._old_modes = [
+                getattr(layer, "y_mode", "absolute") for layer in self._graph.layers
+            ]
+            for layer in self._graph.layers:
+                layer.y_mode = "normalized"
 
     def undo(self) -> None:
         self._graph.graph_type = self._old if self._old is not None else "simple"
@@ -557,6 +569,9 @@ class SetGraphTypeCommand(Command):
             self._graph.layout_rows = self._old_rows
         if self._old_cols is not None:
             self._graph.layout_cols = self._old_cols
+        if self._old_modes:
+            for layer, mode in zip(self._graph.layers, self._old_modes):
+                layer.y_mode = mode
 
     def describe(self) -> str | None:
         return f"Set '{self._graph.name}' to a {self._new} graph"

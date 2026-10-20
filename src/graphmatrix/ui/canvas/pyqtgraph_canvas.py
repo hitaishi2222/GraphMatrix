@@ -54,6 +54,7 @@ class PyQtGraphCanvas(PlotCanvas):
         self._annotations: list[Any] = []
         self._ref_lines: list[Any] = []
         self._series: list[tuple[str, np.ndarray, np.ndarray, bool]] = []
+        self._series_raw: list[np.ndarray | None] = []
         self._downsampling = True
         self._title = ""
         self._fg = "#202124"
@@ -121,6 +122,7 @@ class PyQtGraphCanvas(PlotCanvas):
                 pass
         self._ref_lines.clear()
         self._series.clear()
+        self._series_raw.clear()
         self._teardown_hover()
         for item in list(self._view_right.addedItems):
             if item is self._legend_right:
@@ -163,6 +165,7 @@ class PyQtGraphCanvas(PlotCanvas):
         line_style: str = "solid",
         z: Sequence[float] | None = None,
         rows: Sequence[int] | None = None,
+        raw_y: Sequence[float] | None = None,
     ) -> Any:
         # The legacy 2D pyqtgraph backend has no Z-carrying styles; GraphView
         # routes those graphs to matplotlib or the PyVista canvas instead.
@@ -170,13 +173,14 @@ class PyQtGraphCanvas(PlotCanvas):
         ys = np.asarray(y, dtype=float)
         n = min(xs.size, ys.size)
         xs, ys = xs[:n], ys[:n]
+        raw = None if raw_y is None else np.asarray(raw_y, dtype=float)[:n]
         right = y_axis == "right"
         if right:
             self._plot_item.showAxis("right")
         pen_color = color or PALETTE[self._index % len(PALETTE)]
         pen = pg.mkPen(pen_color, width=width, style=_pen_style(line_style))
         brush = pg.mkBrush(pen_color)
-        self._record_series(name, xs, ys, right)
+        self._record_series(name, xs, ys, right, raw_y=raw)
 
         if name:
             self._ensure_legend(right)
@@ -254,17 +258,26 @@ class PyQtGraphCanvas(PlotCanvas):
         self._annotations.append(item)
 
     def _record_series(
-        self, name: str | None, xs: np.ndarray, ys: np.ndarray, right: bool
+        self,
+        name: str | None,
+        xs: np.ndarray,
+        ys: np.ndarray,
+        right: bool,
+        raw_y=None,
     ) -> None:
         """Keep an x-sorted copy of each series so hover search is O(log n)."""
         if xs.size == 0:
             return
         finite = np.isfinite(xs) & np.isfinite(ys)
         xs, ys = xs[finite], ys[finite]
+        raw = None
+        if raw_y is not None:
+            raw = np.asarray(raw_y, dtype=float)[finite]
         if xs.size == 0:
             return
         order = np.argsort(xs, kind="stable")
         self._series.append((name or "", xs[order], ys[order], right))
+        self._series_raw.append(None if raw is None else raw[order])
 
     def add_reference_line(
         self,
@@ -432,23 +445,28 @@ class PyQtGraphCanvas(PlotCanvas):
             return
         view_pos = self._main_view.mapSceneToView(scene_pos)
         best: tuple[float, float, float, str] | None = None
-        for name, xs, ys, right in self._series:
+        for index, (name, xs, ys, right) in enumerate(self._series):
             container = self._view_right if right else self._main_view
             (x0, x1), (y0, y1) = container.viewRange()
             span_x = (x1 - x0) or 1.0
             span_y = (y1 - y0) or 1.0
+            # The readout shows the worksheet values, not the drawn ones.
+            values = ys
+            raw = self._series_raw[index] if index < len(self._series_raw) else None
+            if raw is not None and raw.size == ys.size:
+                values = raw
             idx = int(np.searchsorted(xs, view_pos.x()))
             for j in (idx - 1, idx, idx + 1):
                 if j < 0 or j >= xs.size:
                     continue
                 jx = xs[j]
-                if not np.isfinite(jx) or not np.isfinite(ys[j]):
+                if not np.isfinite(jx) or not np.isfinite(values[j]):
                     continue
                 distance = ((jx - view_pos.x()) / span_x) ** 2 + (
                     (ys[j] - view_pos.y()) / span_y
                 ) ** 2
                 if best is None or distance < best[0]:
-                    best = (float(distance), float(jx), float(ys[j]), name)
+                    best = (float(distance), float(jx), float(values[j]), name)
         if best is None:
             self._show_hover(None)
         else:

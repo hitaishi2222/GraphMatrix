@@ -107,11 +107,16 @@ testable, headless-batchable, and free to be accelerated later without touching 
   dashed/dotted line styles; horizontal & vertical reference lines; hover crosshair
   and nearest-point readout; secondary (dual) Y axis; text annotations; editable axes
   and legend; style templates; drag a column from the tree to plot it; live-linked to data.
-- **Graph layout types** — Simple, Stack (vertical panels), Double Y (2Y), X-Twin
+- **Graph layout types** — Simple, Stack (vertical panels), Stacked line (one band per
+  curve, for curves that share an X axis but not a scale), Double Y (2Y), X-Twin
   (side-by-side) and Grid (R×C), selectable from **Graph → Graph Type**, the toolbar,
   the project tree's right-click menu, or **Properties**. The sidebar shows only the
   fields that type uses — grid rows/columns and panel gaps for a grid, Y-delta for a
-  stack, and so on — and changes are undoable.
+  stack, band pitch for a stacked line, and so on — and changes are undoable.
+- **Trend instead of absolute values** — a layer's **Y mode** can be *Normalized
+  (0-1)*: the curve is scaled to its own range, so its shape is readable whatever
+  the absolute values are. The worksheet data is never touched; the readout still
+  reports the real numbers.
 - **Analysis** — descriptive stats, linear/polynomial regression, nonlinear fitting
   (Gaussian, Lorentzian, exponential, sinusoid, sigmoid, … via lmfit), peak finding,
   **peak deconvolution** (multi-peak Gaussian/Lorentzian), **slope over an X range**,
@@ -211,7 +216,7 @@ drive the running GUI over its local IPC bridge:
 | `live_summary` | Quick map of the open project (workbooks, sheets, graphs). |
 | `live_describe` | Detailed map: every column with its type, which X/Y pairs are plottable, every graph with its panels and series, plus the supported graph types and plot styles. |
 | `live_add_data` | Create a worksheet and fill it with columns (literal values or a generator such as `linspace`/`sin`/`random`). |
-| `live_create_graph` | Create a graph of any template — `simple`, `stack`, `double-y`, `x-twin`, `grid` — with its first series, and open it as a tab. |
+| `live_create_graph` | Create a graph of any template — `simple`, `stack`, `stack-line`, `double-y`, `x-twin`, `grid` — with its first series, and open it as a tab. |
 | `live_add_plot` | Add a series to a specific panel (1-based); `y_axis="right"` for the secondary axis, `replace=True` to clear the panel first. |
 | `live_set_graph_type` | Switch a graph's template or resize its panel grid. |
 | `live_set_property` | Set graph properties (`title`, `panel_gap_x`, `y_delta`, …) or panel properties (`x_label`, `y_label`, `y2_label`, `x_scale`, `show_y_axis`, …). |

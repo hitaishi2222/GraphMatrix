@@ -160,6 +160,7 @@ class MatplotlibCanvas(PlotCanvas):
         self._ax_right = None
         self._right_axes: dict[int, object] = {}
         self._series: list[tuple[np.ndarray, np.ndarray, str]] = []
+        self._series_raw: list[np.ndarray | None] = []
         self._series_meta: list[dict] = []  # brush/click bookkeeping per series
         self._artists: list[dict] = []  # the drawn artist of every series
         self._selected_series: int | None = None
@@ -220,6 +221,7 @@ class MatplotlibCanvas(PlotCanvas):
         self._ax_right = None
         self._right_axes = {}
         self._series = []
+        self._series_raw = []
         self._series_meta = []
         self._artists = []
         self._selected_series = None
@@ -281,6 +283,7 @@ class MatplotlibCanvas(PlotCanvas):
         line_style: str = "solid",
         z=None,
         rows=None,
+        raw_y=None,
     ) -> None:
         from types import SimpleNamespace
 
@@ -297,6 +300,7 @@ class MatplotlibCanvas(PlotCanvas):
 
         xs = np.asarray(x, dtype=float)
         ys = np.asarray(y, dtype=float)
+        raw = None if raw_y is None else np.asarray(raw_y, dtype=float)
         if rows is None:
             rows = np.arange(xs.size)
         rows = np.asarray(rows, dtype=int)
@@ -306,6 +310,7 @@ class MatplotlibCanvas(PlotCanvas):
         xs_s = xs[order]
         ys_s = ys[order]
         rows_s = rows[order]
+        raw_s = None if raw is None else raw[order][:n]
         col = color or None
         ls = _ls(line_style)
         lbl = name
@@ -320,6 +325,7 @@ class MatplotlibCanvas(PlotCanvas):
             # 2D scatter; GraphView routes 3D graphs to the PyVista canvas.
             self._record_series_meta(xs_s, ys_s, rows_s, ax, ms)
             self._series.append((xs_s, ys_s, name or ""))
+            self._series_raw.append(raw_s)
             render_xyz_mpl(
                 ax,
                 self._fig,
@@ -413,6 +419,7 @@ class MatplotlibCanvas(PlotCanvas):
 
         self._record_series_meta(xs_s, ys_s, rows_s, ax, ms)
         self._series.append((xs_s, ys_s, name or ""))
+        self._series_raw.append(raw_s)
         self._artists.append(
             {"artist": artist, "marker_size": ms, "width": width, "axes": ax}
         )
@@ -921,6 +928,18 @@ class MatplotlibCanvas(PlotCanvas):
             self._ax_right.yaxis.label.set_visible(bool(right))
         self._canvas.draw_idle()
 
+    def set_y_tick_labels_visible(self, visible: bool = True) -> None:
+        """Show/hide the Y tick *numbers*, keeping the axis line and the ticks.
+
+        A stacked-line figure is read as a set of shapes, so the numbers on
+        the axis would be misleading; the axis itself stays.
+        """
+        ax = self._ax_left
+        ax.tick_params(axis="y", which="both", labelleft=bool(visible))
+        if self._ax_right is not None:
+            self._ax_right.tick_params(axis="y", which="both", labelright=bool(visible))
+        self._canvas.draw_idle()
+
     def set_ticks(self, *, minor: bool = True, direction: str = "out") -> None:
         if minor:
             self._ax_left.minorticks_on()
@@ -1040,11 +1059,23 @@ class MatplotlibCanvas(PlotCanvas):
         except ValueError:
             self._hover_panel = None
 
+    def _readout_values(self, index: int):
+        """The values the readout shows for one series.
+
+        A stacked-line figure draws scaled or offset curves, so the readout
+        must report the worksheet values, not the drawn ones.
+        """
+        xs, ys, name = self._series[index]
+        raw = self._series_raw[index] if index < len(self._series_raw) else None
+        if raw is not None and raw.size == xs.size:
+            return xs, raw, name
+        return xs, ys, name
+
     def _show_picked_point(self, series_index: int, row: int) -> None:
         """Show the values of the point the user just clicked."""
         if not 0 <= series_index < len(self._series):
             return
-        xs, ys, name = self._series[series_index]
+        xs, ys, name = self._readout_values(series_index)
         meta = (
             self._series_meta[series_index]
             if series_index < len(self._series_meta)
@@ -1089,19 +1120,20 @@ class MatplotlibCanvas(PlotCanvas):
         # crosshair: a cross that spans the whole figure would pretend that
         # a stack, a twin or a grid of panels is one single plot.
         best = None
-        for index, (xs, ys, name) in enumerate(self._series):
+        for index, (xs, _ys, name) in enumerate(self._series):
             if xs.size == 0:
                 continue
             # Only the series of the panel under the pointer are candidates.
             meta = self._series_meta[index] if index < len(self._series_meta) else None
             if meta is not None and meta.get("ax") is not axes:
                 continue
+            _rx, values, _rn = self._readout_values(index)
             idx = int(np.searchsorted(xs, event.xdata))
             for cand in (idx - 1, idx):
                 if 0 <= cand < xs.size:
                     dist = abs(float(xs[cand]) - float(event.xdata))
                     if best is None or dist < best[0]:
-                        best = (dist, float(xs[cand]), float(ys[cand]), name)
+                        best = (dist, float(xs[cand]), float(values[cand]), name)
         if best is not None:
             self._overlay.set_readout(
                 f"{best[3]}:   x = {best[1]:.4g}    y = {best[2]:.4g}"

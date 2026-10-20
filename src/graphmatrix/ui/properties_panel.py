@@ -31,6 +31,7 @@ _GRAPH_EDITABLE_KEYS = {
     "Panel gap X (%)",
     "Panel gap Y (%)",
     "Y delta",
+    "Band pitch",
 }
 
 
@@ -159,6 +160,17 @@ class PropertiesPanel(QWidget):
         ]
         if gtype == GraphType.STACK:
             rows.append(("Y delta", f"{obj.y_delta:g}"))
+        elif gtype == GraphType.STACK_LINE:
+            rows += [
+                ("Band pitch", f"{getattr(obj, 'stack_offset', 1.2):g}"),
+                (
+                    "Y modes",
+                    ", ".join(
+                        f"{layer.name}: {getattr(layer, 'y_mode', 'absolute')}"
+                        for layer in obj.layers
+                    ),
+                ),
+            ]
         elif gtype == GraphType.X_TWIN:
             rows += [
                 ("Panel gap X (%)", f"{obj.panel_gap_x:g}"),

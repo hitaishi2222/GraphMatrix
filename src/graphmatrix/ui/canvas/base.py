@@ -46,6 +46,7 @@ class PlotCanvas(ABC):
         line_style: str = "solid",
         z: Sequence[float] | None = None,
         rows: Sequence[int] | None = None,
+        raw_y: Sequence[float] | None = None,
     ) -> Any:
         """Plot a series and return the backend's plot item.
 
@@ -54,6 +55,9 @@ class PlotCanvas(ABC):
         ``z`` is the colour/height series for the Z-carrying styles
         (color-mapped scatter, heatmap, contour, 3D scatter/surface).
         ``rows`` maps each point to its worksheet row for linked brushing.
+        ``raw_y`` is the worksheet value of each point when the drawn values
+        are scaled or offset (a stacked-line band): the readout then shows the
+        real numbers, not the drawn ones.
         """
 
     def set_brush(self, selection: dict[int, list[int]] | None) -> None:
@@ -128,6 +132,12 @@ class PlotCanvas(ABC):
         self, *, bottom: bool = True, left: bool = True, right: bool = True
     ) -> None:
         """Show/hide axes for the current panel (multi-panel backend only)."""
+
+    def set_y_tick_labels_visible(self, visible: bool = True) -> None:
+        """Show/hide the Y tick numbers, keeping the axis line and the ticks.
+
+        Backends without a separate tick-label control degrade to a no-op.
+        """
 
     @abstractmethod
     def set_current_panel(self, index: int) -> None: ...

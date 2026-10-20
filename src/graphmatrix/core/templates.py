@@ -26,7 +26,15 @@ _PLOT_FIELDS = (
     "y_axis",
     "line_style",
 )
-_LAYER_FIELDS = ("x_scale", "y_scale", "x_label", "y_label", "y2_label", "show_legend")
+_LAYER_FIELDS = (
+    "x_scale",
+    "y_scale",
+    "x_label",
+    "y_label",
+    "y2_label",
+    "show_legend",
+    "y_mode",
+)
 _SEGMENT_FIELDS = ("x_min", "x_max", "y_min", "y_max")
 
 

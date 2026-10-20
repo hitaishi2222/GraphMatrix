@@ -101,6 +101,58 @@ def test_the_panel_marker_names_the_edited_panel(canvas):
     assert canvas.overlay()._panel_text == ""
 
 
+def test_the_graph_view_draws_a_stacked_line_as_bands(qapp):
+    """The live canvas must show the bands, not the absolute values."""
+    import numpy as np
+
+    from graphmatrix.core.model import (
+        ColumnType,
+        Graph,
+        PlotSpec,
+        Project,
+        Workbook,
+        Worksheet,
+    )
+    from graphmatrix.ui.graph_view import GraphView
+
+    project = Project("T")
+    book = project.add_workbook(Workbook("Book1"))
+    sheet = book.add_sheet(Worksheet("Sheet1"))
+    x = np.linspace(0, 10, 40)
+    sheet.add_column("X1", ColumnType.X, x)
+    sheet.add_column("Y1", ColumnType.Y, np.sin(x))
+    sheet.add_column("Y2", ColumnType.Y, 100 * np.cos(x))
+    graph = project.add_graph(Graph("G"))
+    graph.first_layer.add_plot(PlotSpec("Book1/Sheet1", "X1", "Y1", legend="a"))
+    graph.add_layer().add_plot(PlotSpec("Book1/Sheet1", "X1", "Y2", legend="b"))
+    graph.graph_type = "stack-line"
+    graph.sync_layout()
+    for layer in graph.layers:
+        layer.y_mode = "normalized"
+
+    from graphmatrix.core.commands import CommandStack
+
+    view = GraphView(graph, project, CommandStack())
+    try:
+        view.refresh()
+        canvas = view.canvas
+        # One panel holds every band.
+        assert len(canvas._axes) == 1
+        series = canvas._series
+        assert len(series) == 2
+        first = np.asarray(series[0][1], dtype=float)
+        second = np.asarray(series[1][1], dtype=float)
+        # The bands are normalised and stacked one above the other.
+        assert first.max() - first.min() == pytest.approx(1.0)
+        assert second.min() > first.max()
+        # The readout still shows the worksheet values, not the drawn ones.
+        raw = canvas._readout_values(0)[1]
+        assert raw.max() == pytest.approx(1.0, abs=1e-2)
+        assert raw.min() == pytest.approx(-1.0, abs=1e-2)
+    finally:
+        view.deleteLater()
+
+
 def test_the_graph_view_marks_the_panel_of_the_selected_plot(qapp):
     import numpy as np
 

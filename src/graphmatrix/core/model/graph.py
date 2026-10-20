@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from ..bands import Y_MODES
+
 
 class PlotStyle(str, Enum):
     LINE = "line"
@@ -62,6 +64,7 @@ class GraphType(str, Enum):
 
     SIMPLE = "simple"        # one panel, one plot frame
     STACK = "stack"          # panels stacked vertically, sharing X
+    STACK_LINE = "stack-line"  # one panel, one band per layer, sharing X
     DOUBLE_Y = "double-y"    # one panel with a secondary (right) Y axis
     X_TWIN = "x-twin"        # panels side by side, sharing Y
     GRID = "grid"            # an R x C grid of panels
@@ -74,6 +77,7 @@ class GraphType(str, Enum):
 GRAPH_TYPES = (
     GraphType.SIMPLE,
     GraphType.STACK,
+    GraphType.STACK_LINE,
     GraphType.DOUBLE_Y,
     GraphType.X_TWIN,
     GraphType.GRID,
@@ -83,6 +87,7 @@ GRAPH_TYPES = (
 GRAPH_TYPE_LABELS = {
     GraphType.SIMPLE.value: "Simple",
     GraphType.STACK.value: "Stack (vertical panels)",
+    GraphType.STACK_LINE.value: "Stacked line (bands)",
     GraphType.DOUBLE_Y.value: "Double Y (2Y)",
     GraphType.X_TWIN.value: "X-Twin (side-by-side panels)",
     GraphType.GRID.value: "Grid (multi-panel)",
@@ -268,6 +273,8 @@ class Layer:
     minor_ticks: bool = True
     tick_direction: str = "out"
     show_y_axis: bool = True  # hide ticks/labels/spine for clean stacked panels
+    #: How the layer's Y values are drawn: "absolute" or "normalized" (0..1).
+    y_mode: str = "absolute"
     z_label: str = "Value"  # colourbar / 3D z-axis label
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -282,6 +289,10 @@ class Layer:
                 value = AxisScale(value)
             except (TypeError, ValueError):
                 value = AxisScale.LINEAR
+        if name == "y_mode":
+            value = str(value or "absolute")
+            if value not in Y_MODES:
+                value = "absolute"
         super().__setattr__(name, value)
 
     def add_plot(self, spec: PlotSpec) -> PlotSpec:
@@ -320,6 +331,7 @@ class Layer:
             "minor_ticks": self.minor_ticks,
             "tick_direction": self.tick_direction,
             "show_y_axis": self.show_y_axis,
+            "y_mode": self.y_mode,
             "z_label": self.z_label,
             "label_font_family": self.label_font_family,
             "label_font_size": self.label_font_size,
@@ -345,6 +357,7 @@ class Layer:
         layer.show_legend = payload.get("show_legend", True)
         layer.minor_ticks = payload.get("minor_ticks", True)
         layer.show_y_axis = bool(payload.get("show_y_axis", True))
+        layer.y_mode = str(payload.get("y_mode", "absolute") or "absolute")
         td = payload.get("tick_direction", "out")
         if td == "both":
             td = "inout"
@@ -376,6 +389,8 @@ class Graph:
         self.panel_gap_y: float = 12.0
         #: Vertical offset between stacked panels (the "Y delta" of a stack).
         self.y_delta: float = 0.0
+        #: Distance between two bands of a stacked-line figure, in band units.
+        self.stack_offset: float = 1.2
         self.layers: list[Layer] = [Layer()]
         self.annotations: list[Annotation] = []
         self.journal_preset: str = ""
@@ -408,6 +423,10 @@ class Graph:
         layers = max(1, len(self.layers))
         if gtype == GraphType.STACK:
             self.layout_rows, self.layout_cols = layers, 1
+        elif gtype == GraphType.STACK_LINE:
+            # One panel holds every band: the layers are the curves, not the
+            # panels.
+            self.layout_rows, self.layout_cols = 1, 1
         elif gtype == GraphType.X_TWIN:
             self.layout_rows, self.layout_cols = 1, layers
         elif gtype == GraphType.GRID:
@@ -439,6 +458,7 @@ class Graph:
             "panel_gap_x": self.panel_gap_x,
             "panel_gap_y": self.panel_gap_y,
             "y_delta": self.y_delta,
+            "stack_offset": self.stack_offset,
             "layers": [l.to_dict() for l in self.layers],
             "annotations": [a.to_dict() for a in self.annotations],
             "journal_preset": self.journal_preset,
@@ -457,6 +477,7 @@ class Graph:
         graph.panel_gap_x = float(payload.get("panel_gap_x", 12.0))
         graph.panel_gap_y = float(payload.get("panel_gap_y", 12.0))
         graph.y_delta = float(payload.get("y_delta", 0.0))
+        graph.stack_offset = float(payload.get("stack_offset", 1.2))
         layers = [Layer.from_dict(l) for l in payload.get("layers", [])]
         if layers:
             graph.layers = layers

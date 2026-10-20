@@ -319,10 +319,11 @@ def live_create_graph(
 ) -> dict[str, Any]:
     """Create a graph in the running GUI and show it as a tab.
 
-    ``graph_type`` is ``simple``, ``stack`` (panels share X), ``double-y``
-    (second Y axis on the right), ``x-twin`` (panels share Y) or ``grid``
-    (``rows`` x ``cols`` panels). ``panels`` sets the panel count for stack
-    and x-twin. When ``source``/``x``/``y`` are given the series is drawn in
+    ``graph_type`` is ``simple``, ``stack`` (panels share X), ``stack-line``
+    (one panel, one band per curve), ``double-y`` (second Y axis on the
+    right), ``x-twin`` (panels share Y) or ``grid`` (``rows`` x ``cols``
+    panels). ``panels`` sets the panel count for stack, x-twin and
+    stack-line. When ``source``/``x``/``y`` are given the series is drawn in
     every panel (set ``replicate=False`` to keep it in the first panel only).
     """
     return _live_call(
@@ -435,11 +436,12 @@ def live_set_property(
     """Set a graph or panel property in the running GUI.
 
     Graph properties: ``title``, ``panel_gap_x``, ``panel_gap_y``,
-    ``y_delta``, ``layout_rows``, ``layout_cols``, ``plot_theme``,
-    ``journal_preset``, ``title_font_size``, ``title_color``.
+    ``y_delta``, ``stack_offset``, ``layout_rows``, ``layout_cols``,
+    ``plot_theme``, ``journal_preset``, ``title_font_size``, ``title_color``.
     Panel properties: ``x_label``, ``y_label``, ``y2_label``, ``z_label``,
     ``x_scale``, ``y_scale``, ``x_min``, ``x_max``, ``y_min``, ``y_max``,
-    ``show_legend``, ``show_y_axis``, ``minor_ticks``, ``tick_direction``,
+    ``show_legend``, ``show_y_axis``, ``y_mode`` (``absolute`` or
+    ``normalized``), ``minor_ticks``, ``tick_direction``,
     ``label_font_size``, ``label_font_family``, ``label_color``.
     """
     return _live_call(

@@ -104,6 +104,11 @@ between:
 - **Stack** — layers stacked vertically, sharing X. New stack graphs start with two
   panels; **Graph → Add Layer** adds more. **Y delta** shifts each successive panel's
   data (waterfall-style).
+- **Stacked line** — one frame with one *band* per layer: the curves share the X
+  axis and each is drawn in its own band, one above the other. Use it when the
+  curves have the same X but wildly different magnitudes, and you want to read the
+  trends rather than the absolute values. **Band pitch** sets the distance between
+  two bands.
 - **Double Y (2Y)** — one frame with a secondary right axis; set a plot's **Y axis**
   to *Right* in the plot sidebar.
 - **X-Twin** — layers side by side, sharing Y.
@@ -117,6 +122,30 @@ layers or plots; the Project Explorer labels each graph with its type, e.g.
 **Axes → Ticks → Y axis → Hide** removes a panel's Y axis line, ticks, and labels.
 It is handy for stacks where the traces should read as clean waveforms; legends
 are drawn per panel after the plots. All changes are undoable.
+
+#### Y mode: the trend instead of the absolute value
+
+**Axes → Scales/Range → Y mode** decides how a layer's Y values are drawn:
+
+- **Absolute** — the values are drawn as they are.
+- **Normalized (0-1)** — the layer is scaled to 0–1 over its own range, so the
+  *shape* of the curve can be read whatever the absolute values are. The
+  worksheet data is never changed; only the drawing is.
+
+A layer with a **log** Y scale always keeps its own values (the log scale is the
+point of such a layer), so it is drawn on a log-transformed vertical scale and its
+band is as tall as the data's log range. A flat series (no range at all) is drawn
+flat at the bottom of its band instead of dividing by zero, and missing values are
+left as gaps.
+
+In a **Stacked line** figure the Y mode decides the band: a normalized layer fills
+its band from 0 to 1, an absolute layer is drawn at its own values. The Y axis of
+such a figure keeps its line and its ticks but drops the numbers, because the
+bands are relative — hovering a point still reports the real worksheet value.
+
+The mode is per layer, so a figure can mix a normalized curve with an absolute
+one. It is undoable, saved with the project, and can be set through the scripting
+API (`y_mode`) and the MCP tools (`live_set_property`).
 
 ### 4. Analyze
 
@@ -218,8 +247,8 @@ immediately and remain undoable.
 
 1. `live_describe` — find the data. It lists every worksheet with its typed
    columns, the plottable X/Y pairs, every graph with its panels and series,
-   and the graph templates (`simple`, `stack`, `double-y`, `x-twin`, `grid`)
-   and plot styles this build supports.
+   and the graph templates (`simple`, `stack`, `stack-line`, `double-y`,
+   `x-twin`, `grid`) and plot styles this build supports.
 2. `live_add_data` — when no data exists yet, create a sheet directly:
    `columns=[{"name": "X", "type": "X", "generate": {"kind": "linspace", "start": 0, "stop": 10, "count": 41}}, {"name": "Y", "type": "Y", "generate": {"kind": "sin", "count": 41}}]`.
 3. `live_create_graph` — make the figure:

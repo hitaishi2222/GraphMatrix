@@ -7,10 +7,12 @@ the *same* resolved series (``core.plotting``) with the same style mapping.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 
+from ..bands import band_baselines, layer_band_transform
 from ..journals import export_rcparams, figure_size
 from ..model import AxisScale, Graph, PlotStyle, Project, Z_STYLES, is_3d_style
 from ..plot_themes import resolve_theme, series_color
@@ -113,6 +115,9 @@ def export_graph(
         _use_constrained_layout(fig, graph)
         rows = max(1, int(getattr(graph, "layout_rows", 1) or 1))
         cols = max(1, int(getattr(graph, "layout_cols", 1) or 1))
+        if getattr(graph, "graph_type", "") == "stack-line":
+            # Every band of a stacked-line figure shares the one panel.
+            rows, cols = 1, 1
         if use_3d:
             axes = [fig.add_subplot(111, projection="3d")]
         elif rows * cols > 1:
@@ -268,27 +273,67 @@ def _render_figure(
     right_axes: dict[int, object] = {}
     offset_panels = graph_type in ("stack", "x-twin")
     y_delta = float(getattr(graph, "y_delta", 0.0) or 0.0)
+    stack_line = graph_type == "stack-line"
+
+    # A stacked-line figure draws every layer as a band of the one panel.
+    resolved_layers = [resolve_layer(project, layer) for layer in graph.layers]
+    layer_transform: dict[int, object] = {}
+    layer_err_factor: dict[int, float] = {}
+    band_base: dict[int, float] = {}
+    if stack_line:
+        heights: list[float] = []
+        for index, layer in enumerate(graph.layers):
+            values = (
+                np.concatenate([np.asarray(d.y, dtype=float) for d in resolved_layers[index]])
+                if resolved_layers[index]
+                else np.array([], dtype=float)
+            )
+            transform, height, err_factor = layer_band_transform(
+                values,
+                mode=str(getattr(layer, "y_mode", "absolute") or "absolute"),
+                log=_axis_is_log(layer.y_scale),
+            )
+            layer_transform[index] = transform
+            layer_err_factor[index] = err_factor
+            heights.append(height)
+        pitch = float(getattr(graph, "stack_offset", 1.2) or 1.2)
+        for index, base in enumerate(band_baselines(heights, pitch)):
+            band_base[index] = base
 
     for panel_index, layer in enumerate(graph.layers):
         axis_index = 0 if single_panel else min(panel_index, len(axes) - 1)
         ax_left = axes[axis_index]
         ax_right = right_axes.get(axis_index)
         offset = panel_index * y_delta if offset_panels else 0.0
+        base = band_base.get(panel_index, 0.0)
 
         if _axis_is_log(layer.x_scale):
             ax_left.set_xscale("log")
-        if _axis_is_log(layer.y_scale):
+        if _axis_is_log(layer.y_scale) and not stack_line:
             ax_left.set_yscale("log")
             if ax_right is not None:
                 ax_right.set_yscale("log")
 
-        series = resolve_layer(project, layer)
+        transform = layer_transform.get(panel_index)
+        err_factor = layer_err_factor.get(panel_index, 1.0)
+        series = resolved_layers[panel_index]
         for plot_index, (spec, data) in enumerate(zip(layer.plots, series)):
-            color = spec.color or series_color(plot_index)
+            # Every band of a stacked-line figure is another curve, so the
+            # bands take the palette colours one after the other.
+            color = spec.color or series_color(
+                (panel_index if stack_line else 0) + plot_index
+            )
             _z_label = (
                 getattr(layer, "z_label", "") or getattr(data, "z_label", "") or "Value"
             )
-            if getattr(spec, "y_axis", "left") == "right":
+            drawn = data
+            if transform is not None:
+                drawn = replace(data, y=transform(np.asarray(data.y, dtype=float)))
+                if data.yerr is not None and err_factor != 1.0:
+                    drawn = replace(
+                        drawn, yerr=np.asarray(data.yerr, dtype=float) * err_factor
+                    )
+            if getattr(spec, "y_axis", "left") == "right" and not stack_line:
                 if ax_right is None:
                     ax_right = ax_left.twinx()
                     right_axes[axis_index] = ax_right
@@ -297,22 +342,22 @@ def _render_figure(
                 _draw(
                     ax_right,
                     spec,
-                    data,
+                    drawn,
                     color,
                     fig=fig,
                     z_label=_z_label,
-                    y_offset=offset,
+                    y_offset=offset + base,
                     scale=factor,
                 )
             else:
                 _draw(
                     ax_left,
                     spec,
-                    data,
+                    drawn,
                     color,
                     fig=fig,
                     z_label=_z_label,
-                    y_offset=offset,
+                    y_offset=offset + base,
                     scale=factor,
                 )
 
@@ -333,14 +378,23 @@ def _render_figure(
             ax_left.xaxis.label.set_visible(False)
         if x_label and not (graph_type == "stack" and not last_panel):
             ax_left.set_xlabel(x_label, **label_kwargs)
-        if y_label and not (graph_type == "x-twin" and panel_index != 0):
+        # The bands of a stacked-line figure are relative, so the shared Y axis
+        # of such a figure carries no unit.
+        if (
+            y_label
+            and not (graph_type == "x-twin" and panel_index != 0)
+            and not stack_line
+        ):
             ax_left.set_ylabel(y_label, **label_kwargs)
         if layer.y2_label and ax_right is not None:
             ax_right.set_ylabel(layer.y2_label, **label_kwargs)
 
         if layer.x_min is not None or layer.x_max is not None:
             ax_left.set_xlim(left=layer.x_min, right=layer.x_max)
-        if layer.y_min is not None or layer.y_max is not None:
+        if (
+            not stack_line
+            and (layer.y_min is not None or layer.y_max is not None)
+        ):
             ax_left.set_ylim(bottom=layer.y_min, top=layer.y_max)
         view = (view_limits or {}).get(panel_index)
         if view is not None:
@@ -367,6 +421,10 @@ def _render_figure(
             ax_left.tick_params(axis="y", which="both", left=False, labelleft=False)
             ax_left.spines["left"].set_visible(False)
             ax_left.yaxis.label.set_visible(False)
+        elif stack_line:
+            # The numbers would be misleading (the bands are relative), but
+            # the axis line and its ticks stay.
+            ax_left.tick_params(axis="y", which="both", labelleft=False)
 
         for ref in getattr(layer, "ref_lines", []):
             style = _linestyle(ref.line_style)
@@ -375,6 +433,9 @@ def _render_figure(
                 if ref.orientation == "h" and offset
                 else ref.position
             )
+            if base and ref.orientation == "h":
+                # The guide belongs to its band, so it moves with it.
+                position = position + base
             if ref.orientation == "v":
                 line = ax_left.axvline(
                     position, color=ref.color, linewidth=ref.width * factor, linestyle=style
@@ -386,7 +447,7 @@ def _render_figure(
             if ref.label:
                 _label_reference_line(ax_left, ref, line)
 
-        if getattr(layer, "show_legend", True):
+        if getattr(layer, "show_legend", True) and not stack_line:
             handles, labels = ax_left.get_legend_handles_labels()
             if ax_right is not None:
                 h2, l2 = ax_right.get_legend_handles_labels()
@@ -395,6 +456,15 @@ def _render_figure(
                 legend = ax_left.legend(handles, labels, loc="best", frameon=False)
                 for text in legend.get_texts():
                     text.set_color(fg)
+
+    if stack_line and axes:
+        # One legend for the whole figure: every band is in the same panel.
+        ax_left = axes[0]
+        handles, labels = ax_left.get_legend_handles_labels()
+        if labels:
+            legend = ax_left.legend(handles, labels, loc="best", frameon=False)
+            for text in legend.get_texts():
+                text.set_color(fg)
 
     for annotation in getattr(graph, "annotations", []):
         axes[0].text(

@@ -59,6 +59,10 @@ from ..model import (
 GRAPH_TYPE_HELP: dict[str, str] = {
     "simple": "One panel, one X/Y pair.",
     "stack": "Panels stacked vertically, sharing the X axis.",
+    "stack-line": (
+        "One panel with one band per layer: the curves share the X axis and "
+        "each is drawn in its own band."
+    ),
     "double-y": "One panel with a second (right-hand) Y axis.",
     "x-twin": "Panels side by side, sharing the Y axis.",
     "grid": "An R x C grid of panels.",
@@ -148,7 +152,7 @@ def _panel_count(graph_type: GraphType, panels: int | None, rows: int | None,
         r = max(1, int(rows or 2))
         c = max(1, int(cols or 2))
         return r * c
-    if graph_type in (GraphType.STACK, GraphType.X_TWIN):
+    if graph_type in (GraphType.STACK, GraphType.X_TWIN, GraphType.STACK_LINE):
         return max(1, int(panels or 2))
     return 1
 
@@ -270,12 +274,12 @@ def create_graph(
 ) -> dict[str, Any]:
     """Create a graph of any template, optionally with its first plot.
 
-    ``graph_type`` is one of ``simple``, ``stack``, ``double-y``, ``x-twin`` or
-    ``grid``. ``panels`` (stack/x-twin) and ``rows``/``cols`` (grid) control how
-    many panels the figure has. When a data source is given, the same series is
-    drawn in every panel unless ``replicate`` is false — the usual way to get a
-    readable multi-panel figure before the panels are filled individually with
-    :func:`add_plot`.
+    ``graph_type`` is one of ``simple``, ``stack``, ``stack-line``,
+    ``double-y``, ``x-twin`` or ``grid``. ``panels`` (stack/x-twin/stack-line)
+    and ``rows``/``cols`` (grid) control how many panels the figure has. When
+    a data source is given, the same series is drawn in every panel unless
+    ``replicate`` is false — the usual way to get a readable multi-panel
+    figure before the panels are filled individually with :func:`add_plot`.
     """
     gtype = _graph_type(graph_type)
     plot_style = _plot_style(style)
@@ -290,6 +294,11 @@ def create_graph(
     while len(graph.layers) < count:
         graph.add_layer(Layer(f"Layer {len(graph.layers) + 1}"))
     graph.sync_layout()
+    if gtype == GraphType.STACK_LINE:
+        # A stacked-line figure is read as a set of shapes: its layers start
+        # normalized (0..1) so the trends are comparable.
+        for layer in graph.layers:
+            layer.y_mode = "normalized"
 
     if source and x and y:
         if strict:
@@ -363,6 +372,9 @@ def add_plot(
 
     while len(graph.layers) < panel:
         layer = Layer(f"Layer {len(graph.layers) + 1}")
+        if graph.graph_type == GraphType.STACK_LINE.value:
+            # A new band of a stacked-line figure is normalized like the rest.
+            layer.y_mode = "normalized"
         _push(commands, AddLayerCommand(graph, layer))
     layer = graph.layers[panel - 1]
     if replace:
@@ -413,6 +425,9 @@ def set_graph_type(
     target = _panel_count(gtype, panels, rows, cols)
     while len(graph.layers) < target:
         layer = Layer(f"Layer {len(graph.layers) + 1}")
+        if gtype == GraphType.STACK_LINE:
+            # A new band of a stacked-line figure is normalized like the rest.
+            layer.y_mode = "normalized"
         _push(commands, AddLayerCommand(graph, layer))
     if gtype == GraphType.GRID:
         graph.layout_rows = max(1, int(rows or graph.layout_rows or 2))
@@ -555,6 +570,7 @@ GRAPH_PROPERTIES = (
     "panel_gap_x",
     "panel_gap_y",
     "y_delta",
+    "stack_offset",
     "layout_rows",
     "layout_cols",
     "plot_theme",
@@ -575,6 +591,7 @@ PANEL_PROPERTIES = (
     "y_max",
     "show_legend",
     "show_y_axis",
+    "y_mode",
     "minor_ticks",
     "tick_direction",
     "label_font_family",
@@ -619,11 +636,12 @@ def set_property(
     """Set one property of a graph or of one of its panels.
 
     Graph properties: ``title``, ``panel_gap_x``, ``panel_gap_y``,
-    ``y_delta``, ``layout_rows``, ``layout_cols``, ``plot_theme``,
-    ``journal_preset``, ``title_font_size``, ``title_color``.
+    ``y_delta``, ``stack_offset``, ``layout_rows``, ``layout_cols``,
+    ``plot_theme``, ``journal_preset``, ``title_font_size``, ``title_color``.
     Panel properties: ``x_label``, ``y_label``, ``y2_label``, ``z_label``,
     ``x_scale``, ``y_scale``, ``x_min``, ``x_max``, ``y_min``, ``y_max``,
-    ``show_legend``, ``show_y_axis``, ``minor_ticks``, ``tick_direction``,
+    ``show_legend``, ``show_y_axis``, ``y_mode`` (``absolute`` or
+    ``normalized``), ``minor_ticks``, ``tick_direction``,
     ``label_font_size``, ``label_font_family``, ``label_color``.
     """
     graph = _graph(project, graph_name)

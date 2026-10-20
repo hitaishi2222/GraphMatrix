@@ -111,6 +111,8 @@ def _layer_lines(layer: Layer, *, indent: str = "") -> list[str]:
             lines.append(f"{indent}layer.{attr} = {value!r}")
     if not layer.show_legend:
         lines.append(f"{indent}layer.show_legend = False")
+    if getattr(layer, "y_mode", "absolute") != "absolute":
+        lines.append(f"{indent}layer.y_mode = {layer.y_mode!r}")
     for spec in layer.plots:
         lines.append(f"{indent}layer.plots.append({_plot_literal(spec)})")
     for line in layer.ref_lines:
@@ -126,6 +128,10 @@ def _graph_lines(graph: Graph) -> list[str]:
         lines.append(f"g.title = {graph.title!r}")
     if graph.journal_preset:
         lines.append(f"g.journal_preset = {graph.journal_preset!r}")
+    if getattr(graph, "graph_type", "simple") != "simple":
+        lines.append(f"g.graph_type = {graph.graph_type!r}")
+    if getattr(graph, "stack_offset", 1.2) != 1.2:
+        lines.append(f"g.stack_offset = {float(graph.stack_offset)!r}")
     for index, layer in enumerate(graph.layers):
         if index == 0:
             lines.append("layer = g.layers[0]")

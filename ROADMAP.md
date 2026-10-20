@@ -103,7 +103,7 @@ first working version, not the polished one.
 | 3D surface / scatter / 3D fit | High | L | ✅ M10 scatter + surface on **PyVista** (locked backend); 3D *fit* queued. |
 | Box / violin plots | Medium | M | Stats-forward, cheap via matplotlib; canvas version needs custom items. |
 | Pie / doughnut | Low | S | Rare in lab work; export-only may suffice. |
-| Waterfall / stacked offset lines | Medium | S | Offset each series by a constant; very useful for spectra. |
+| Waterfall / stacked offset lines | Medium | S | ✅ — the **Stacked line** template: one band per layer, each drawn over its own range (Y mode *Normalized*), so the trends are comparable whatever the absolute values are. |
 | Color-mapped scatter (third variable → color) | High | M | ✅ M10 — `PlotSpec.z` + `cmap` + colourbar on canvas and export. |
 
 ### 1.5 Publication & layout (M11)

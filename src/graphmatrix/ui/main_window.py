@@ -151,6 +151,7 @@ _GRAPH_PROPERTY_CASTS = {
     "Panel gap X (%)": ("panel_gap_x", float),
     "Panel gap Y (%)": ("panel_gap_y", float),
     "Y delta": ("y_delta", float),
+    "Band pitch": ("stack_offset", float),
 }
 
 
@@ -1569,6 +1570,8 @@ class MainWindow(QMainWindow):
             value = max(1, min(12, int(value)))
         elif field == "y_delta":
             value = max(-1e6, min(1e6, float(value)))
+        elif field == "stack_offset":
+            value = max(0.1, min(100.0, float(value)))
         else:
             value = max(0.0, min(100.0, float(value)))
         self.commands.push(
@@ -1796,12 +1799,17 @@ class MainWindow(QMainWindow):
             # A stack / x-twin template starts with two panels so the layout is
             # visible immediately; the second panel copies the first plot spec
             # (data references are shared, nothing is duplicated on disk).
-            if gtype in (GraphType.STACK, GraphType.X_TWIN) and graph.layers:
+            # A stacked-line figure starts with two bands, drawn normalized so
+            # the curves can be compared as shapes.
+            if gtype in (GraphType.STACK, GraphType.X_TWIN, GraphType.STACK_LINE) and graph.layers:
                 source = graph.first_layer
                 if source.plots:
                     extra = Layer("Layer 2")
                     extra.plots = [copy.deepcopy(spec) for spec in source.plots]
                     graph.layers.append(extra)
+            if gtype == GraphType.STACK_LINE:
+                for layer in graph.layers:
+                    layer.y_mode = "normalized"
             graph.sync_layout()
         self.commands.push(AddGraphCommand(self.project, graph))
         self._open_graph_tab(graph)
