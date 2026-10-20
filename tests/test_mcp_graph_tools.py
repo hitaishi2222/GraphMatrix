@@ -79,6 +79,7 @@ def test_unknown_generator_is_reported(project):
     [
         ("simple", {}, [1, 1], 1),
         ("stack", {"panels": 3}, [3, 1], 3),
+        ("stack-line", {"panels": 3}, [1, 1], 3),
         ("x-twin", {"panels": 2}, [1, 2], 2),
         ("grid", {"rows": 2, "cols": 3}, [2, 3], 6),
         ("double-y", {}, [1, 1], 1),

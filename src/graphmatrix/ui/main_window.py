@@ -30,7 +30,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QSpinBox,
-    QSplitter,
     QTabWidget,
     QToolBar,
     QToolButton,
@@ -437,6 +436,7 @@ class MainWindow(QMainWindow):
             for dock, label in (
                 (self.dock_project, "Project Explorer"),
                 (self.dock_properties, "Properties"),
+                (self.dock_editor, "Graph Editor"),
                 (self.dock_console, "Python Console"),
             ):
                 action = dock.toggleViewAction()
@@ -494,19 +494,12 @@ class MainWindow(QMainWindow):
         self._graph_tabs.addTab(self._plot_host, "Plot")
         self._graph_tabs.addTab(self.axes_container, "Axes")
 
-        right_splitter = QSplitter(Qt.Orientation.Vertical)
-        right_splitter.setObjectName("splitter.properties")
-        right_splitter.addWidget(self.properties_panel)
-        right_splitter.addWidget(self._graph_tabs)
-        right_splitter.setStretchFactor(0, 0)
-        right_splitter.setStretchFactor(1, 1)
-        right_splitter.setSizes([200, 600])
-
-        dock_props = QDockWidget("Properties", self)
-        dock_props.setObjectName("dock.properties")
-        dock_props.setWidget(right_splitter)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock_props)
-        self.dock_properties = dock_props
+        # The right-hand column edits the open graph: its series and its axes.
+        dock_editor = QDockWidget("Graph Editor", self)
+        dock_editor.setObjectName("dock.editor")
+        dock_editor.setWidget(self._graph_tabs)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock_editor)
+        self.dock_editor = dock_editor
 
         self.project_panel = ProjectPanel()
         self.project_panel.object_activated.connect(self._on_object_activated)
@@ -526,6 +519,19 @@ class MainWindow(QMainWindow):
         )
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock_project)
         self.dock_project = dock_project
+
+        # The Property/Value table sits right under the Project Explorer: it
+        # describes the object that is selected in the tree.
+        dock_props = QDockWidget("Properties", self)
+        dock_props.setObjectName("dock.properties")
+        dock_props.setWidget(self.properties_panel)
+        dock_props.setAllowedAreas(
+            Qt.DockWidgetArea.LeftDockWidgetArea
+            | Qt.DockWidgetArea.RightDockWidgetArea
+            | Qt.DockWidgetArea.BottomDockWidgetArea
+        )
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock_props)
+        self.dock_properties = dock_props
 
         self.console = ConsoleView(self.project, self.commands)
         dock_console = QDockWidget("Python Console", self)
