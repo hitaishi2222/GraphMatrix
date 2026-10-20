@@ -2,6 +2,13 @@
 
 ![GraphMatrix banner](assets/banner.svg)
 
+<p>
+  <img src="https://github.com/hitaishi2222/GraphMatrix/actions/workflows/ci.yml/badge.svg" alt="CI"/>
+  <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square"/>
+  <img src="https://img.shields.io/badge/python-3.10+-3776AB?style=flat-square&logo=python&logoColor=3776AB"/>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey?style=flat-square"/>
+</p>
+
 A cross-platform scientific data analysis and graphing GUI.
 
 GraphMatrix aims to be a Python-first, open alternative to tools like OriginPro:
