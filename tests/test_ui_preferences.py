@@ -13,6 +13,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PySide6")
 
+from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QApplication
 
 
@@ -53,7 +54,7 @@ def test_toolbar_actions_have_icons_and_shortcut_tooltips(window):
         assert not action.icon().isNull(), f"{action_id} should have an icon"
         # The shortcut is spelled out in the tooltip, so the user does not
         # have to try the button to find out what it does.
-        shortcut = action.shortcut().toString()
+        shortcut = action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
         if shortcut:
             assert shortcut in action.toolTip()
 
@@ -111,25 +112,32 @@ def test_zoom_shortcuts_are_registered(window):
     }
     for action_id, shortcut in expected.items():
         action = window.registry.action(action_id)
-        assert action.shortcut().toString() == shortcut
+        assert action.shortcut() == QKeySequence(shortcut), action_id
 
 
 # -- keybindings -------------------------------------------------------------
 def test_standard_shortcuts_are_present(window):
-    expected = {
-        "file.new": "Ctrl+N",
-        "file.open": "Ctrl+O",
-        "file.save": "Ctrl+S",
+    # The actions that use a platform standard key are compared through the same
+    # standard key: only then is the comparison meaningful on every platform.
+    standard = {
+        "file.new": QKeySequence.StandardKey.New,
+        "file.open": QKeySequence.StandardKey.Open,
+        "file.save": QKeySequence.StandardKey.Save,
+        "edit.undo": QKeySequence.StandardKey.Undo,
+        "help.shortcuts": QKeySequence.StandardKey.HelpContents,
+    }
+    literal = {
         "file.close": "Ctrl+W",
-        "edit.undo": "Ctrl+Z",
         "export.graph": "Ctrl+E",
         "view.preferences": "Ctrl+,",
-        "help.shortcuts": "F1",
         "tools.palette": "Ctrl+Shift+P",
     }
-    for action_id, shortcut in expected.items():
+    for action_id, key in standard.items():
         action = window.registry.action(action_id)
-        assert action.shortcut().toString() == shortcut, action_id
+        assert action.shortcut() == QKeySequence(key), action_id
+    for action_id, shortcut in literal.items():
+        action = window.registry.action(action_id)
+        assert action.shortcut() == QKeySequence(shortcut), action_id
 
 
 def test_shortcuts_are_unique(window):

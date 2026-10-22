@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from logging.handlers import RotatingFileHandler
 
 import pytest
 
@@ -36,11 +37,15 @@ def test_configure_writes_the_log_file_in_the_state_dir(clean_logger, tmp_path):
 
 
 def test_configure_is_idempotent(clean_logger):
+    before = list(clean_logger.handlers)
     gm_log.configure()
-    count = len(clean_logger.handlers)
+    ours = [h for h in clean_logger.handlers if h not in before]
+    # Exactly one file handler and one stderr handler, never a duplicate pair.
+    assert len(ours) == 2, [type(h).__name__ for h in ours]
+    assert any(isinstance(h, RotatingFileHandler) for h in ours)
+    assert any(type(h) is logging.StreamHandler for h in ours)
     gm_log.configure()
-    assert len(clean_logger.handlers) == count
-    assert count == 2  # file + stderr
+    assert [h for h in clean_logger.handlers if h not in before] == ours
 
 
 def test_loggers_are_namespaced_under_the_root():
