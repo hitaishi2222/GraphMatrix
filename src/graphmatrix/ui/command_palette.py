@@ -9,7 +9,7 @@ until such an action exists. Type, arrow, Enter.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QKeyEvent
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QDialog,
     QLabel,
@@ -112,14 +112,17 @@ class CommandPalette(QDialog):
         self.accept()
 
     # -- events --------------------------------------------------------------
-    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
-        if watched is self.search and isinstance(event, QKeyEvent):
-            if event.key() in (Qt.Key.Key_Down, Qt.Key.Key_Up):
-                self.list.keyPressEvent(event)
-                return True
+    def eventFilter(self, watched, event) -> bool:
+        if (
+            watched is self.search
+            and isinstance(event, QKeyEvent)
+            and event.key() in (Qt.Key.Key_Down, Qt.Key.Key_Up)
+        ):
+            self.list.keyPressEvent(event)
+            return True
         return super().eventFilter(watched, event)
 
-    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802 - Qt override
+    def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             self._accept_current()
             return

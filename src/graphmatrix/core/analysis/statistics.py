@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 from scipy import stats
@@ -148,11 +148,11 @@ def histogram(data: Sequence[float], *, bins: int = 10) -> AnalysisResult:
 
 
 __all__ = [
-    "ttest_ind",
-    "ttest_rel",
-    "ttest_1samp",
     "anova_oneway",
     "correlation",
     "correlation_matrix",
     "histogram",
+    "ttest_1samp",
+    "ttest_ind",
+    "ttest_rel",
 ]

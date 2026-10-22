@@ -31,7 +31,11 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QObject
-from PySide6.QtNetwork import QLocalServer, QLocalSocket
+from PySide6.QtNetwork import QLocalServer
+
+from graphmatrix.log import get_logger
+
+log = get_logger(__name__)
 
 #: Ops the bridge answers.
 _OPS = ("ping", "summary", "describe", "run", "open", "save", "export", "screenshot")
@@ -92,8 +96,8 @@ def cleanup_state_dir() -> None:
             os.kill(pid, 0)
         except OSError:
             _unlink(path)  # the owner is gone
-        except Exception:  # noqa: BLE001 - permission problems: keep the file
-            pass
+        except Exception as exc:  # noqa: BLE001 - permission problems
+            log.debug("kept a socket file we cannot check: %s", exc)
 
 
 def write_endpoint(pid: int | None = None, seq: int | None = None, **fields) -> str:
@@ -102,10 +106,8 @@ def write_endpoint(pid: int | None = None, seq: int | None = None, **fields) -> 
 
     path = endpoint_path(pid, seq)
     payload = {"pid": os.getpid(), **fields}
-    try:
+    with contextlib.suppress(OSError):
         Path(path).write_text(json.dumps(payload), encoding="utf-8")
-    except OSError:
-        pass
     return path
 
 
@@ -230,10 +232,8 @@ def _endpoint_alive(endpoint: dict[str, Any]) -> bool:
 
 
 def _unlink(path: str) -> None:
-    try:
+    with contextlib.suppress(OSError):
         os.unlink(path)
-    except OSError:
-        pass
 
 
 def _drop_stale_socket(path: str) -> None:
@@ -249,10 +249,8 @@ def _drop_stale_socket(path: str) -> None:
     except OSError as exc:
         if exc.errno not in (errno.ECONNREFUSED, errno.ENOENT):
             return
-    try:
+    with contextlib.suppress(OSError):
         os.unlink(path)
-    except OSError:
-        pass
 
 
 def _probe_socket(path: str):
@@ -293,10 +291,8 @@ class IpcBridge(QObject):
                     f"IPC bridge failed to listen on {self._path}: "
                     f"{self.server.errorString()}"
                 )
-            try:
+            with contextlib.suppress(OSError):
                 os.chmod(self._path, 0o600)  # same-user only
-            except OSError:
-                pass
             self.server.newConnection.connect(self._on_connection)
             self._endpoint = {"kind": "unix", "path": self._path}
         else:
@@ -329,14 +325,10 @@ class IpcBridge(QObject):
             self.server.close()
         if self.tcp_server is not None:
             self.tcp_server.close()
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(self._path)
-        except OSError:
-            pass
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(self._endpoint_file)
-        except OSError:
-            pass
         if self in _BRIDGES:
             _BRIDGES.remove(self)
 
@@ -356,10 +348,9 @@ class IpcBridge(QObject):
 
     def _drop(self, conn) -> None:
         self._buffers.pop(conn, None)
-        try:
+        # The C++ object may already be gone.
+        with contextlib.suppress(RuntimeError):
             conn.deleteLater()
-        except RuntimeError:
-            pass  # underlying C++ object already gone
 
     def _on_ready_read(self, conn) -> None:
         buf = self._buffers.setdefault(conn, b"") + bytes(conn.readAll())

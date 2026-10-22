@@ -137,8 +137,9 @@ testable, headless-batchable, and free to be accelerated later without touching 
   dual-axis + annotations, and batch export of every graph in the project.
 - **Automation** — embedded Python console, macro recording → runnable script, batch
   import, and a batch analysis pipeline (recipe → per-file report + figure).
-- **Appearance** — four theme presets (Classic/Modern × Dark/Light) with matching
-  plot-canvas colours, switchable from **View → Theme** and remembered between runs.
+- **Appearance** — six theme presets (Classic/Modern × Dark/Light, plus shadcn
+  Dark/Light) with matching plot-canvas colours, switchable from **View → Theme**
+  and remembered between runs.
 - **Preferences** — **View → Preferences…** (`Ctrl+,`) holds the theme, the
   decimals of new columns, the `Ctrl`+wheel zoom, the default export format /
   DPI / size, and whether unsaved changes may be discarded silently.
@@ -264,6 +265,18 @@ A ready-made skill for assistants lives in
 
 Contributions are welcome. Please open an issue or pull request. Keep `core/` free of PySide6
 imports so the engine stays testable and headless.
+
+Before pushing, run the same gates as CI:
+
+```bash
+make test    # QT_QPA_PLATFORM=offscreen pytest
+make lint    # ruff check + ruff format --check + mypy
+```
+
+`ruff` covers the whole tree; `mypy` is a ratchet over the modules that are type-clean
+today (see `[tool.mypy] files` in `pyproject.toml`) — widen it as packages reach zero.
+Logs go to `~/.local/state/graphmatrix/graphmatrix.log`; set `GRAPHMATRIX_LOG_LEVEL=DEBUG`
+to see the exceptions the UI deliberately swallows.
 
 ## License
 

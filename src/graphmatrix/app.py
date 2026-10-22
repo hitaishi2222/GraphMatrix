@@ -7,11 +7,14 @@ import sys
 from PySide6.QtWidgets import QApplication
 
 from graphmatrix import __version__
+from graphmatrix.log import configure, get_logger
 from graphmatrix.ui.main_window import MainWindow
 from graphmatrix.ui.theme import apply_theme, load_saved_preset
 
 APP_NAME = "GraphMatrix"
 ORG_NAME = "GraphMatrix"
+
+log = get_logger(__name__)
 
 
 def run(
@@ -21,6 +24,8 @@ def run(
 ) -> int:
     argv = list(sys.argv if argv is None else argv)
     import os
+
+    configure()
 
     # On Wayland compositors (e.g. Hyprland) prefer the native wayland platform
     # plugin so windows tile instead of opening as floating XWayland windows.
@@ -53,8 +58,8 @@ def run(
                     graph = w.project.graph(open_graph)
                     if graph is not None:
                         w._open_graph_tab(graph)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001 - one bad file must not stop the others
+                log.warning("could not open %s: %s", path, exc)
             windows.append(w)
             w.show()
     # One IPC bridge per window so agents can drive the live GUI directly.
@@ -69,4 +74,11 @@ def run(
 
     first = windows[0] if windows else None
     register_instance(first._path if first is not None else None)
+    # Remove our entry on a clean quit; the pid guard keeps it from deleting a
+    # newer window's file.
+    import os
+
+    from graphmatrix.core.instance import unregister as unregister_instance
+
+    app.aboutToQuit.connect(lambda: unregister_instance(os.getpid()))
     return app.exec()

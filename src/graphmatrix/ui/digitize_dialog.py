@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from graphmatrix.core.analysis.digitize import digitize_curve
+from graphmatrix.ui import theme
 
 _ANCHOR_LABELS = ("X1", "X2", "Y1", "Y2")
 _ANCHOR_COLORS = ("#1f77b4", "#17becf", "#2ca02c", "#ff7f0e")
@@ -44,7 +45,7 @@ class _ImageCanvas(QLabel):
         super().__init__(parent)
         self.setMinimumSize(360, 300)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setStyleSheet("background: #202020;")
+        self.setStyleSheet(f"background: {theme.canvas_colors()[0]};")
         self._pixmap: QPixmap | None = None
         self._markers: list[tuple[float, float, str, str]] = []
 
@@ -64,7 +65,7 @@ class _ImageCanvas(QLabel):
         return (self._pixmap.width(), self._pixmap.height())
 
     def _placement(self) -> tuple[float, float, float, float, float]:
-        assert self._pixmap is not None
+        assert self._pixmap is not None  # noqa: S101 - internal invariant
         available_w, available_h = self.width(), self.height()
         image_w, image_h = self._pixmap.width(), self._pixmap.height()
         scale = min(available_w / image_w, available_h / image_h)
@@ -72,7 +73,7 @@ class _ImageCanvas(QLabel):
         offset_x, offset_y = (available_w - drawn_w) / 2, (available_h - drawn_h) / 2
         return scale, offset_x, offset_y, drawn_w, drawn_h
 
-    def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
+    def paintEvent(self, event) -> None:
         super().paintEvent(event)
         if self._pixmap is None:
             return
@@ -94,7 +95,7 @@ class _ImageCanvas(QLabel):
             painter.drawText(int(cx + 8), int(cy - 8), label)
         painter.end()
 
-    def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt override
+    def mousePressEvent(self, event) -> None:
         if self._pixmap is None:
             return
         scale, offset_x, offset_y, _w, _h = self._placement()
@@ -224,9 +225,9 @@ class DigitizeDialog(QDialog):
     def _on_click(self, x: float, y: float) -> None:
         index = min(self._click_index, 3)
         if index < 2:
-            self._pixel_spins[index].setValue(int(round(x)))
+            self._pixel_spins[index].setValue(round(x))
         else:
-            self._pixel_spins[index].setValue(int(round(y)))
+            self._pixel_spins[index].setValue(round(y))
         self._click_index = min(self._click_index + 1, 4)
         self._refresh_markers()
 

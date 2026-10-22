@@ -7,8 +7,8 @@ import traceback
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import QFileSystemWatcher, QSize, Qt
-from PySide6.QtGui import QAction, QActionGroup, QFont, QKeySequence
+from PySide6.QtCore import QFileSystemWatcher, QSize, Qt, Signal
+from PySide6.QtGui import QFont, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -37,8 +37,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from graphmatrix.core.code_export import project_to_script
 from graphmatrix.core.analysis.descriptive import batch_summary
+from graphmatrix.core.code_export import project_to_script
 from graphmatrix.core.commands import (
     AddAnnotationCommand,
     AddColumnCommand,
@@ -58,19 +58,22 @@ from graphmatrix.core.commands import (
     SetAttributesCommand,
     SetGraphTypeCommand,
 )
-from graphmatrix.core.io import export_delimited, import_file, supported_extensions
-from graphmatrix.core.io.export import export_graph
-from graphmatrix.core.journals import journal_names, preset as journal_preset_settings
 from graphmatrix.core.instance import (
     register as register_instance,
+)
+from graphmatrix.core.instance import (
     unregister as unregister_instance,
 )
+from graphmatrix.core.io import export_delimited, import_file, supported_extensions
+from graphmatrix.core.io.export import export_graph
+from graphmatrix.core.journals import journal_names
+from graphmatrix.core.journals import preset as journal_preset_settings
 from graphmatrix.core.model import (
+    GRAPH_TYPE_LABELS,
+    GRAPH_TYPES,
     Annotation,
     Column,
     ColumnType,
-    GRAPH_TYPES,
-    GRAPH_TYPE_LABELS,
     Graph,
     GraphType,
     Layer,
@@ -85,15 +88,9 @@ from graphmatrix.core.provenance import ProvenanceLog
 from graphmatrix.core.report import export_analysis_bundle
 from graphmatrix.core.scripting.record import MacroRecorder
 from graphmatrix.core.templates import apply_template, load_template, save_template
-from graphmatrix.ui.theme import (
-    apply_theme,
-    colors as theme_colors,
-    current_preset,
-    load_saved_preset,
-    presets,
-    save_preset,
-)
-from graphmatrix.ui.actions import ActionRegistry, ActionSpec
+from graphmatrix.log import get_logger
+from graphmatrix.ui import recent
+from graphmatrix.ui.actions import ActionRegistry
 from graphmatrix.ui.analysis_dialogs import (
     AnalysisResultDialog,
     DeconvolutionDialog,
@@ -105,17 +102,30 @@ from graphmatrix.ui.analysis_dialogs import (
     SlopeDialog,
     StatisticsDialog,
 )
+from graphmatrix.ui.brushing import BrushSelection
 from graphmatrix.ui.command_palette import CommandPalette
 from graphmatrix.ui.console import ConsoleView
 from graphmatrix.ui.digitize_dialog import DigitizeDialog
-from graphmatrix.ui.brushing import BrushSelection
 from graphmatrix.ui.graph_view import GraphView
 from graphmatrix.ui.icons import ui_icon
 from graphmatrix.ui.live_dialog import LiveController
+from graphmatrix.ui.menus import register_actions
 from graphmatrix.ui.project_panel import ProjectPanel
 from graphmatrix.ui.properties_panel import PropertiesPanel
+from graphmatrix.ui.theme import (
+    apply_theme,
+    current_preset,
+    load_saved_preset,
+    presets,
+    save_preset,
+)
+from graphmatrix.ui.theme import (
+    colors as theme_colors,
+)
 from graphmatrix.ui.widgets import sheet_label
 from graphmatrix.ui.worksheet_view import WorksheetView
+
+log = get_logger(__name__)
 
 APP_TITLE = "GraphMatrix"
 PROJECT_FILTER = "GraphMatrix Project (*.rsproj);;All Files (*)"
@@ -152,11 +162,6 @@ _GRAPH_PROPERTY_CASTS = {
     "Y delta": ("y_delta", float),
     "Band pitch": ("stack_offset", float),
 }
-
-
-def _slug(text: str) -> str:
-    """A stable action-id fragment for free-form labels (journal preset names)."""
-    return "".join(c.lower() if c.isalnum() else "_" for c in text).strip("_")
 
 
 #: Icon (see :mod:`graphmatrix.ui.icons`) for every action that can appear on
@@ -296,6 +301,7 @@ class ExportGraphDialog(QDialog):
         width = self.width.value()
         self.height.setValue(round(width / ratio, 2))
 
+
 class WelcomePanel(QWidget):
     """The first thing an empty project shows: what to do next.
 
@@ -303,6 +309,9 @@ class WelcomePanel(QWidget):
     start a session (import data, add sample data, add a graph, open a
     project) and lists the shortcuts worth knowing.
     """
+
+    #: emitted with the path of a recent project the user clicked
+    recent_requested = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -332,9 +341,7 @@ class WelcomePanel(QWidget):
         self.graph_button = QPushButton("Add Graph")
         self.open_button = QPushButton("Open Project…")
         self.palette_button = QPushButton("Command Palette…")
-        self.palette_button.setToolTip(
-            "Run any command by name (Ctrl+Shift+P)"
-        )
+        self.palette_button.setToolTip("Run any command by name (Ctrl+Shift+P)")
         for button in (
             self.import_button,
             self.sample_button,
@@ -346,6 +353,18 @@ class WelcomePanel(QWidget):
         buttons.addStretch(1)
         layout.addLayout(buttons)
         layout.addSpacing(20)
+
+        # Recent projects: the fastest way back into yesterday's work, and the
+        # only thing a blank start page cannot tell you.
+        self.recent_title = QLabel("Recent projects")
+        self.recent_title.setStyleSheet("font-weight: 600;")
+        self._recent_layout = QVBoxLayout()
+        self._recent_layout.setSpacing(2)
+        self._recent_layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.recent_title)
+        layout.addLayout(self._recent_layout)
+        layout.addSpacing(18)
+        self.recent_title.hide()
 
         # The shortcuts worth knowing, as key chips: a wall of monospace text
         # is a wall nobody reads.
@@ -377,6 +396,24 @@ class WelcomePanel(QWidget):
         layout.addLayout(grid)
         layout.addStretch(1)
 
+    def set_recent(self, entries: list[tuple[str, str]]) -> None:
+        """Show ``(label, path)`` pairs; the whole block hides when empty."""
+        while self._recent_layout.count():
+            item = self._recent_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        for label, path in entries:
+            button = QPushButton(label)
+            button.setObjectName("recentProject")
+            button.setToolTip(path)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.clicked.connect(
+                lambda _checked=False, target=path: self.recent_requested.emit(target)
+            )
+            self._recent_layout.addWidget(button)
+        self.recent_title.setVisible(bool(entries))
+
 
 class MainWindow(QMainWindow):
     def __init__(self, project: Project | None = None) -> None:
@@ -385,6 +422,10 @@ class MainWindow(QMainWindow):
         self.resize(1440, 900)
         self.setMinimumSize(1024, 640)
         self.setAcceptDrops(True)
+        # Built before the workspace so every tab change has somewhere to write.
+        self._status_info = QLabel("")
+        self._status_info.setObjectName("statusInfo")
+        self.statusBar().addPermanentWidget(self._status_info)
 
         app = QApplication.instance()
         if app is not None and not app.styleSheet():
@@ -415,7 +456,7 @@ class MainWindow(QMainWindow):
 
         self._build_docks()
         self._build_central()
-        self._register_actions()
+        register_actions(self)
         menus = self.registry.build_menus(
             self.menuBar(),
             order=[
@@ -450,11 +491,16 @@ class MainWindow(QMainWindow):
             self.menuBar().addMenu(self.plugins_menu)
         self._build_toolbar()
         self.statusBar().showMessage("Ready")
+        self._welcome.recent_requested.connect(self._open_recent)
+        # The Graph Editor edits the *open* graph: until one is open it would
+        # be a permanently empty panel, so it appears with the first graph.
+        self.dock_editor.hide()
 
         self.commands.subscribe(self._on_stack_changed)
         self._on_stack_changed()
         self._new_project(confirm=False)
         self._load_plugins()
+        self._refresh_recent()
 
     # ------------------------------------------------------------------ build
     def _build_docks(self) -> None:
@@ -482,9 +528,7 @@ class MainWindow(QMainWindow):
         )
         for label in (self._plot_placeholder, self._axes_placeholder):
             label.setWordWrap(True)
-            label.setAlignment(
-                Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
-            )
+            label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
             label.setContentsMargins(10, 12, 10, 10)
         self._plot_host_layout.addWidget(self._plot_placeholder)
         self.axes_layout.addWidget(self._axes_placeholder)
@@ -611,13 +655,9 @@ class MainWindow(QMainWindow):
             "(simple, stack, double-Y, x-twin, grid)"
         )
         for gtype in GRAPH_TYPES:
-            self.graph_type_combo.addItem(
-                GRAPH_TYPE_LABELS[gtype.value], gtype.value
-            )
+            self.graph_type_combo.addItem(GRAPH_TYPE_LABELS[gtype.value], gtype.value)
         self.graph_type_combo.setEnabled(False)
-        self.graph_type_combo.currentIndexChanged.connect(
-            self._on_toolbar_graph_type
-        )
+        self.graph_type_combo.currentIndexChanged.connect(self._on_toolbar_graph_type)
         toolbar.addWidget(self.graph_type_combo)
 
         toolbar.addSeparator()
@@ -665,461 +705,14 @@ class MainWindow(QMainWindow):
             action.setToolTip(f"{tip} ({shortcut})")
             action.setStatusTip(tip)
 
-    def _register_actions(self) -> None:
-        r = self.registry
-        file_actions = [
-            (
-                "file.new",
-                "New Project",
-                QKeySequence.StandardKey.New,
-                self._action_new,
-                False,
-            ),
-            (
-                "file.open",
-                "Open Project...",
-                QKeySequence.StandardKey.Open,
-                self._action_open,
-                False,
-            ),
-            (
-                "file.save",
-                "Save Project",
-                QKeySequence.StandardKey.Save,
-                self._action_save,
-                False,
-            ),
-            (
-                "file.save_as",
-                "Save Project As...",
-                "Ctrl+Shift+S",
-                self._action_save_as,
-                False,
-            ),
-            ("file.import", "Import Data...", "Ctrl+I", self._action_import, True),
-            ("file.close", "Close Tab", "Ctrl+W", self._action_close_tab, False),
-            ("file.exit", "Exit", "Ctrl+Q", self.close, True),
-        ]
-        for action_id, text, shortcut, slot, sep in file_actions:
-            r.register(
-                ActionSpec(
-                    action_id, text, shortcut, menu="File", separator_before=sep
-                ),
-                slot,
-            )
-
-        r.register(
-            ActionSpec("edit.undo", "Undo", QKeySequence.StandardKey.Undo, menu="Edit"),
-            self._action_undo,
-            enabled=False,
-        )
-        r.register(
-            ActionSpec("edit.redo", "Redo", "Ctrl+Shift+Z", menu="Edit"),
-            self._action_redo,
-            enabled=False,
-        )
-        r.register(
-            ActionSpec(
-                "edit.rename", "Rename…", "F2", menu="Edit", separator_before=True
-            ),
-            self._action_rename,
-        )
-
-        # Theme presets: one checkable action each, grouped into a View submenu
-        # that the toolbar also exposes as a dropdown.
-        self._theme_menu = QMenu("Theme", self)
-        self._theme_group = QActionGroup(self)
-        self._theme_group.setExclusive(True)
-        self._theme_actions: dict[str, QAction] = {}
-        for theme_preset in presets():
-            action = r.register(
-                ActionSpec(
-                    f"view.theme.{theme_preset.id}",
-                    theme_preset.label,
-                    None,
-                    checkable=True,
-                    tooltip=theme_preset.description,
-                ),
-                lambda _checked=False, pid=theme_preset.id: self._action_set_theme(pid),
-            )
-            action.setActionGroup(self._theme_group)
-            action.setChecked(theme_preset.id == current_preset())
-            self._theme_actions[theme_preset.id] = action
-            self._theme_menu.addAction(action)
-        theme_menu_action = r.register(
-            ActionSpec("view.theme", "Theme", menu="View"), None
-        )
-        theme_menu_action.setMenu(self._theme_menu)
-
-        for action_id, text, slot, sep in (
-            ("data.add_workbook", "Add Workbook", self._action_add_workbook, False),
-            ("data.add_worksheet", "Add Worksheet", self._action_add_worksheet, False),
-            ("data.add_graph", "Add Graph", self._action_add_graph, False),
-            ("data.sample", "Add Sample Data", self._action_sample_data, True),
-        ):
-            r.register(
-                ActionSpec(action_id, text, None, menu="Data", separator_before=sep),
-                slot,
-            )
-
-        # Worksheet row/column edits, with spreadsheet-style keyboard shortcuts.
-        # The menu keeps them discoverable; the shortcuts work from any sheet.
-        self._rows_cols_menu = QMenu("Rows and Columns", self)
-        for action_id, text, shortcut, slot, tooltip in (
-            (
-                "data.add_row",
-                "Add Row at End",
-                "Ctrl+Alt+N",
-                self._action_add_row,
-                "Append a row to the active worksheet",
-            ),
-            (
-                "data.add_column",
-                "Add Column at End",
-                "Ctrl+Alt+C",
-                self._action_add_column,
-                "Append a Y column to the active worksheet",
-            ),
-            (
-                "data.insert_row",
-                "Insert Row Above Selection",
-                "Ctrl+Alt+=",
-                self._action_insert_row_above,
-                "Insert as many rows as are selected, above them",
-            ),
-            (
-                "data.insert_row_below",
-                "Insert Row Below Selection",
-                None,
-                self._action_insert_row_below,
-                "Insert as many rows as are selected, below them",
-            ),
-            (
-                "data.delete_rows",
-                "Delete Selected Rows",
-                "Ctrl+Alt+-",
-                self._action_delete_rows,
-                "Delete the selected worksheet rows (undoable)",
-            ),
-            (
-                "data.delete_columns",
-                "Delete Selected Columns",
-                "Ctrl+Alt+Shift+-",
-                self._action_delete_columns,
-                "Delete the selected worksheet columns (undoable)",
-            ),
-        ):
-            action = r.register(
-                ActionSpec(action_id, text, shortcut, tooltip=tooltip), slot
-            )
-            self._rows_cols_menu.addAction(action)
-        rows_cols_action = r.register(
-            ActionSpec(
-                "data.rows_cols",
-                "Rows and Columns",
-                None,
-                menu="Data",
-                separator_before=True,
-            ),
-            None,
-        )
-        rows_cols_action.setMenu(self._rows_cols_menu)
-
-        # Graph layout templates (simple/stack/2Y/x-twin/grid): checkable
-        # actions so the current type is visible from the menu bar.
-        self._graph_type_menu = QMenu("Graph Type", self)
-        self._graph_type_group = QActionGroup(self)
-        self._graph_type_group.setExclusive(True)
-        self._graph_type_actions: dict[str, QAction] = {}
-        for gtype in GRAPH_TYPES:
-            action = r.register(
-                ActionSpec(
-                    f"graph.type.{_slug(gtype.value)}",
-                    GRAPH_TYPE_LABELS[gtype.value],
-                    None,
-                    checkable=True,
-                    tooltip=f"Lay the graph out as {graph_type_label(gtype)}",
-                ),
-                lambda _checked=False, value=gtype.value: self._action_set_graph_type(
-                    value
-                ),
-            )
-            action.setActionGroup(self._graph_type_group)
-            self._graph_type_actions[gtype.value] = action
-            self._graph_type_menu.addAction(action)
-        graph_type_menu_action = r.register(
-            ActionSpec("graph.type", "Graph Type", None, menu="Graph"), None
-        )
-        graph_type_menu_action.setMenu(self._graph_type_menu)
-
-        # Journal presets: checkable actions mirroring the theme submenu.
-        self._journal_menu = QMenu("Journal Preset", self)
-        self._journal_group = QActionGroup(self)
-        self._journal_group.setExclusive(True)
-        self._journal_actions: dict[str, QAction] = {}
-        for preset_name in journal_names():
-            action = r.register(
-                ActionSpec(
-                    f"graph.journal.{_slug(preset_name)}",
-                    preset_name,
-                    None,
-                    checkable=True,
-                    tooltip=f"Restyle plots and export typography for {preset_name}",
-                ),
-                lambda _checked=False, name=preset_name: self._action_apply_journal(
-                    name
-                ),
-            )
-            action.setActionGroup(self._journal_group)
-            self._journal_actions[preset_name] = action
-            self._journal_menu.addAction(action)
-        journal_menu_action = r.register(
-            ActionSpec("graph.journal", "Journal Preset", None, menu="Graph"), None
-        )
-        journal_menu_action.setMenu(self._journal_menu)
-
-        for action_id, text, slot, sep in (
-            (
-                "graph.add_plot",
-                "Add Plot to Active Graph",
-                self._action_add_plot,
-                False,
-            ),
-            ("graph.add_layer", "Add Layer", self._action_add_layer, False),
-            (
-                "graph.new_from_data",
-                "New Graph From Data",
-                self._action_add_graph,
-                False,
-            ),
-            (
-                "graph.add_ref_line",
-                "Add Reference Line…",
-                self._action_add_reference_line,
-                True,
-            ),
-            ("graph.hover", "Data Readout (Hover)", self._action_toggle_hover, False),
-            (
-                "graph.add_annotation",
-                "Add Annotation...",
-                self._action_add_annotation,
-                True,
-            ),
-            (
-                "graph.save_template",
-                "Save Style Template...",
-                self._action_save_template,
-                True,
-            ),
-            (
-                "graph.apply_template",
-                "Apply Style Template...",
-                self._action_apply_template,
-                False,
-            ),
-            ("graph.export", "Export Active Graph...", self._action_export_graph, True),
-        ):
-            r.register(
-                ActionSpec(action_id, text, None, menu="Graph", separator_before=sep),
-                slot,
-            )
-        self.registry.action("graph.hover").setCheckable(True)
-
-        # Canvas zoom. The same three actions work from the canvas tool
-        # strip and from the keyboard; they act on the panel that is being
-        # edited.
-        for action_id, text, shortcut, slot in (
-            ("graph.zoom_in", "Zoom In", "Ctrl+=", self._action_zoom_in),
-            ("graph.zoom_out", "Zoom Out", "Ctrl+-", self._action_zoom_out),
-            ("graph.zoom_fit", "Fit Data to Panel", "Ctrl+0", self._action_zoom_fit),
-        ):
-            r.register(
-                ActionSpec(
-                    action_id,
-                    text,
-                    shortcut,
-                    menu="Graph",
-                    tooltip=f"{text} of the active graph panel",
-                ),
-                slot,
-            )
-
-        for action_id, text, slot, sep in (
-            (
-                "analyze.descriptive",
-                "Descriptive Statistics...",
-                self._action_descriptive,
-                False,
-            ),
-            ("analyze.regression", "Regression...", self._action_regression, False),
-            ("analyze.fit", "Nonlinear Fit...", self._action_fit, False),
-            ("analyze.slope", "Slope / Range Fit...", self._action_slope, False),
-            ("analyze.peaks", "Peak Analysis...", self._action_peaks, True),
-            (
-                "analyze.deconvolution",
-                "Peak Deconvolution...",
-                self._action_deconvolution,
-                False,
-            ),
-            ("analyze.signal", "Signal Processing...", self._action_signal, False),
-            (
-                "analyze.statistics",
-                "Statistics / t-test / ANOVA...",
-                self._action_statistics,
-                False,
-            ),
-            (
-                "analyze.batch_stats",
-                "Batch Statistics...",
-                self._action_batch_stats,
-                False,
-            ),
-            (
-                "analyze.digitize",
-                "Digitize Curve from Image...",
-                self._action_digitize,
-                True,
-            ),
-        ):
-            r.register(
-                ActionSpec(action_id, text, None, menu="Analyze", separator_before=sep),
-                slot,
-            )
-
-        r.register(
-            ActionSpec(
-                "export.graph",
-                "Export Active Graph...",
-                "Ctrl+E",
-                menu="Export",
-            ),
-            self._action_export_graph,
-        )
-        r.register(
-            ActionSpec(
-                "export.all_graphs", "Export All Graphs...", None, menu="Export"
-            ),
-            self._action_export_all_graphs,
-        )
-        r.register(
-            ActionSpec(
-                "export.sheet", "Export Worksheet as CSV...", None, menu="Export"
-            ),
-            self._action_export_sheet,
-        )
-        r.register(
-            ActionSpec(
-                "export.script",
-                "Export Project as Python Script...",
-                None,
-                menu="Export",
-                separator_before=True,
-            ),
-            self._action_export_script,
-        )
-        r.register(
-            ActionSpec(
-                "export.bundle", "Export Analysis Bundle...", None, menu="Export"
-            ),
-            self._action_export_bundle,
-        )
-
-        r.register(
-            ActionSpec(
-                "tools.palette", "Command Palette...", "Ctrl+Shift+P", menu="Tools"
-            ),
-            self._action_command_palette,
-        )
-        r.register(
-            ActionSpec("tools.methods", "Analysis Methods...", None, menu="Tools"),
-            self._action_show_methods,
-        )
-        r.register(
-            ActionSpec(
-                "tools.console",
-                "Python Console",
-                None,
-                menu="Tools",
-                checkable=True,
-                separator_before=True,
-            ),
-            self._toggle_console,
-        )
-        r.register(
-            ActionSpec(
-                "tools.record",
-                "Record Macro",
-                None,
-                menu="Tools",
-                checkable=True,
-                separator_before=True,
-            ),
-            self._toggle_record,
-        )
-        r.register(
-            ActionSpec(
-                "tools.save_macro", "Save Recorded Macro...", None, menu="Tools"
-            ),
-            self._action_save_macro,
-        )
-        r.register(
-            ActionSpec("tools.run_macro", "Run Script...", None, menu="Tools"),
-            self._action_run_macro,
-        )
-        r.register(
-            ActionSpec(
-                "tools.batch",
-                "Batch Import...",
-                None,
-                menu="Tools",
-                separator_before=True,
-            ),
-            self._action_batch_import,
-        )
-        r.register(
-            ActionSpec(
-                "tools.batch_analysis", "Batch Analysis (Recipe)...", None, menu="Tools"
-            ),
-            self._action_batch_analysis,
-        )
-        r.register(
-            ActionSpec(
-                "tools.live", "Live Data...", None, menu="Tools", separator_before=True
-            ),
-            self._action_live_data,
-        )
-        r.register(
-            ActionSpec(
-                "view.preferences",
-                "Preferences...",
-                "Ctrl+,",
-                menu="View",
-                separator_before=True,
-            ),
-            self._action_preferences,
-        )
-        r.register(
-            ActionSpec(
-                "help.shortcuts",
-                "Keyboard Shortcuts...",
-                QKeySequence.StandardKey.HelpContents,
-                menu="Help",
-            ),
-            self._action_shortcuts,
-        )
-        r.register(
-            ActionSpec("help.about", "About GraphMatrix", None, menu="Help"),
-            self._action_about,
-        )
-
     # ------------------------------------------------------------- project ops
     def _set_project(self, project: Project, path: Path | None) -> None:
         # Stop watching the previous file.
         if self._path is not None and self._path.exists():
             try:
                 self._file_watcher.removePath(str(self._path))
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:
+                log.debug("ignored exception", exc_info=True)
         self.project = project
         self._path = path
         if path is not None and path.exists():
@@ -1129,6 +722,14 @@ class MainWindow(QMainWindow):
         self.provenance.clear()
         self._close_all_tabs()
         self._refresh()
+        # Nothing of the previous project may linger: a stale Properties row
+        # reads as if that object were still open, and the Graph Editor would
+        # edit a graph that no longer exists.
+        self.project_panel.tree.clearSelection()
+        self.properties_panel.show_object(None)
+        self._update_status_info()
+        if not project.graphs:
+            self.dock_editor.hide()
         self.console.set_project(project)
         self._set_dirty(False)
 
@@ -1158,8 +759,8 @@ class MainWindow(QMainWindow):
             if self._path is not None and self._path.exists():
                 try:
                     self._file_watcher.addPath(str(self._path))
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception:
+                    log.debug("ignored exception", exc_info=True)
 
     def _refresh(self) -> None:
         self.project_panel.set_project(self.project)
@@ -1283,6 +884,7 @@ class MainWindow(QMainWindow):
             return
         self._set_project(project, path=Path(path))
         self._show_first_object()
+        self._remember_recent(path)
         self.statusBar().showMessage(f"Opened {path}", 4000)
 
     def _show_first_object(self) -> None:
@@ -1308,6 +910,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Save failed", f"Could not save project:\n{exc}")
             return False
         self._set_dirty(False)
+        self._remember_recent(self._path)
         self.statusBar().showMessage(f"Saved {self._path}", 4000)
         return True
 
@@ -1411,11 +1014,11 @@ class MainWindow(QMainWindow):
             )
 
     # ------------------------------------------------------------ drag & drop
-    def dragEnterEvent(self, event) -> None:  # noqa: N802 - Qt override
+    def dragEnterEvent(self, event) -> None:
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
 
-    def dropEvent(self, event) -> None:  # noqa: N802 - Qt override
+    def dropEvent(self, event) -> None:
         paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
         if not paths:
             return
@@ -1513,9 +1116,7 @@ class MainWindow(QMainWindow):
                 view = self._active_graph_view
         label = graph_type_label(graph_type)
         if view is None:
-            self.statusBar().showMessage(
-                f"Open a graph to switch it to {label}", 4000
-            )
+            self.statusBar().showMessage(f"Open a graph to switch it to {label}", 4000)
             self._sync_graph_type_actions(None)
             return
         view.set_graph_type(graph_type)
@@ -1580,9 +1181,7 @@ class MainWindow(QMainWindow):
             value = max(0.1, min(100.0, float(value)))
         else:
             value = max(0.0, min(100.0, float(value)))
-        self.commands.push(
-            SetAttributesCommand(obj, "Edit Layout", **{field: value})
-        )
+        self.commands.push(SetAttributesCommand(obj, "Edit Layout", **{field: value}))
         self.properties_panel.show_object(obj)
 
     def _action_rename_for(self, obj) -> None:
@@ -1756,19 +1355,13 @@ class MainWindow(QMainWindow):
         self._on_active_sheet("add a column", lambda view: view.append_column())
 
     def _action_insert_row_above(self) -> None:
-        self._on_active_sheet(
-            "insert rows", lambda view: view.insert_rows_above()
-        )
+        self._on_active_sheet("insert rows", lambda view: view.insert_rows_above())
 
     def _action_insert_row_below(self) -> None:
-        self._on_active_sheet(
-            "insert rows", lambda view: view.insert_rows_below()
-        )
+        self._on_active_sheet("insert rows", lambda view: view.insert_rows_below())
 
     def _action_delete_rows(self) -> None:
-        self._on_active_sheet(
-            "delete rows", lambda view: view.delete_selected_rows()
-        )
+        self._on_active_sheet("delete rows", lambda view: view.delete_selected_rows())
 
     def _action_delete_columns(self) -> None:
         self._on_active_sheet(
@@ -1807,7 +1400,10 @@ class MainWindow(QMainWindow):
             # (data references are shared, nothing is duplicated on disk).
             # A stacked-line figure starts with two bands, drawn normalized so
             # the curves can be compared as shapes.
-            if gtype in (GraphType.STACK, GraphType.X_TWIN, GraphType.STACK_LINE) and graph.layers:
+            if (
+                gtype in (GraphType.STACK, GraphType.X_TWIN, GraphType.STACK_LINE)
+                and graph.layers
+            ):
                 source = graph.first_layer
                 if source.plots:
                     extra = Layer("Layer 2")
@@ -2234,8 +1830,8 @@ class MainWindow(QMainWindow):
         if callable(surface):
             try:
                 return surface()
-            except Exception:  # noqa: BLE001 - fall back to the whole widget
-                pass
+            except Exception:
+                log.debug("ignored exception", exc_info=True)
         return canvas.widget()
 
     def _action_export_sheet(self) -> None:
@@ -2355,6 +1951,13 @@ class MainWindow(QMainWindow):
             "Milestones M1–M6: worksheets, graphs, analysis, export, scripting, batch.",
         )
 
+    def _action_next_tab(self, step: int = 1) -> None:
+        """Cycle through the open tabs (Ctrl+Tab / Ctrl+Shift+Tab)."""
+        count = self.tabs.count()
+        if count < 2:
+            return
+        self.tabs.setCurrentIndex((self.tabs.currentIndex() + step) % count)
+
     def _action_close_tab(self) -> None:
         """Close the tab in front of the user (Ctrl+W)."""
         index = self.tabs.currentIndex()
@@ -2400,6 +2003,49 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     # ---------------------------------------------------------------- helpers
+    def _refresh_recent(self) -> None:
+        """Re-read the recent list into the welcome page and the File menu."""
+        paths = recent.prune(recent.load())
+        recent.save(paths)
+        entries = [(recent.display_name(path), path) for path in paths]
+        self._welcome.set_recent(entries)
+        self._recent_menu.clear()
+        for label, path in entries:
+            action = self._recent_menu.addAction(label)
+            action.setToolTip(path)
+            action.triggered.connect(
+                lambda _checked=False, target=path: self._open_recent(target)
+            )
+        if not entries:
+            empty = self._recent_menu.addAction("No recent projects")
+            empty.setEnabled(False)
+        self._recent_menu.setEnabled(bool(entries))
+
+    def _remember_recent(self, path) -> None:
+        recent.save(recent.remember(recent.load(), path))
+        self._refresh_recent()
+
+    def _open_recent(self, path: str) -> None:
+        if not self._confirm_discard():
+            return
+        self._open_project_path(path)
+
+    def _update_status_info(self) -> None:
+        """What is open, on the right of the status bar (quiet, always there)."""
+        view = self.tabs.currentWidget()
+        if isinstance(view, WorksheetView):
+            sheet = view.sheet
+            text = (
+                f"{view.source} · {sheet.num_rows} rows × {sheet.num_columns} columns"
+            )
+        elif isinstance(view, GraphView):
+            plots = sum(len(layer.plots) for layer in view.graph.layers)
+            panels = view.graph.layout_rows * view.graph.layout_cols
+            text = f"{view.graph.name} · {panels} panel(s) · {plots} plot(s)"
+        else:
+            text = ""
+        self._status_info.setText(text)
+
     def _current_workbook(self) -> Workbook | None:
         sel = self.project_panel.current_object()
         if isinstance(sel, Workbook):
@@ -2432,6 +2078,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------- tabs
     def _on_tab_changed(self, index: int) -> None:
         widget = self.tabs.widget(index)
+        self._update_status_info()
         # Swap the graph side panels (Plot + Axes) to the active graph view.
         while self.axes_layout.count():
             item = self.axes_layout.takeAt(0)
@@ -2534,6 +2181,7 @@ class MainWindow(QMainWindow):
 
     def _open_graph_tab(self, graph: Graph) -> None:
         view = self._views.get(id(graph))
+        self.dock_editor.show()
         if view is not None:
             self.tabs.setCurrentWidget(view)
             self._active_graph_view = view
@@ -2594,7 +2242,7 @@ class MainWindow(QMainWindow):
             )
 
     # ----------------------------------------------------------------- events
-    def closeEvent(self, event) -> None:  # noqa: N802 - Qt override
+    def closeEvent(self, event) -> None:
         if not self.confirm_on_close or self._confirm_discard():
             unregister_instance()
             event.accept()

@@ -12,7 +12,8 @@ but large for big datasets; the companion ``data/*.csv`` files are the compact c
 from __future__ import annotations
 
 import math
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 import numpy as np
 
@@ -166,4 +167,4 @@ def project_to_script(project: Project, *, header: bool = True) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-__all__ = ["project_to_script", "array_literal"]
+__all__ = ["array_literal", "project_to_script"]

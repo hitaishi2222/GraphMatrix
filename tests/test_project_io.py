@@ -5,7 +5,6 @@ from __future__ import annotations
 import numpy as np
 
 from graphmatrix.core.model import (
-    Column,
     ColumnType,
     Graph,
     Project,

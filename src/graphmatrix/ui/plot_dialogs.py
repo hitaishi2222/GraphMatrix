@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QComboBox,
     QColorDialog,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
@@ -18,12 +18,12 @@ from PySide6.QtWidgets import (
 
 from graphmatrix.core.model import (
     LINE_STYLES,
+    Z_STYLES,
     ColumnType,
     PlotSpec,
     PlotStyle,
     Project,
     ReferenceLine,
-    Z_STYLES,
 )
 from graphmatrix.ui.widgets import (
     color_button_style,

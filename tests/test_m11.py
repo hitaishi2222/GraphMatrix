@@ -163,7 +163,7 @@ def test_mpl_canvas_rows_follow_sort_order():
 def test_worksheet_row_highlight(qapp):
     from graphmatrix.ui.worksheet_view import WorksheetView
 
-    project, sheet = make_project()
+    _project, sheet = make_project()
     view = WorksheetView(sheet, CommandStack(), "Book1/Sheet1")
     view.populate()
 
@@ -187,7 +187,7 @@ def test_worksheet_selected_rows_broadcast(qapp):
 
     from graphmatrix.ui.worksheet_view import WorksheetView
 
-    project, sheet = make_project()
+    _project, sheet = make_project()
     view = WorksheetView(sheet, CommandStack(), "Book1/Sheet1")
     view.populate()
     received: list[tuple[str, list[int]]] = []
@@ -206,13 +206,11 @@ def test_worksheet_selected_rows_broadcast(qapp):
 
 
 def test_graphview_brush_roundtrip(qapp):
-    from PySide6.QtCore import Signal
-    from PySide6.QtWidgets import QWidget
 
     from graphmatrix.ui.brushing import BrushSelection
     from graphmatrix.ui.graph_view import GraphView
 
-    project, sheet = make_project()
+    project, _sheet = make_project()
     graph = make_graph()
     view = GraphView(graph, project, CommandStack())
     view.render()

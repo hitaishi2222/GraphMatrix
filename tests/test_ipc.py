@@ -10,9 +10,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication
 
-from graphmatrix.core.ipc import IpcBridge, request, socket_path  # noqa: E402
+from graphmatrix.core.ipc import IpcBridge, request, socket_path
 
 
 @pytest.fixture(scope="module")
@@ -42,7 +42,7 @@ def _pump(app, bridge, seconds=1.0):
     """Run the Qt event loop until the bridge answers or time runs out."""
     import time
 
-    from PySide6.QtCore import QDeadlineTimer, QCoreApplication
+    from PySide6.QtCore import QCoreApplication, QDeadlineTimer
 
     deadline = QDeadlineTimer()
     deadline.setRemainingTime(int(seconds * 1000))
@@ -59,7 +59,7 @@ def _rpc(app, op, timeout=10.0, **payload):
     """
     import threading
 
-    from PySide6.QtCore import QDeadlineTimer, QCoreApplication
+    from PySide6.QtCore import QCoreApplication, QDeadlineTimer
 
     out = {}
     t = threading.Thread(

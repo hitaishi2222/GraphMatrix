@@ -6,7 +6,7 @@ pairs the UI can add back as worksheet columns or graph plots.
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 from scipy import integrate as sci_integrate
@@ -299,7 +299,7 @@ def baseline_rubber_band(x: Sequence[float], y: Sequence[float]) -> AnalysisResu
 
 def _lower_hull(xs: np.ndarray, ys: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Lower convex hull of a point set (Andrew's monotone chain)."""
-    points = sorted(zip(xs.tolist(), ys.tolist()))
+    points = sorted(zip(xs.tolist(), ys.tolist(), strict=False))
     lower: list[tuple[float, float]] = []
     for point in points:
         while len(lower) >= 2 and _cross(lower[-2], lower[-1], point) <= 0:
@@ -448,21 +448,21 @@ def run_operation(
 
 
 __all__ = [
-    "fft_spectrum",
-    "smooth_savgol",
-    "smooth_moving_average",
-    "butter_filter",
-    "differentiate",
-    "integrate_curve",
-    "interpolate",
-    "baseline_polynomial",
-    "baseline_linear",
+    "BASELINE_METHODS",
     "baseline_als",
+    "baseline_correction",
+    "baseline_linear",
+    "baseline_median",
+    "baseline_polynomial",
     "baseline_rolling_ball",
     "baseline_rubber_band",
-    "baseline_median",
-    "baseline_correction",
-    "BASELINE_METHODS",
-    "run_operation",
+    "butter_filter",
+    "differentiate",
+    "fft_spectrum",
+    "integrate_curve",
+    "interpolate",
     "operations",
+    "run_operation",
+    "smooth_moving_average",
+    "smooth_savgol",
 ]

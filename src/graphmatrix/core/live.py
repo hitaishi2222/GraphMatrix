@@ -104,4 +104,4 @@ class LiveFileSource:
         return rows
 
 
-__all__ = ["LiveFileSource", "DELIMITERS", "looks_numeric"]
+__all__ = ["DELIMITERS", "LiveFileSource", "looks_numeric"]

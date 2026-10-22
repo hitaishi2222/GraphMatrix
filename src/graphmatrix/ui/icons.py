@@ -21,7 +21,6 @@ from PySide6.QtSvg import QSvgRenderer
 
 from graphmatrix.ui import theme
 
-
 #: Project-tree icons: the SVG body of each Lucide glyph.
 _LUCIDE = {
     "database": '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/>',
@@ -81,10 +80,10 @@ def chrome_color() -> str:
 
 def _render(svg_body: str, color: str, size: int) -> QIcon:
     svg = (
-        '<svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="{color}" '
+        f'<svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="{color}" '
         'stroke-linecap="round" stroke-linejoin="round" stroke-width="2" '
-        'viewBox="0 0 24 24">{body}</svg>'
-    ).format(color=color, body=svg_body).encode("utf-8")
+        f'viewBox="0 0 24 24">{svg_body}</svg>'
+    ).encode()
     renderer = QSvgRenderer(QByteArray(svg))
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)

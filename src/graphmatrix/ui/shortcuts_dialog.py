@@ -118,4 +118,4 @@ class ShortcutsDialog(QDialog):
         self.tree.expandAll()
 
 
-__all__ = ["ShortcutsDialog", "WORKSHEET_SHORTCUTS"]
+__all__ = ["WORKSHEET_SHORTCUTS", "ShortcutsDialog"]

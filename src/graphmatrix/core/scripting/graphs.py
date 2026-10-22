@@ -23,7 +23,8 @@ from __future__ import annotations
 
 import copy
 import math
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from ..commands import (
     AddColumnCommand,
@@ -111,9 +112,10 @@ def _sheet(project: Project, source: str) -> tuple[Workbook, Worksheet]:
         sheet = book.sheet(source)
         if sheet is not None:
             return book, sheet
-    known = ", ".join(
-        f"{b.name}/{s.name}" for b in project.workbooks for s in b.sheets
-    ) or "none"
+    known = (
+        ", ".join(f"{b.name}/{s.name}" for b in project.workbooks for s in b.sheets)
+        or "none"
+    )
     raise GraphToolError(f"no worksheet {source!r} (have: {known})")
 
 
@@ -140,13 +142,13 @@ def _graph_type(value: str | GraphType) -> GraphType:
         return GraphType(value)
     except ValueError as exc:
         raise GraphToolError(
-            f"unknown graph type {value!r} "
-            f"(have: {', '.join(GRAPH_TYPE_HELP)})"
+            f"unknown graph type {value!r} (have: {', '.join(GRAPH_TYPE_HELP)})"
         ) from exc
 
 
-def _panel_count(graph_type: GraphType, panels: int | None, rows: int | None,
-                 cols: int | None) -> int:
+def _panel_count(
+    graph_type: GraphType, panels: int | None, rows: int | None, cols: int | None
+) -> int:
     """How many panels a graph of this type should have."""
     if graph_type == GraphType.GRID:
         r = max(1, int(rows or 2))
@@ -504,7 +506,10 @@ def add_data(
             units=str(spec.get("units", "")),
             comment=str(spec.get("comment", "")),
         )
-        _push(commands, AddColumnCommand(target, column, source=f"{workbook.name}/{sheet}"))
+        _push(
+            commands,
+            AddColumnCommand(target, column, source=f"{workbook.name}/{sheet}"),
+        )
         created.append({"name": name, "type": col_type.value, "rows": len(column)})
 
     return {
@@ -543,8 +548,10 @@ def _generate(spec: dict[str, Any]) -> list[float]:
         amp = float(spec.get("amp", 1.0))
         freq = float(spec.get("freq", 1.0))
         phase = float(spec.get("phase", 0.0))
-        wave = np.sin(2 * np.pi * freq * x + phase) if kind == "sin" else np.cos(
-            2 * np.pi * freq * x + phase
+        wave = (
+            np.sin(2 * np.pi * freq * x + phase)
+            if kind == "sin"
+            else np.cos(2 * np.pi * freq * x + phase)
         )
         return list(amp * wave)
     if kind == "random":
@@ -599,8 +606,16 @@ PANEL_PROPERTIES = (
     "label_color",
 )
 
-_BOOLS = {"true": True, "yes": True, "on": True, "1": True,
-          "false": False, "no": False, "off": False, "0": False}
+_BOOLS = {
+    "true": True,
+    "yes": True,
+    "on": True,
+    "1": True,
+    "false": False,
+    "no": False,
+    "off": False,
+    "0": False,
+}
 
 
 def _coerce(key: str, value: Any) -> Any:
@@ -661,7 +676,10 @@ def set_property(
             f"(graph: {', '.join(GRAPH_PROPERTIES)}; "
             f"panel: {', '.join(PANEL_PROPERTIES)})"
         )
-    _push(commands, SetAttributesCommand(target, f"Set {key}", **{key: _coerce(key, value)}))
+    _push(
+        commands,
+        SetAttributesCommand(target, f"Set {key}", **{key: _coerce(key, value)}),
+    )
     return {"graph": graph.name, "property": key, "value": _coerce(key, value)}
 
 
@@ -742,7 +760,9 @@ def export_graphs(
     for name in targets:
         graph = _graph(project, name)
         safe = (
-            "".join(c if c.isalnum() or c in "-_." else "_" for c in graph.name).strip("_")
+            "".join(c if c.isalnum() or c in "-_." else "_" for c in graph.name).strip(
+                "_"
+            )
             or "graph"
         )
         target = out_path / f"{safe}.{format.lower()}"

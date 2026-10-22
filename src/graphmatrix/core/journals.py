@@ -159,9 +159,9 @@ def export_rcparams(preset_name: str) -> dict[str, Any]:
 
 __all__ = [
     "JOURNAL_PRESETS",
+    "apply_journal_preset",
+    "export_rcparams",
+    "figure_size",
     "journal_names",
     "preset",
-    "apply_journal_preset",
-    "figure_size",
-    "export_rcparams",
 ]

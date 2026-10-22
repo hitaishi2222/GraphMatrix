@@ -7,17 +7,21 @@ downsampling for large series.
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import QRectF, Qt
 
+from graphmatrix.core.plot_themes import DEFAULT_PALETTE as PALETTE
+from graphmatrix.log import get_logger
+
+from .. import theme
 from .base import PlotCanvas
 from .overlay import CanvasOverlay, CanvasTools, watch_container
-from .. import theme
 
-from graphmatrix.core.plot_themes import DEFAULT_PALETTE as PALETTE
+log = get_logger(__name__)
 
 _PEN_STYLES = {
     "solid": Qt.PenStyle.SolidLine,
@@ -83,8 +87,8 @@ class PyQtGraphCanvas(PlotCanvas):
         # Double-clicking the canvas resets the view to its original (full) range.
         try:
             self._widget.scene().sigMouseClicked.connect(self._on_mouse_clicked)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
 
     def _sync_right_view(self) -> None:
         self._view_right.setGeometry(self._main_view.sceneBoundingRect())
@@ -96,8 +100,8 @@ class PyQtGraphCanvas(PlotCanvas):
                 self._main_view.autoRange()
                 if self._view_right is not None:
                     self._view_right.autoRange()
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
 
     def _container(self, right: bool):
         return self._view_right if right else self._plot_item
@@ -112,14 +116,14 @@ class PyQtGraphCanvas(PlotCanvas):
         for item in list(self._annotations):
             try:
                 self._main_view.removeItem(item)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:
+                log.debug("ignored exception", exc_info=True)
         self._annotations.clear()
         for item in list(self._ref_lines):
             try:
                 self._main_view.removeItem(item)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:
+                log.debug("ignored exception", exc_info=True)
         self._ref_lines.clear()
         self._series.clear()
         self._series_raw.clear()
@@ -185,9 +189,12 @@ class PyQtGraphCanvas(PlotCanvas):
         if name:
             self._ensure_legend(right)
         symbol_kwargs = (
-            dict(
-                symbol=symbol, symbolSize=symbol_size, symbolBrush=brush, symbolPen=pen
-            )
+            {
+                "symbol": symbol,
+                "symbolSize": symbol_size,
+                "symbolBrush": brush,
+                "symbolPen": pen,
+            }
             if symbol
             else {}
         )
@@ -310,8 +317,8 @@ class PyQtGraphCanvas(PlotCanvas):
         """Show the current zoom of the view in the tool strip."""
         try:
             self._tools.set_zoom_level(self.zoom_factor())
-        except Exception:  # noqa: BLE001 - the label must never break a draw
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
 
     def zoom_in(self) -> None:
         """Zoom the view in around its centre."""
@@ -346,7 +353,8 @@ class PyQtGraphCanvas(PlotCanvas):
         for view in (self._main_view, self._view_right):
             try:
                 (x0, x1), (y0, y1) = view.viewRange()
-            except Exception:  # noqa: BLE001
+            except Exception:
+                log.debug("ignored exception", exc_info=True)
                 continue
             cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
             left = cx + (x0 - cx) * factor
@@ -363,7 +371,8 @@ class PyQtGraphCanvas(PlotCanvas):
         for view in (self._main_view, self._view_right):
             try:
                 view.autoRange()
-            except Exception:  # noqa: BLE001
+            except Exception:
+                log.debug("ignored exception", exc_info=True)
                 continue
         self._notify_zoom_changed()
 
@@ -410,8 +419,8 @@ class PyQtGraphCanvas(PlotCanvas):
                 continue
             try:
                 self._main_view.removeItem(item)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:
+                log.debug("ignored exception", exc_info=True)
         self._hover_label = self._hover_marker = None
 
     def _show_hover(self, point: tuple[float, float, str] | None) -> None:
@@ -542,8 +551,8 @@ class PyQtGraphCanvas(PlotCanvas):
         try:
             self._plot_item.setDownsampling(auto=flag, mode="peak")
             self._plot_item.setClipToView(flag)
-        except Exception:  # noqa: BLE001 - optional optimisation, never fatal
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
 
     def set_theme(self, preset: str) -> None:
         bg, fg, grid_alpha = theme.canvas_colors(preset)
@@ -552,8 +561,8 @@ class PyQtGraphCanvas(PlotCanvas):
         self._tools.refresh_theme()
         try:
             pg.setConfigOptions(background=bg, foreground=fg)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
         self._widget.setBackground(bg)
         self._widget.showGrid(x=True, y=True, alpha=grid_alpha)
         pen = pg.mkPen(fg, width=1)
@@ -564,14 +573,14 @@ class PyQtGraphCanvas(PlotCanvas):
             axis.setTextPen(text_pen)
         try:
             self._plot_item.setTitle(self._title, color=fg)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
         for legend in (self._legend, self._legend_right):
             if legend is None:
                 continue
             try:
                 legend.setLabelTextColor(fg)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:
+                log.debug("ignored exception", exc_info=True)
         if self._hover_label is not None:
             self._hover_label.setColor(fg)

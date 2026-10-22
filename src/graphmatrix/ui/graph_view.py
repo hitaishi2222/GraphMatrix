@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 
 import numpy as np
-
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFontDatabase
 from PySide6.QtWidgets import (
@@ -52,9 +51,10 @@ from graphmatrix.core.commands import (
     SetGraphTypeCommand,
 )
 from graphmatrix.core.model import (
-    LINE_STYLES,
-    GRAPH_TYPES,
     GRAPH_TYPE_LABELS,
+    GRAPH_TYPES,
+    LINE_STYLES,
+    Z_STYLES,
     Annotation,
     AxisScale,
     Graph,
@@ -64,21 +64,22 @@ from graphmatrix.core.model import (
     PlotStyle,
     Project,
     ReferenceLine,
-    Z_STYLES,
     is_3d_style,
 )
+from graphmatrix.core.plot_themes import series_color
 from graphmatrix.core.plotting import (
     auto_axis_labels,
     make_plot_for_column,
     resolve_plot,
 )
-from graphmatrix.core.plot_themes import series_color
-from graphmatrix.ui import theme
-from graphmatrix.ui import plot_themes
+from graphmatrix.log import get_logger
+from graphmatrix.ui import plot_themes, theme
 from graphmatrix.ui.canvas import create_canvas
 from graphmatrix.ui.icons import ui_icon
 from graphmatrix.ui.plot_dialogs import AddPlotDialog, ReferenceLineDialog
 from graphmatrix.ui.widgets import COLUMN_MIME, color_button_style, fill_column_combo
+
+log = get_logger(__name__)
 
 _SYMBOLS = ["o", "s", "^", "v", "d", "+", "x", "*", ""]
 
@@ -119,8 +120,8 @@ class GraphView(QWidget):
         # (the button on the canvas can do it too).
         try:
             self.canvas.hover_state_changed = self._on_canvas_hover_changed
-        except Exception:  # noqa: BLE001 - backends without the hook
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
         self._series_sources: list[str] = []  # per canvas series, for brushing
         self._series_specs: list[PlotSpec] = []  # the spec behind every series
         self.plot_list = QListWidget()
@@ -168,9 +169,7 @@ class GraphView(QWidget):
         self.hover_check = QToolButton()
         self.hover_check.setObjectName("readoutToggle")
         self.hover_check.setText("Readout")
-        self.hover_check.setToolButtonStyle(
-            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
-        )
+        self.hover_check.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.hover_check.setIcon(ui_icon("crosshair"))
         self.hover_check.setCheckable(True)
         self.hover_check.setToolTip(
@@ -456,7 +455,9 @@ class GraphView(QWidget):
         if getattr(self.graph, "graph_type", "") == GraphType.STACK_LINE.value:
             return 0
         spec = self._selected_spec()
-        layer = self._layer_for_spec(spec) if spec is not None else self.graph.first_layer
+        layer = (
+            self._layer_for_spec(spec) if spec is not None else self.graph.first_layer
+        )
         try:
             return self.graph.layers.index(layer)
         except ValueError:
@@ -610,15 +611,15 @@ class GraphView(QWidget):
         self.refresh(select=spec)
 
     # -- drag & drop (column -> layer) ---------------------------------------
-    def dragEnterEvent(self, event) -> None:  # noqa: N802 - Qt override
+    def dragEnterEvent(self, event) -> None:
         if event.mimeData().hasFormat(COLUMN_MIME):
             event.acceptProposedAction()
 
-    def dragMoveEvent(self, event) -> None:  # noqa: N802 - Qt override
+    def dragMoveEvent(self, event) -> None:
         if event.mimeData().hasFormat(COLUMN_MIME):
             event.acceptProposedAction()
 
-    def dropEvent(self, event) -> None:  # noqa: N802 - Qt override
+    def dropEvent(self, event) -> None:
         if not event.mimeData().hasFormat(COLUMN_MIME):
             return
         payload = json.loads(bytes(event.mimeData().data(COLUMN_MIME)).decode("utf-8"))
@@ -654,7 +655,9 @@ class GraphView(QWidget):
         """Show the series colour as a swatch with a readable label."""
         if self._color:
             self.color_button.setText(self._color)
-            self.color_button.setStyleSheet(color_button_style(self._color, self._color))
+            self.color_button.setStyleSheet(
+                color_button_style(self._color, self._color)
+            )
         else:
             # No explicit colour: the palette colour is used, so the button
             # keeps the theme's own look instead of a white slab.
@@ -973,7 +976,9 @@ class GraphView(QWidget):
     def _sync_type_fields(self) -> None:
         """Enable only the layout fields that apply to the current graph type."""
         try:
-            gtype = GraphType(self.graphtype_combo.currentData() or GraphType.SIMPLE.value)
+            gtype = GraphType(
+                self.graphtype_combo.currentData() or GraphType.SIMPLE.value
+            )
         except ValueError:
             gtype = GraphType.SIMPLE
         show_grid_size = gtype == GraphType.GRID
@@ -1044,8 +1049,8 @@ class GraphView(QWidget):
         self.splitter.setStretchFactor(index, 1)
         try:
             old_canvas.close()
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
 
     def render(self) -> None:
         self._ensure_backend()
@@ -1164,9 +1169,7 @@ class GraphView(QWidget):
                     # stacked-line figure every band is another curve, so the
                     # bands take the palette colours one after the other.
                     color=spec.color
-                    or series_color(
-                        (panel_index if stack_line else 0) + plot_index
-                    ),
+                    or series_color((panel_index if stack_line else 0) + plot_index),
                     width=spec.line_width,
                     symbol=spec.symbol,
                     symbol_size=spec.symbol_size,
@@ -1265,9 +1268,7 @@ class GraphView(QWidget):
                 any(getattr(each, "show_legend", True) for each in self.graph.layers)
             )
 
-        self.canvas.set_current_panel(
-            0 if stack_line else self._active_panel_index()
-        )
+        self.canvas.set_current_panel(0 if stack_line else self._active_panel_index())
         if gtype == GraphType.X_TWIN:
             # The panels of an X-Twin share their Y axis.
             share_y = getattr(self.canvas, "share_y_across_panels", None)

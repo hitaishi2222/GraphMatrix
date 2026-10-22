@@ -13,7 +13,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication
 
 
 @pytest.fixture(scope="module")
@@ -62,8 +62,7 @@ def test_toolbar_uses_icons_beside_text(window):
     from PySide6.QtCore import Qt
 
     assert (
-        window.toolbar.toolButtonStyle()
-        == Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+        window.toolbar.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonTextBesideIcon
     )
 
 
@@ -140,9 +139,7 @@ def test_shortcuts_are_unique(window):
         if not isinstance(sequence, str):
             continue
         if sequence in seen:
-            pytest.fail(
-                f"{spec.id} and {seen[sequence]} both use {sequence}"
-            )
+            pytest.fail(f"{spec.id} and {seen[sequence]} both use {sequence}")
         seen[sequence] = spec.id
 
 
@@ -201,9 +198,7 @@ def test_preferences_dialog_applies_values(window):
     dialog = PreferencesDialog(window)
     try:
         dialog.dpi_spin.setValue(450)
-        dialog.decimals_combo.setCurrentIndex(
-            dialog.decimals_combo.findData(3)
-        )
+        dialog.decimals_combo.setCurrentIndex(dialog.decimals_combo.findData(3))
         dialog.wheel_zoom.setChecked(False)
         dialog._apply()
         assert preferences.get("export/dpi") == 450

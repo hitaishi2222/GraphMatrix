@@ -8,13 +8,18 @@ window or the graph model.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
+
+from graphmatrix.log import get_logger
 
 BACKENDS = ("pyqtgraph", "matplotlib", "pyvista")
 DEFAULT_BACKEND = "matplotlib"
 
 #: Backends that need a GL/EGL context and the ``plot3d`` extra.
 BACKEND_EXTRAS = {"pyvista": "pip install pyvista pyvistaqt (the plot3d extra)"}
+
+log = get_logger(__name__)
 
 
 class PlotCanvas(ABC):
@@ -211,8 +216,8 @@ class PlotCanvas(ABC):
             return
         try:
             callback()
-        except Exception:  # noqa: BLE001 - a UI callback must not break the plot
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
 
     @abstractmethod
     def set_theme(self, preset: str) -> None:

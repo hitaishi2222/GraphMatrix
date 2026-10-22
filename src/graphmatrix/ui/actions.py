@@ -13,11 +13,11 @@ platform's own conventions.
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import QMenuBar, QMenu
+from PySide6.QtWidgets import QMenu, QMenuBar
 
 
 @dataclass
@@ -122,8 +122,8 @@ class ActionRegistry:
 
 
 __all__ = [
-    "ActionSpec",
     "ActionRegistry",
+    "ActionSpec",
     "key_sequence",
     "portable_sequence",
     "shortcut_text",

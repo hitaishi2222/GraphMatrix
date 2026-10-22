@@ -7,6 +7,10 @@ import os
 from pathlib import Path
 from typing import Any
 
+from graphmatrix.log import get_logger
+
+log = get_logger(__name__)
+
 
 def _state_dir() -> Path:
     base = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
@@ -27,28 +31,46 @@ def register(project_path: str | Path | None) -> None:
     _state_path().write_text(json.dumps(payload), encoding="utf-8")
 
 
-def unregister() -> None:
-    try:
-        _state_path().unlink(missing_ok=True)
-    except Exception:  # noqa: BLE001
-        pass
-
-
-def get() -> dict[str, Any] | None:
+def _read() -> dict[str, Any] | None:
+    """The recorded payload, without checking whether its process is alive."""
     path = _state_path()
     if not path.exists():
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - a half-written file is no instance
         return None
-    pid = data.get("pid")
-    if not isinstance(pid, int):
-        return None
-    # Check if process is alive.
+    return data if isinstance(data.get("pid"), int) else None
+
+
+def unregister(pid: int | None = None) -> None:
+    """Remove the instance file, but only if it still describes ``pid``.
+
+    Without the check, cleaning up *our* stale entry would delete the file a
+    *newer* window just wrote and agents would lose the running window: the
+    file is a single slot, so every removal has to name its owner.
+    """
     try:
-        os.kill(pid, 0)
+        if pid is not None:
+            data = _read()
+            if data is None or data.get("pid") != pid:
+                return
+        _state_path().unlink(missing_ok=True)
+    except Exception as exc:  # noqa: BLE001 - a stale file is not fatal
+        log.warning("could not remove the instance file: %s", exc)
+
+
+def get() -> dict[str, Any] | None:
+    data = _read()
+    if data is None:
+        return None
+    pid = data["pid"]
+    try:
+        os.kill(pid, 0)  # is the recorded process still alive?
     except OSError:
-        unregister()
+        unregister(pid)
         return None
     return data
+
+
+__all__ = ["get", "register", "unregister"]

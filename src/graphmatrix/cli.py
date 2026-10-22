@@ -266,6 +266,9 @@ def doctor_cmd() -> None:
 
 
 def main() -> int:
+    from graphmatrix.log import configure
+
+    configure()
     try:
         cli()
     except SystemExit as exc:  # click raises SystemExit

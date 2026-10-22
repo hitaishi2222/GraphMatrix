@@ -15,8 +15,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import QSettings
 from PySide6.QtGui import QColor, QPalette
+
+from graphmatrix.ui.settings import app_settings as _settings
 
 SETTINGS_KEY = "appearance/preset"
 
@@ -114,6 +115,47 @@ _MODERN_LIGHT = {
     "danger": "#d64550",
 }
 
+# shadcn/ui: near-monochrome surfaces, hairline borders, one near-black (light)
+# or near-white (dark) *primary*, and 10px radii. Token mapping: window =
+# background, base = card, alt = secondary, accent = primary, accent_text =
+# primary-foreground, hover = the muted surface shadcn uses for hover/selection.
+# Keeping the primary neutral is the point: shadcn has no coloured accent.
+_SHADCN_LIGHT = {
+    "window": "#fafafa",
+    "panel": "#ffffff",
+    "base": "#ffffff",
+    "alt": "#f5f5f5",
+    "border": "#e5e5e5",
+    "text": "#0a0a0a",
+    "muted": "#737373",
+    "accent": "#171717",
+    "accent_text": "#fafafa",
+    "hover": "#f5f5f5",
+    "disabled": "#a1a1a1",
+    "canvas_bg": "#ffffff",
+    "canvas_fg": "#0a0a0a",
+    "canvas_grid": "0.10",
+    "danger": "#e7000b",
+}
+
+_SHADCN_DARK = {
+    "window": "#0a0a0a",
+    "panel": "#171717",
+    "base": "#0a0a0a",
+    "alt": "#262626",
+    "border": "#262626",
+    "text": "#fafafa",
+    "muted": "#a1a1a1",
+    "accent": "#fafafa",
+    "accent_text": "#171717",
+    "hover": "#262626",
+    "disabled": "#525252",
+    "canvas_bg": "#0a0a0a",
+    "canvas_fg": "#fafafa",
+    "canvas_grid": "0.10",
+    "danger": "#ff6467",
+}
+
 PRESETS: dict[str, ThemePreset] = {
     "classic-dark": ThemePreset(
         "classic-dark",
@@ -146,6 +188,22 @@ PRESETS: dict[str, ThemePreset] = {
         False,
         "modern",
         _MODERN_LIGHT,
+    ),
+    "shadcn-dark": ThemePreset(
+        "shadcn-dark",
+        "shadcn Dark",
+        "Neutral surfaces, hairline borders, near-white primary.",
+        True,
+        "shadcn",
+        _SHADCN_DARK,
+    ),
+    "shadcn-light": ThemePreset(
+        "shadcn-light",
+        "shadcn Light",
+        "Neutral surfaces, hairline borders, near-black primary.",
+        False,
+        "shadcn",
+        _SHADCN_LIGHT,
     ),
 }
 
@@ -202,20 +260,6 @@ def canvas_colors(preset_id: str | None = None) -> tuple[str, str, float]:
 
 
 # --- persistence ------------------------------------------------------------
-def _settings() -> QSettings | None:
-    """A QSettings bound to the app, or None when there is no named app.
-
-    Guarding on the organization name keeps headless tests (which construct a
-    bare ``QApplication``) from writing to a stray "Unknown Organization" file.
-    """
-    from PySide6.QtWidgets import QApplication
-
-    app = QApplication.instance()
-    if app is None or not app.organizationName():
-        return None
-    return QSettings()
-
-
 def load_saved_preset() -> str:
     settings = _settings()
     if settings is None:
@@ -229,6 +273,8 @@ def save_preset(preset_id: str) -> None:
     if settings is None:
         return
     settings.setValue(SETTINGS_KEY, preset_id)
+    # Flush now: the choice must survive a kill, not only a clean quit.
+    settings.sync()
 
 
 _QSS = """
@@ -266,6 +312,16 @@ QPushButton#headerAddButton {
 }
 QPushButton#headerAddButton:hover { background: $accent; color: $accent_text; border-color: $accent; }
 QPushButton#headerAddButton:pressed { background: $accent; color: $accent_text; border-color: $accent; }
+
+/* ---- recent projects (welcome page) ---- */
+QPushButton#recentProject {
+    background: transparent; border: 1px solid transparent; color: $text;
+    text-align: left; padding: 6px 9px; border-radius: 6px; font-weight: 400;
+}
+QPushButton#recentProject:hover { background: $hover; border-color: $border; }
+
+/* ---- status bar information ---- */
+QLabel#statusInfo { color: $muted; padding-right: 8px; }
 
 /* ---- key chips (welcome page) ---- */
 QLabel#keyChip {
@@ -438,8 +494,76 @@ QProgressBar, QProgressBar::chunk { border-radius: 8px; }
 """
 
 
+# Appended for the "shadcn" design language: flat surfaces, a hairline border,
+# muted hover/selection surfaces, and 10px radii. Only primary actions (default
+# buttons, checked toggles) and the tab underline use the near-black/near-white
+# accent fill, which is how shadcn separates primary from everything else.
+_SHADCN_QSS = """
+/* ---- shadcn design language ---- */
+QToolBar { background: $window; border-bottom: 1px solid $border; padding: 6px 8px; spacing: 2px; }
+QToolButton { border-radius: 8px; padding: 6px 10px; }
+QToolButton:hover { background: $hover; border-color: transparent; }
+QToolButton:pressed, QToolButton:checked {
+    background: $hover; color: $text; border-color: $border;
+}
+
+QMenuBar { background: $window; border-bottom: 1px solid $border; }
+QMenuBar::item { border-radius: 8px; padding: 6px 12px; }
+QMenuBar::item:pressed { background: $accent; color: $accent_text; }
+QMenu { border-radius: 12px; padding: 4px; }
+QMenu::item { border-radius: 6px; padding: 6px 26px 6px 20px; }
+QMenu::item:selected { background: $hover; color: $text; }
+QMenu::separator { margin: 4px 6px; }
+QToolTip { border-radius: 8px; padding: 5px 8px; }
+
+QDockWidget::title { background: $window; padding: 8px 12px; border-bottom: 1px solid $border; }
+
+QTabWidget::pane { border: none; border-top: 1px solid $border; background: $base; }
+QTabBar::tab {
+    background: transparent; color: $muted; border: none; border-radius: 0;
+    border-bottom: 2px solid transparent; padding: 8px 14px; margin-right: 4px;
+}
+QTabBar::tab:hover:!selected { background: $hover; color: $text; border-radius: 8px 8px 0 0; }
+QTabBar::tab:selected { background: transparent; color: $text; border-bottom: 2px solid $accent; }
+
+QGroupBox { border-radius: 12px; margin-top: 18px; padding: 12px 10px 8px 10px; }
+
+/* Outline buttons by default; only a dialog's default button is filled. */
+QPushButton { background: transparent; border-radius: 9px; padding: 7px 16px; }
+QPushButton:hover { background: $hover; border-color: $border; }
+QPushButton:default { background: $accent; color: $accent_text; border-color: $accent; }
+QPushButton:default:disabled { background: transparent; color: $disabled; border-color: $border; }
+QPushButton:checked { background: $accent; color: $accent_text; border-color: $accent; }
+
+QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QPlainTextEdit, QTextEdit,
+QListWidget, QTreeWidget, QTreeView, QTableView, QTableWidget {
+    background: $window; border-radius: 9px;
+    selection-background-color: $hover; selection-color: $text;
+}
+QHeaderView::section {
+    background: transparent; color: $muted; padding: 8px 10px;
+    border: none; border-bottom: 1px solid $border;
+}
+QTableView::item:selected, QTreeView::item:selected, QListView::item:selected {
+    background: $hover; color: $text;
+}
+
+QStatusBar { background: $window; border-top: 1px solid $border; }
+
+QScrollBar:vertical { width: 8px; margin: 2px; }
+QScrollBar:horizontal { height: 8px; margin: 2px; }
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal { background: $border; border-radius: 4px; }
+QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { background: $muted; }
+QProgressBar, QProgressBar::chunk { border-radius: 999px; }
+QSplitter::handle:hover { background: $border; }
+"""
+
+#: Design-language layers appended to the classic base, keyed by ``style``.
+_STYLE_LAYERS = {"modern": _MODERN_QSS, "shadcn": _SHADCN_QSS}
+
+
 def _stylesheet(p: ThemePreset) -> str:
-    qss = _QSS + (_MODERN_QSS if p.modern else "")
+    qss = _QSS + _STYLE_LAYERS.get(p.style, "")
     # Replace longer tokens first so "$accent_text" isn't clobbered by "$accent".
     for key in sorted(p.palette, key=len, reverse=True):
         qss = qss.replace(f"${key}", p.palette[key])
@@ -460,8 +584,16 @@ def _palette(p: ThemePreset) -> QPalette:
     pal.setColor(role.Button, QColor(c["alt"]))
     pal.setColor(role.ButtonText, QColor(c["text"]))
     pal.setColor(role.BrightText, QColor(c["accent_text"]))
-    pal.setColor(role.Highlight, QColor(c["accent"]))
-    pal.setColor(role.HighlightedText, QColor(c["accent_text"]))
+    # shadcn keeps its primary (near-black/near-white) apart from its selection
+    # surface, which is the muted token. QPalette.Highlight *is* a selection
+    # surface (tree indents, input selection), so it must follow `hover` there.
+    selection, selection_text = (
+        (c["hover"], c["text"])
+        if p.style == "shadcn"
+        else (c["accent"], c["accent_text"])
+    )
+    pal.setColor(role.Highlight, QColor(selection))
+    pal.setColor(role.HighlightedText, QColor(selection_text))
     pal.setColor(role.ToolTipBase, QColor(c["panel"]))
     pal.setColor(role.ToolTipText, QColor(c["text"]))
     pal.setColor(role.PlaceholderText, QColor(c["muted"]))
@@ -487,19 +619,19 @@ def apply_theme(app, preset: str | None = None) -> str:
 
 
 __all__ = [
-    "ThemePreset",
-    "PRESETS",
     "DEFAULT_PRESET",
+    "PRESETS",
     "SETTINGS_KEY",
+    "ThemePreset",
     "apply_theme",
-    "preset",
-    "presets",
+    "canvas_colors",
+    "colors",
     "current_preset",
-    "set_preset",
     "is_dark",
     "is_modern",
-    "colors",
-    "canvas_colors",
     "load_saved_preset",
+    "preset",
+    "presets",
     "save_preset",
+    "set_preset",
 ]

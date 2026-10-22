@@ -9,10 +9,13 @@ import os
 import numpy as np
 import pytest
 
-from graphmatrix.core.analysis import regression, peaks as peaks_module, fitting
+from graphmatrix.core.analysis import fitting, regression
+from graphmatrix.core.analysis import peaks as peaks_module
 from graphmatrix.core.analysis.descriptive import batch_summary
 from graphmatrix.core.commands import CommandStack, SetAttributesCommand
 from graphmatrix.core.model import (
+    Z_STYLES,
+    ColumnType,
     Graph,
     Layer,
     PlotSpec,
@@ -20,9 +23,6 @@ from graphmatrix.core.model import (
     Project,
     Workbook,
     Worksheet,
-    Column,
-    ColumnType,
-    Z_STYLES,
     is_3d_style,
 )
 from graphmatrix.core.plotting import grid_xyz, resolve_plot
@@ -151,7 +151,7 @@ def test_batch_summary_handles_missing_values():
     project, sheet = make_project()
     sheet.column("Z1").data[10:20] = np.nan
     result = batch_summary(project)
-    z_row = [r for r in result.tables["Columns"][1:] if r[1] == "Z1"][0]
+    z_row = next(r for r in result.tables["Columns"][1:] if r[1] == "Z1")
     assert z_row[4] == "10"  # Missing
 
 
@@ -172,7 +172,7 @@ def test_layer_z_label_roundtrip():
 
 
 def test_resolve_plot_carries_z():
-    project, sheet = make_project()
+    project, _sheet = make_project()
     spec = PlotSpec("Book1/Sheet1", "X1", "Y1", z="Z1", style=PlotStyle.COLOR_SCATTER)
     data = resolve_plot(project, spec)
     assert data.z is not None and data.z.size == data.x.size
@@ -192,7 +192,7 @@ def test_grid_xyz_recovers_a_plane():
 
 
 def test_grid_xyz_degenerate_input_is_all_nan():
-    gx, gy, grid = grid_xyz([0.0] * 5, [1.0] * 5, [2.0] * 5)
+    _gx, _gy, grid = grid_xyz([0.0] * 5, [1.0] * 5, [2.0] * 5)
     assert grid.shape[0] > 0 and np.isnan(grid).all()
 
 
@@ -265,7 +265,7 @@ def test_pyvista_canvas_renders_3d():
         from graphmatrix.ui.canvas import create_canvas
 
         canvas = create_canvas("pyvista")
-    except Exception:  # noqa: BLE001 - no GL in CI
+    except Exception:
         pytest.skip("PyVista/Qt interactor unavailable in this environment")
     try:
         canvas.plot(
@@ -315,5 +315,5 @@ def test_headless_graph_view_swaps_to_pyvista():
     finally:
         try:
             view.canvas.close()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass

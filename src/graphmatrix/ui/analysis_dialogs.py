@@ -6,6 +6,8 @@ render :class:`~graphmatrix.core.analysis.result.AnalysisResult`.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -392,7 +394,7 @@ class DeconvolutionDialog(_TwoColumnDialog):
 
 
 class SignalDialog(_TwoColumnDialog):
-    OPERATIONS = [
+    OPERATIONS: ClassVar[list[str]] = [
         "Smooth (Savitzky-Golay)",
         "Moving Average",
         "Low-pass Filter",
@@ -508,7 +510,7 @@ class SlopeDialog(_TwoColumnDialog):
 
 
 class StatisticsDialog(_TwoColumnDialog):
-    OPERATIONS = [
+    OPERATIONS: ClassVar[list[str]] = [
         "Independent t-test",
         "Paired t-test",
         "One-sample t-test",

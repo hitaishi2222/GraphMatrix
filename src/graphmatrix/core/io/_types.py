@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -80,4 +80,4 @@ def first_xy_names(sheet: Worksheet) -> tuple[str | None, str | None]:
     return x, y
 
 
-__all__ = ["infer_dtype", "build_worksheet", "first_xy_names", "Column"]
+__all__ = ["Column", "build_worksheet", "first_xy_names", "infer_dtype"]

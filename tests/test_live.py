@@ -147,7 +147,7 @@ def test_controller_appends_rows_via_commands():
     assert not controller.has_active()
 
 
-def _make_feed() -> "os.PathLike":
+def _make_feed() -> os.PathLike:
     import tempfile
     from pathlib import Path
 
@@ -161,8 +161,8 @@ def _make_feed() -> "os.PathLike":
 
 
 def test_dialog_smoke(qapp, tmp_path):
-    from graphmatrix.ui.main_window import MainWindow
     from graphmatrix.ui.live_dialog import LiveDataDialog
+    from graphmatrix.ui.main_window import MainWindow
 
     window = MainWindow()
     window.confirm_on_close = False  # suppress the modal save prompt on close

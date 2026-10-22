@@ -8,9 +8,9 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from graphmatrix.core.commands import CommandStack  # noqa: E402
-from graphmatrix.core.model import Project  # noqa: E402
-from graphmatrix.core.scripting import graphs as G  # noqa: E402
+from graphmatrix.core.commands import CommandStack
+from graphmatrix.core.model import Project
+from graphmatrix.core.scripting import graphs as G
 
 
 @pytest.fixture()
@@ -126,7 +126,14 @@ def test_create_graph_rejects_unknown_type_and_missing_columns(project):
 
 def test_graph_changes_are_undoable(project):
     stack = CommandStack()
-    G.create_graph(stack and project or project, stack, name="Undo", source="Data/S1", x="X", y="Y1")
+    G.create_graph(
+        (stack and project) or project,
+        stack,
+        name="Undo",
+        source="Data/S1",
+        x="X",
+        y="Y1",
+    )
     assert project.graph("Undo") is not None
     stack.undo()
     assert project.graph("Undo") is None
@@ -135,8 +142,17 @@ def test_graph_changes_are_undoable(project):
 
 
 def test_add_plot_targets_a_panel_and_a_second_y_axis(project):
-    G.create_graph(project, None, name="G", graph_type="grid", rows=1, cols=2,
-                   source="Data/S1", x="X", y="Y1")
+    G.create_graph(
+        project,
+        None,
+        name="G",
+        graph_type="grid",
+        rows=1,
+        cols=2,
+        source="Data/S1",
+        x="X",
+        y="Y1",
+    )
     result = G.add_plot(
         project, None, "G", source="Data/S1", x="X", y="Y2", panel=2, y_axis="right"
     )

@@ -32,7 +32,7 @@ from typing import Any
 
 try:
     from fastmcp import FastMCP
-except Exception:  # pragma: no cover - optional dependency
+except ImportError:  # pragma: no cover - optional dependency
     FastMCP = None  # type: ignore[assignment]
 
 
@@ -122,9 +122,8 @@ def _parse_graph_selection(spec, total: int) -> list[int]:
 def connect(path: str | None = None) -> dict[str, Any]:
     """Open an existing project file, or create a new in-memory project."""
     from graphmatrix.core.commands import CommandStack
-    from graphmatrix.core.model import Project
-
     from graphmatrix.core.instance import get as get_instance
+    from graphmatrix.core.model import Project
 
     running = get_instance()
     if path and Path(path).exists():
@@ -175,7 +174,7 @@ def run(project_id: str, code: str) -> dict[str, Any]:
     err = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
-            exec(compile(code, "<mcp>", "exec"), ns)
+            exec(compile(code, "<mcp>", "exec"), ns)  # noqa: S102 - by design
     except Exception as exc:  # noqa: BLE001
         return {
             "ok": False,
@@ -253,7 +252,9 @@ def _gui(op: str, **payload: Any) -> dict[str, Any]:
     return res
 
 
-def _live_call(func: str, *, open_graphs: bool = False, **kwargs: Any) -> dict[str, Any]:
+def _live_call(
+    func: str, *, open_graphs: bool = False, **kwargs: Any
+) -> dict[str, Any]:
     """Call a helper of :mod:`graphmatrix.core.scripting.graphs` in the GUI.
 
     The GUI may predate the helper module, but Python imports it on demand,
@@ -621,6 +622,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from graphmatrix.log import configure
+
+    configure()
     args = build_parser().parse_args(argv)
     if mcp is None:
         print(

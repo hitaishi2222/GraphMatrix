@@ -14,10 +14,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication
 
-from graphmatrix.core.commands import AddPlotCommand  # noqa: E402
-from graphmatrix.core.model import PlotSpec  # noqa: E402
+from graphmatrix.core.commands import AddPlotCommand
+from graphmatrix.core.model import PlotSpec
 
 
 @pytest.fixture(scope="module")
@@ -374,14 +374,13 @@ def test_provenance_journal_and_palette(app, tmp_path):
 
 def test_digitize_dialog_extracts(app, tmp_path):
     import numpy as np
-
     from PIL import Image
 
     from graphmatrix.ui.digitize_dialog import DigitizeDialog
 
     image = np.full((120, 160, 3), 255, dtype=np.uint8)
     for col in range(20, 140):
-        row = int(round(100 - 0.5 * (col - 20)))
+        row = round(100 - 0.5 * (col - 20))
         image[row, col] = 0
     path = tmp_path / "plot.png"
     Image.fromarray(image).save(path)
@@ -403,3 +402,74 @@ def test_digitize_dialog_extracts(app, tmp_path):
         assert x.size == 120
     finally:
         dialog.close()
+
+
+def test_the_graph_editor_appears_with_a_graph(app):
+    """The editor panel is useless without a graph, so it starts hidden."""
+    from graphmatrix.ui.main_window import MainWindow
+
+    window = MainWindow()
+    window.confirm_on_close = False
+    try:
+        assert window.dock_editor.isHidden()
+        window._action_add_graph()
+        window._open_graph_tab(window.project.graphs[0])
+        assert not window.dock_editor.isHidden()
+        assert "panel" in window._status_info.text()
+    finally:
+        window.close()
+
+
+def test_the_status_bar_names_the_open_sheet(app):
+    from graphmatrix.ui.main_window import MainWindow
+
+    window = MainWindow()
+    window.confirm_on_close = False
+    try:
+        window._action_sample_data()
+        sheet = window.project.workbooks[0].sheets[0]
+        assert f"{sheet.num_rows} rows" in window._status_info.text()
+    finally:
+        window.close()
+
+
+def test_a_new_project_drops_the_old_selection_and_editor(app):
+    from graphmatrix.ui.main_window import MainWindow
+
+    window = MainWindow()
+    window.confirm_on_close = False
+    try:
+        window._action_sample_data()
+        window._action_add_graph()
+        window._open_graph_tab(window.project.graphs[0])
+        assert not window.dock_editor.isHidden()
+        assert window.properties_panel._obj is not None
+
+        window._new_project(confirm=False)
+        assert window.dock_editor.isHidden()
+        assert window.properties_panel._obj is None
+        assert window._status_info.text() == ""
+    finally:
+        window.close()
+
+
+def test_tab_navigation_cycles_and_wraps(app):
+    from graphmatrix.ui.main_window import MainWindow
+
+    window = MainWindow()
+    window.confirm_on_close = False
+    try:
+        window._action_sample_data()
+        window._action_add_graph()
+        window._open_graph_tab(window.project.graphs[0])
+        first = window.tabs.currentIndex()
+        window._action_next_tab(1)
+        second = window.tabs.currentIndex()
+        assert second != first
+        window._action_next_tab(1)
+        window._action_next_tab(1)
+        assert window.tabs.currentIndex() in {first, second}
+        window._action_next_tab(-1)
+        assert 0 <= window.tabs.currentIndex() < window.tabs.count()
+    finally:
+        window.close()

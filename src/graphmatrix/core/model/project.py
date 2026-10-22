@@ -202,7 +202,7 @@ class Project:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "Project":
+    def from_dict(cls, payload: dict[str, Any]) -> Project:
         fmt = payload.get("format")
         if fmt not in (None, FORMAT):
             raise ValueError(f"not a GraphMatrix project (format={fmt!r})")
@@ -227,7 +227,7 @@ class Project:
         return path
 
     @classmethod
-    def open(cls, path: str | Path) -> "Project":
+    def open(cls, path: str | Path) -> Project:
         path = Path(path)
         with zipfile.ZipFile(path, "r") as zf:
             payload = json.loads(zf.read(_MANIFEST).decode("utf-8"))

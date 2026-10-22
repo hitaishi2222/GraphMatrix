@@ -8,9 +8,10 @@ but not the data. ``run_recipe`` applies it to any (x, y) pair — the mechanism
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from .analysis import (
     deconvolution,
@@ -54,7 +55,7 @@ class Recipe:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "Recipe":
+    def from_dict(cls, payload: dict[str, Any]) -> Recipe:
         if payload.get("format") not in (None, RECIPE_FORMAT):
             raise ValueError(
                 f"not a GraphMatrix recipe (format={payload.get('format')!r})"
@@ -130,10 +131,10 @@ def load_recipe(path: str | Path) -> Recipe:
 
 
 __all__ = [
-    "Recipe",
-    "run_recipe",
-    "save_recipe",
-    "load_recipe",
     "OPERATIONS",
     "RECIPE_FORMAT",
+    "Recipe",
+    "load_recipe",
+    "run_recipe",
+    "save_recipe",
 ]

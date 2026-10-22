@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterator, Sequence
+from collections.abc import Iterator, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -147,7 +148,7 @@ class Worksheet:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "Worksheet":
+    def from_dict(cls, payload: dict[str, Any]) -> Worksheet:
         sheet = cls(payload.get("name", "Sheet1"))
         for col_payload in payload.get("columns", []):
             sheet.insert_column(Column.from_dict(col_payload))

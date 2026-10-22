@@ -30,8 +30,8 @@ from graphmatrix.core.commands import (
     RemoveColumnCommand,
     RenameCommand,
     ReorderColumnsCommand,
-    SetCellValueCommand,
     SetCellsCommand,
+    SetCellValueCommand,
     SetColumnDataCommand,
     SetColumnInfoCommand,
 )
@@ -184,17 +184,13 @@ class WorksheetView(QWidget):
             x = 2
         else:
             last = count - 1
-            x = (
-                header.sectionViewportPosition(last)
-                + header.sectionSize(last)
-                + 4
-            )
+            x = header.sectionViewportPosition(last) + header.sectionSize(last) + 4
         y = max(0, (header.height() - button.height()) // 2)
         button.move(int(x), int(y))
         fits = x + button.width() <= header.width()
         button.setVisible(fits)
 
-    def eventFilter(self, obj, event) -> bool:  # noqa: N802 - Qt override
+    def eventFilter(self, obj, event) -> bool:
         if obj is self.table.horizontalHeader() and event.type() == QEvent.Type.Resize:
             self._position_add_column_button()
             return False
@@ -302,14 +298,14 @@ class WorksheetView(QWidget):
         columns = self.sheet.columns[first : last + 1]
         if not columns:
             return
-        commands = [RemoveColumnCommand(self.sheet, column) for column in reversed(columns)]
+        commands = [
+            RemoveColumnCommand(self.sheet, column) for column in reversed(columns)
+        ]
         if len(commands) == 1:
             self.commands.push(commands[0])
         else:
             self.commands.push(MacroCommand(commands, "Delete Columns"))
-        self.table.setCurrentCell(
-            max(0, self.table.currentRow()), max(0, first - 1)
-        )
+        self.table.setCurrentCell(max(0, self.table.currentRow()), max(0, first - 1))
 
     # -- linked brushing -----------------------------------------------------
     def _apply_row_highlight(self) -> None:

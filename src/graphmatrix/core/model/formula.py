@@ -97,7 +97,7 @@ def _check(node: ast.AST) -> None:
         _check(child)
 
 
-def evaluate_column_formula(sheet: "Worksheet", expression: str, n: int) -> np.ndarray:
+def evaluate_column_formula(sheet: Worksheet, expression: str, n: int) -> np.ndarray:
     """Evaluate ``expression`` against ``sheet``'s columns, returning n values."""
     expression = expression.strip()
     if expression.startswith("="):

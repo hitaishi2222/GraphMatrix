@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable
 
 from .io.importer import import_file
 from .model import Workbook
@@ -125,4 +125,4 @@ def run_recipe_over_files(
     return items
 
 
-__all__ = ["process_files", "run_recipe_over_files", "BatchItem"]
+__all__ = ["BatchItem", "process_files", "run_recipe_over_files"]

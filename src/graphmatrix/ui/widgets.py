@@ -20,9 +20,7 @@ def contrast_text_color(background: str) -> str:
     color = QColor(background)
     if not color.isValid():
         return "#000000"
-    luminance = (
-        0.299 * color.red() + 0.587 * color.green() + 0.114 * color.blue()
-    )
+    luminance = 0.299 * color.red() + 0.587 * color.green() + 0.114 * color.blue()
     return "#000000" if luminance > 140 else "#ffffff"
 
 

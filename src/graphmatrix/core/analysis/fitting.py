@@ -8,13 +8,15 @@ NLFit, backed by lmfit.
 
 from __future__ import annotations
 
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
 
 import numpy as np
 
+from ...log import get_logger
+from .regression import _window
 from .result import AnalysisResult, ParamRow, r_squared
 
-from .regression import _window
+log = get_logger(__name__)
 
 # (function, [param names], [default values])
 _MODEL_SPECS: dict[str, tuple[Callable[..., np.ndarray], list[str], list[float]]] = {}
@@ -98,13 +100,6 @@ def available_models() -> list[str]:
     return sorted(_MODEL_SPECS)
 
 
-def _guess(x: np.ndarray, y: np.ndarray) -> np.ndarray:
-    xmin, xmax = float(np.min(x)), float(np.max(x))
-    amplitude = float(np.max(y) - np.min(y)) or 1.0
-    offset = float(np.min(y))
-    return np.array([amplitude, xmin + 0.3 * (xmax - xmin)], dtype=float)
-
-
 def fit_model(
     model_name: str,
     x: Sequence[float],
@@ -143,7 +138,6 @@ def fit_model(
 
     model = lmfit.Model(func, independent_vars=["x"])
     params = model.make_params()
-    guess = _guess(x, y)
     for name in param_names:
         value = defaults[param_names.index(name)]
         if p0 and name in p0:
@@ -192,8 +186,8 @@ def fit_model(
         dely = fit.eval_uncertainty(x=xs, sigma=1.0)
         result.curves["Fit +1σ"] = (xs, func(xs, **params) + np.asarray(dely))
         result.curves["Fit -1σ"] = (xs, func(xs, **params) - np.asarray(dely))
-    except Exception:  # noqa: BLE001 - uncertainty not available for all models
-        pass
+    except Exception as exc:  # noqa: BLE001 - not every model has one
+        log.debug("no confidence band for this model: %s", exc)
     result.curves["Residuals"] = (x, y - y_fit)
     result.notes = "Parameters: " + ", ".join(
         f"{p.name}={p.value:.5g}" + (f"±{p.error:.3g}" if p.error else "")
@@ -220,5 +214,5 @@ def fit_custom(
         _MODEL_SPECS.pop("__custom__", None)
 
 
-__all__ = ["available_models", "fit_model", "fit_custom", "MODELS"]
+__all__ = ["MODELS", "available_models", "fit_custom", "fit_model"]
 MODELS = list(_MODEL_SPECS)

@@ -13,8 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .code_export import project_to_script
-from .io.importer import export_delimited
 from .io.export import export_graph
+from .io.importer import export_delimited
 from .model import Project
 from .provenance import ProvenanceLog
 

@@ -62,12 +62,12 @@ class GraphType(str, Enum):
     loses data.
     """
 
-    SIMPLE = "simple"        # one panel, one plot frame
-    STACK = "stack"          # panels stacked vertically, sharing X
+    SIMPLE = "simple"  # one panel, one plot frame
+    STACK = "stack"  # panels stacked vertically, sharing X
     STACK_LINE = "stack-line"  # one panel, one band per layer, sharing X
-    DOUBLE_Y = "double-y"    # one panel with a secondary (right) Y axis
-    X_TWIN = "x-twin"        # panels side by side, sharing Y
-    GRID = "grid"            # an R x C grid of panels
+    DOUBLE_Y = "double-y"  # one panel with a secondary (right) Y axis
+    X_TWIN = "x-twin"  # panels side by side, sharing Y
+    GRID = "grid"  # an R x C grid of panels
 
     def __str__(self) -> str:  # pragma: no cover - cosmetic
         return self.value
@@ -162,7 +162,7 @@ class PlotSpec:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "PlotSpec":
+    def from_dict(cls, payload: dict[str, Any]) -> PlotSpec:
         return cls(
             source=payload["source"],
             x=payload["x"],
@@ -202,7 +202,7 @@ class Annotation:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "Annotation":
+    def from_dict(cls, payload: dict[str, Any]) -> Annotation:
         return cls(
             text=payload.get("text", ""),
             x=payload.get("x", 0.05),
@@ -239,7 +239,7 @@ class ReferenceLine:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "ReferenceLine":
+    def from_dict(cls, payload: dict[str, Any]) -> ReferenceLine:
         return cls(
             orientation=payload.get("orientation", "h"),
             position=payload.get("position", 0.0),
@@ -339,7 +339,7 @@ class Layer:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "Layer":
+    def from_dict(cls, payload: dict[str, Any]) -> Layer:
         layer = cls(payload.get("name", "Layer 1"))
         layer.plots = [PlotSpec.from_dict(p) for p in payload.get("plots", [])]
         layer.ref_lines = [
@@ -459,14 +459,14 @@ class Graph:
             "panel_gap_y": self.panel_gap_y,
             "y_delta": self.y_delta,
             "stack_offset": self.stack_offset,
-            "layers": [l.to_dict() for l in self.layers],
+            "layers": [layer.to_dict() for layer in self.layers],
             "annotations": [a.to_dict() for a in self.annotations],
             "journal_preset": self.journal_preset,
             "plot_theme": self.plot_theme,
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "Graph":
+    def from_dict(cls, payload: dict[str, Any]) -> Graph:
         graph = cls(payload.get("name", "Graph1"), payload.get("title", ""))
         graph.title_font_family = payload.get("title_font_family", "")
         graph.title_font_size = payload.get("title_font_size", 14.0)
@@ -478,7 +478,7 @@ class Graph:
         graph.panel_gap_y = float(payload.get("panel_gap_y", 12.0))
         graph.y_delta = float(payload.get("y_delta", 0.0))
         graph.stack_offset = float(payload.get("stack_offset", 1.2))
-        layers = [Layer.from_dict(l) for l in payload.get("layers", [])]
+        layers = [Layer.from_dict(item) for item in payload.get("layers", [])]
         if layers:
             graph.layers = layers
         graph.annotations = [

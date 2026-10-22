@@ -8,14 +8,14 @@ recorder (for macro generation).
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from typing import Any
 
 import numpy as np
 
 from .model import (
     Annotation,
     Column,
-    ColumnType,
     Graph,
     GraphType,
     Layer,
@@ -276,7 +276,7 @@ class SetCellsCommand(Command):
                 self._sheet.set_value(self._row + dr, col_index, value)
 
     def undo(self) -> None:
-        for column, saved in zip(self._sheet.columns, self._saved):
+        for column, saved in zip(self._sheet.columns, self._saved, strict=False):
             column.data = saved
 
 
@@ -476,7 +476,7 @@ class DeleteRowsCommand(Command):
         self._sheet.delete_rows(self._index, self._count)
 
     def undo(self) -> None:
-        for column, saved in zip(self._sheet.columns, self._cache):
+        for column, saved in zip(self._sheet.columns, self._cache, strict=False):
             head, tail = column.data[: self._index], column.data[self._index :]
             column.data = np.concatenate([head, saved, tail])
 
@@ -570,7 +570,7 @@ class SetGraphTypeCommand(Command):
         if self._old_cols is not None:
             self._graph.layout_cols = self._old_cols
         if self._old_modes:
-            for layer, mode in zip(self._graph.layers, self._old_modes):
+            for layer, mode in zip(self._graph.layers, self._old_modes, strict=False):
                 layer.y_mode = mode
 
     def describe(self) -> str | None:
@@ -707,8 +707,11 @@ class MacroCommand(Command):
         return "\n".join(p for p in parts if p)
 
     def describe(self) -> str | None:
-        described = [c.describe() for c in self._commands]
-        described = [d for d in described if d]
+        described: list[str] = []
+        for command in self._commands:
+            text = command.describe()
+            if text:
+                described.append(text)
         if not described:
             return None
         return f"{self.label}: " + "; ".join(described)

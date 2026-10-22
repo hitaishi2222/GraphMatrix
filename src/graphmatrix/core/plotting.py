@@ -6,6 +6,7 @@ exporter (matplotlib) plot *the same* data with the same fallbacks.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -145,7 +146,7 @@ def make_plot_for_column(project: Project, source: str, name: str) -> PlotSpec |
 
 def make_default_graph(project: Project, name: str) -> Graph | None:
     """Create a graph pre-populated with the project's first X/Y pair."""
-    from .model import ColumnType, PlotSpec, PlotStyle
+    from .model import ColumnType, PlotSpec
 
     graph = Graph(name)
     pair = None
@@ -222,11 +223,11 @@ def grid_xyz(
 
 
 __all__ = [
-    "resolve_plot",
-    "resolve_layer",
     "auto_axis_labels",
     "first_xy",
-    "make_plot_for_column",
-    "make_default_graph",
     "grid_xyz",
+    "make_default_graph",
+    "make_plot_for_column",
+    "resolve_layer",
+    "resolve_plot",
 ]

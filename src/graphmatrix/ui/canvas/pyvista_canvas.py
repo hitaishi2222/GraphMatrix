@@ -17,9 +17,14 @@ from __future__ import annotations
 import numpy as np
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
+from graphmatrix.core.plot_themes import APP_CANVAS_THEMES, DEFAULT_APP_THEME
+from graphmatrix.log import get_logger
+
 from .base import PlotCanvas
 
 _LINE_WIDEN = 2.0
+
+log = get_logger(__name__)
 
 
 class PyVistaCanvas(PlotCanvas):
@@ -28,7 +33,7 @@ class PyVistaCanvas(PlotCanvas):
     def __init__(self) -> None:
         try:
             from pyvistaqt import QtInteractor
-        except Exception as exc:  # noqa: BLE001 - optional dependency missing
+        except Exception as exc:
             raise RuntimeError(
                 "The 3D canvas needs the plot3d extra: pip install pyvista pyvistaqt"
             ) from exc
@@ -47,8 +52,7 @@ class PyVistaCanvas(PlotCanvas):
         self._title_text = ""
         self._title_size = 14.0
         self._legend_on = True
-        self._theme_bg = "#191a1d"
-        self._theme_fg = "#d7dae0"
+        self._theme_bg, self._theme_fg, _ = APP_CANVAS_THEMES[DEFAULT_APP_THEME]
         self._axes_labels: tuple[str, str, str] = ("X", "Y", "Z")
 
         self.set_background()
@@ -120,11 +124,11 @@ class PyVistaCanvas(PlotCanvas):
 
         if style == "3d scatter" or z is not None:
             points = pv.PolyData(np.column_stack([xs, ys, zs]))
-            kwargs = dict(
-                render_points_as_spheres=True,
-                point_size=max(3.0, float(symbol_size) * 2.5),
-                show_scalar_bar=False,
-            )
+            kwargs = {
+                "render_points_as_spheres": True,
+                "point_size": max(3.0, float(symbol_size) * 2.5),
+                "show_scalar_bar": False,
+            }
             if z is not None and zs.max() != zs.min():
                 kwargs.update(scalars=zs, cmap="viridis", color=None)
             else:
@@ -263,7 +267,7 @@ class PyVistaCanvas(PlotCanvas):
         if colors:
             self._theme_bg, self._theme_fg = colors[0], colors[1]
         else:
-            self._theme_bg, self._theme_fg = "#191a1d", "#d7dae0"
+            self._theme_bg, self._theme_fg, _ = APP_CANVAS_THEMES[DEFAULT_APP_THEME]
         self.set_background()
         self._show_axes()
 
@@ -275,21 +279,21 @@ class PyVistaCanvas(PlotCanvas):
             else:
                 self._interactor.reset_camera()
             self._interactor.render()
-        except Exception:  # noqa: BLE001 - rendering must never kill the UI
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
 
     def close(self) -> None:
         try:
             self._interactor.close()
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
 
     # -- internals -------------------------------------------------------------
     def set_background(self) -> None:
         try:
             self._interactor.set_background(self._theme_bg)
-        except Exception:  # noqa: BLE001 - theme application is best-effort
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
         self._show_title()
 
     def _show_title(self) -> None:
@@ -316,8 +320,8 @@ class PyVistaCanvas(PlotCanvas):
         except Exception:  # noqa: BLE001
             try:
                 self._interactor.add_axes()  # default styling
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception:
+                log.debug("ignored exception", exc_info=True)
 
     def _apply_limits(self) -> None:
         if not self._limits:
@@ -341,8 +345,8 @@ class PyVistaCanvas(PlotCanvas):
                 bounds[5] = float(z[1])
         try:
             self._interactor.set_viewup((0, 0, 1))
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
 
     def _xy_bounds(self) -> tuple[float, float, float, float]:
         bounds = self._interactor.bounds
@@ -360,8 +364,8 @@ class PyVistaCanvas(PlotCanvas):
                 color=self._theme_fg,
                 border=False,
             )
-        except Exception:  # noqa: BLE001 - legend is decorative
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
 
     def _color(self, name: str) -> str:
         from PySide6.QtGui import QColor

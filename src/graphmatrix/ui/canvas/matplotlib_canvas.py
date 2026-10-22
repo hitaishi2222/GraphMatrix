@@ -15,14 +15,17 @@ import math
 import sys
 
 import numpy as np
-
-sys.setrecursionlimit(10000)
-
 from PySide6.QtCore import QEvent, QObject, QPoint, Qt, Signal
 from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
 
+from graphmatrix.log import get_logger
+
 from .base import PlotCanvas
 from .overlay import CanvasOverlay, CanvasTools, watch_container
+
+sys.setrecursionlimit(10000)
+
+log = get_logger(__name__)
 
 _LINESTYLES = {
     "solid": "-",
@@ -46,11 +49,7 @@ def _shade(color: str, factor: float) -> str:
         r, g, b = (int(text[i : i + 2], 16) for i in (0, 2, 4))
     except ValueError:
         return color
-    return "#%02x%02x%02x" % (
-        int(r * factor),
-        int(g * factor),
-        int(b * factor),
-    )
+    return f"#{int(r * factor):02x}{int(g * factor):02x}{int(b * factor):02x}"
 
 
 def _make_canvas_class():
@@ -65,7 +64,7 @@ def _make_canvas_class():
     class ZoomCanvas(FigureCanvasQTAgg):
         ctrl_wheel = Signal(float, QPoint)
 
-        def wheelEvent(self, event):  # noqa: N802 - Qt override
+        def wheelEvent(self, event):
             if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
                 steps = event.angleDelta().y() / 120.0
                 if not steps:
@@ -100,7 +99,7 @@ class _WorkspaceWatcher(QObject):
             y,
         )
 
-    def eventFilter(self, obj, event) -> bool:  # noqa: N802 - Qt override
+    def eventFilter(self, obj, event) -> bool:
         if event.type() == QEvent.Type.Resize:
             self._place()
         return False
@@ -118,8 +117,8 @@ class MatplotlibCanvas(PlotCanvas):
         # preview and the exported file agree).
         try:
             self._fig.set_layout_engine("constrained", wspace=0.0, hspace=0.0)
-        except Exception:  # noqa: BLE001 - older matplotlib
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
         self._canvas = _make_canvas_class()(self._fig)
         self._canvas.ctrl_wheel.connect(self._on_ctrl_wheel)
 
@@ -207,9 +206,11 @@ class MatplotlibCanvas(PlotCanvas):
     def clear(self) -> None:
         self._fig.clear()
         try:
-            self._fig.set_layout_engine("constrained", wspace=self._gap_x, hspace=self._gap_y)
-        except Exception:  # noqa: BLE001 - older matplotlib
-            pass
+            self._fig.set_layout_engine(
+                "constrained", wspace=self._gap_x, hspace=self._gap_y
+            )
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
         rows = max(1, getattr(self, "_grid_rows", 1))
         cols = max(1, getattr(self, "_grid_cols", 1))
         if rows * cols > 1:
@@ -231,7 +232,7 @@ class MatplotlibCanvas(PlotCanvas):
         try:
             self.set_theme(self._last_theme)
         except Exception:
-            pass
+            log.debug("ignored exception", exc_info=True)
         self._apply_gaps()
         self._canvas.draw_idle()
 
@@ -256,8 +257,8 @@ class MatplotlibCanvas(PlotCanvas):
             return
         try:
             engine.set(wspace=self._gap_x, hspace=self._gap_y)
-        except Exception:  # noqa: BLE001 - no subplots yet
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
 
     def set_current_panel(self, index: int) -> None:
         if self._axes:
@@ -288,7 +289,7 @@ class MatplotlibCanvas(PlotCanvas):
         from types import SimpleNamespace
 
         from graphmatrix.core.io.export import render_xyz_mpl
-        from graphmatrix.core.model import PlotStyle, Z_STYLES
+        from graphmatrix.core.model import Z_STYLES, PlotStyle
 
         ax = self._ax_left
         if y_axis == "right":
@@ -448,7 +449,8 @@ class MatplotlibCanvas(PlotCanvas):
                 artist.set_linewidth(
                     float(info.get("width", 1.5)) * (1.7 if chosen else 1.0)
                 )
-            except Exception:  # noqa: BLE001 - collections have no markers
+            except Exception:
+                log.debug("ignored exception", exc_info=True)
                 continue
         self._canvas.draw_idle()
 
@@ -474,15 +476,19 @@ class MatplotlibCanvas(PlotCanvas):
         """Show the current zoom of the panel in the tool strip."""
         try:
             self._tools.set_zoom_level(self.zoom_factor())
-        except Exception:  # noqa: BLE001 - the label must never break a draw
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
 
     def set_active_panel(self, index: int, total: int | None = None) -> None:
         """Mark the panel the user is editing (grid / stack layouts)."""
         self._active_panel = max(0, int(index))
         count = total if total is not None else len(self._axes)
         axes = self._axes
-        ax = axes[self._active_panel] if self._active_panel < len(axes) else self._ax_left
+        ax = (
+            axes[self._active_panel]
+            if self._active_panel < len(axes)
+            else self._ax_left
+        )
         self._overlay.set_panel(self._active_panel, count, self._panel_rect(ax))
 
     def _display_to_widget(self, x: float, y: float) -> QPoint:
@@ -499,8 +505,8 @@ class MatplotlibCanvas(PlotCanvas):
         widget_w = float(self._canvas.width()) or 1.0
         widget_h = float(self._canvas.height()) or 1.0
         return QPoint(
-            int(round(float(x) / fig_w * widget_w)),
-            int(round((fig_h - float(y)) / fig_h * widget_h)),
+            round(float(x) / fig_w * widget_w),
+            round((fig_h - float(y)) / fig_h * widget_h),
         )
 
     def _panel_rect(self, ax) -> object:
@@ -586,7 +592,8 @@ class MatplotlibCanvas(PlotCanvas):
             try:
                 x0, x1 = target.get_xlim()
                 y0, y1 = target.get_ylim()
-            except Exception:  # noqa: BLE001
+            except Exception:
+                log.debug("ignored exception", exc_info=True)
                 continue
             cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
             target.set_xlim(cx + (x0 - cx) * factor, cx + (x1 - cx) * factor)
@@ -601,7 +608,8 @@ class MatplotlibCanvas(PlotCanvas):
                 continue
             try:
                 target.autoscale()
-            except Exception:  # noqa: BLE001
+            except Exception:
+                log.debug("ignored exception", exc_info=True)
                 continue
         self._canvas.draw_idle()
         self._notify_zoom_changed()
@@ -639,7 +647,8 @@ class MatplotlibCanvas(PlotCanvas):
                 continue
             try:
                 bbox = ax.get_window_extent()
-            except Exception:  # noqa: BLE001 - the figure may not be laid out
+            except Exception:
+                log.debug("ignored exception", exc_info=True)
                 continue
             if bbox.contains(position.x(), position.y()):
                 return ax
@@ -689,7 +698,8 @@ class MatplotlibCanvas(PlotCanvas):
                 continue
             try:
                 bottom, top = ax.get_ylim()
-            except Exception:  # noqa: BLE001 - not scaled yet
+            except Exception:
+                log.debug("ignored exception", exc_info=True)
                 continue
             low = bottom if low is None else min(low, bottom)
             high = top if high is None else max(high, top)
@@ -700,7 +710,8 @@ class MatplotlibCanvas(PlotCanvas):
                 continue
             try:
                 ax.set_ylim(low, high)
-            except Exception:  # noqa: BLE001
+            except Exception:
+                log.debug("ignored exception", exc_info=True)
                 continue
         self._canvas.draw_idle()
 
@@ -722,8 +733,8 @@ class MatplotlibCanvas(PlotCanvas):
         for artist in self._brush_artists:
             try:
                 artist.remove()
-            except Exception:  # noqa: BLE001 - already gone
-                pass
+            except Exception:
+                log.debug("ignored exception", exc_info=True)
         self._brush_artists = []
         if not selection:
             self._canvas.draw_idle()
@@ -759,7 +770,8 @@ class MatplotlibCanvas(PlotCanvas):
             display = transform.transform(np.column_stack([xs, ys]))
             try:
                 px, py = transform.transform((event.xdata, event.ydata))
-            except Exception:  # noqa: BLE001 - outside the data ranges
+            except Exception:
+                log.debug("ignored exception", exc_info=True)
                 continue
             distance = np.hypot(display[:, 0] - px, display[:, 1] - py)
             idx = int(np.argmin(distance))
@@ -786,15 +798,15 @@ class MatplotlibCanvas(PlotCanvas):
         ax = self._ax_left
         ls = _ls(line_style)
         if orientation == "v":
-            line = ax.axvline(position, color=color, linewidth=width, linestyle=ls)
+            ax.axvline(position, color=color, linewidth=width, linestyle=ls)
         else:
-            line = ax.axhline(position, color=color, linewidth=width, linestyle=ls)
+            ax.axhline(position, color=color, linewidth=width, linestyle=ls)
         if label:
             try:
-                xmin, xmax = ax.get_xlim()
+                _xmin, xmax = ax.get_xlim()
                 ymin, ymax = ax.get_ylim()
-            except Exception:
-                xmin, xmax, ymin, ymax = 0, 1, 0, 1
+            except Exception:  # noqa: BLE001 - axes may be pre-autoscale
+                xmax, ymin, ymax = 1, 0, 1
             pad = 0.01 * (ymax - ymin if ymax != ymin else 1.0)
             if orientation == "v":
                 ax.text(
@@ -1096,7 +1108,6 @@ class MatplotlibCanvas(PlotCanvas):
         )
 
     def _on_hover(self, event) -> None:
-        from PySide6.QtCore import QPoint
 
         if not self._hover_enabled:
             return
@@ -1160,8 +1171,8 @@ class MatplotlibCanvas(PlotCanvas):
                     self._show_picked_point(picked[0], picked[1])
                     self.point_picked(*picked)
                     return
-        except Exception:  # noqa: BLE001 - picking must never break plotting
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
         try:
             if event.inaxes is not None and callable(self.label_click_callback):
                 # Axis area (not a label) -> focus the axes property group.
@@ -1176,13 +1187,13 @@ class MatplotlibCanvas(PlotCanvas):
                             self.label_click_callback(name)
                             return
                 self.label_click_callback("axes")
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception:
+            log.debug("ignored exception", exc_info=True)
         if getattr(event, "dblclick", False):
             try:
                 self._ax_left.autoscale()
                 if self._ax_right is not None:
                     self._ax_right.autoscale()
             except Exception:
-                pass
+                log.debug("ignored exception", exc_info=True)
             self._canvas.draw_idle()

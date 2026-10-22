@@ -23,7 +23,6 @@ from graphmatrix.core.model import (
     Worksheet,
 )
 
-
 # -- model / serialization ---------------------------------------------------
 
 

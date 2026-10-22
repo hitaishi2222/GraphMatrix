@@ -10,7 +10,7 @@ with the number of peaks — awkward to express as a fixed lmfit model signature
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -169,5 +169,5 @@ def deconvolve_auto(
     return deconvolve(x, y, centers, kind=kind)
 
 
-__all__ = ["deconvolve", "deconvolve_auto", "KINDS"]
+__all__ = ["KINDS", "deconvolve", "deconvolve_auto"]
 KINDS = list(_KINDS)

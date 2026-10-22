@@ -49,7 +49,9 @@ def test_the_canvas_has_a_floating_overlay(canvas):
     # The overlay lives above the plot, so it must not eat the pointer events
     # meant for the canvas.
     assert overlay.testAttribute(
-        __import__("PySide6.QtCore", fromlist=["Qt"]).Qt.WidgetAttribute.WA_TransparentForMouseEvents
+        __import__(
+            "PySide6.QtCore", fromlist=["Qt"]
+        ).Qt.WidgetAttribute.WA_TransparentForMouseEvents
     )
     # The tool buttons are ordinary widgets on the workspace around the
     # figure: they are always clickable and never cover the plot.
@@ -190,3 +192,21 @@ def test_the_graph_view_marks_the_panel_of_the_selected_plot(qapp):
         assert view.canvas.overlay()._panel_text == "Panel 1 / 2"
     finally:
         view.deleteLater()
+
+
+def test_the_checked_tool_chip_follows_the_preset_accent(qapp):
+    """The floating tool strip must not keep a stale accent in a new theme."""
+    from graphmatrix.ui import theme
+    from graphmatrix.ui.canvas.overlay import _chrome
+
+    original = theme.current_preset()
+    try:
+        theme.set_preset("classic-dark")
+        classic = _chrome(dark=True)["checked"]
+        theme.set_preset("shadcn-dark")
+        neutral = _chrome(dark=True)["checked"]
+    finally:
+        theme.set_preset(original)
+    # classic-dark's indigo accent is what the old hardcoded value was.
+    assert classic == "rgba(76,141,255,70)"
+    assert neutral == "rgba(250,250,250,70)"

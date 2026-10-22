@@ -12,8 +12,8 @@ figure, or the default darkness threshold for a simple black-on-white plot.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Iterable, Sequence
 
 import numpy as np
 
@@ -78,8 +78,8 @@ def _curve_mask(
 
 def _row_span(y_anchors: AnchorPair, height: int) -> tuple[int, int]:
     (p0, _), (p1, _) = y_anchors
-    lo = max(0, int(math.floor(min(p0, p1))))
-    hi = min(height - 1, int(math.ceil(max(p0, p1))))
+    lo = max(0, math.floor(min(p0, p1)))
+    hi = min(height - 1, math.ceil(max(p0, p1)))
     return lo, hi
 
 
@@ -117,8 +117,8 @@ def digitize_curve(
     (py_a, vy_a), (py_b, vy_b) = y_anchors
     row_lo, row_hi = _row_span(y_anchors, height)
 
-    col_lo = max(0, int(math.ceil(min(px_a, px_b))))
-    col_hi = min(width - 1, int(math.floor(max(px_a, px_b))))
+    col_lo = max(0, math.ceil(min(px_a, px_b)))
+    col_hi = min(width - 1, math.floor(max(px_a, px_b)))
     if x_start is not None or x_end is not None:
         xs = np.array(
             [
@@ -131,10 +131,8 @@ def digitize_curve(
             lo_val = max(lo_val, x_start)
         if x_end is not None:
             hi_val = min(hi_val, x_end)
-        col_lo = max(col_lo, int(math.ceil(_pixel_for(lo_val, px_a, vx_a, px_b, vx_b))))
-        col_hi = min(
-            col_hi, int(math.floor(_pixel_for(hi_val, px_a, vx_a, px_b, vx_b)))
-        )
+        col_lo = max(col_lo, math.ceil(_pixel_for(lo_val, px_a, vx_a, px_b, vx_b)))
+        col_hi = min(col_hi, math.floor(_pixel_for(hi_val, px_a, vx_a, px_b, vx_b)))
 
     xs: list[float] = []
     ys: list[float] = []
@@ -193,4 +191,4 @@ def anchor_pairs(
     return (tuple(items[0]), tuple(items[1]))  # type: ignore[return-value]
 
 
-__all__ = ["digitize_curve", "AnchorPair", "anchor_pairs"]
+__all__ = ["AnchorPair", "anchor_pairs", "digitize_curve"]

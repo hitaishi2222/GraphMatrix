@@ -99,7 +99,8 @@ def run_pipeline(path: str | Path) -> Project:
                 r = api.describe(info["source"], info["name"])
             else:
                 raise ValueError(f"unknown analyze kind: {kind!r}")
-            print(getattr(r, "to_text", lambda: r)())
+            text = getattr(r, "to_text", None)
+            print(text() if text is not None else r)
         elif "export" in step:
             info = step["export"]
             from .io.export import export_graph

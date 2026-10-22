@@ -13,7 +13,7 @@ def _line_image(slope_px: float = -0.8, thickness: int = 2) -> np.ndarray:
     height = width = 200
     image = np.ones((height, width, 3), dtype=float)
     for col in range(10, 191):
-        row = int(round(180 + slope_px * (col - 10)))
+        row = round(180 + slope_px * (col - 10))
         for offset in range(thickness):
             if 0 <= row + offset < height:
                 image[row + offset, col] = 0.0
@@ -41,7 +41,7 @@ def test_color_isolation_picks_the_trace():
     image[..., 2] += 0.4  # bluish background
     image = np.clip(image, 0, 1)
     for col in range(20, 140):
-        row = int(round(100 - 0.5 * (col - 20)))
+        row = round(100 - 0.5 * (col - 20))
         image[row, col] = (1.0, 0.0, 0.0)
     result = digitize_curve(
         image,

@@ -12,8 +12,8 @@ Register additional handlers with ``register_importer`` (plugins use this).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
 
@@ -54,7 +54,7 @@ def _read_hdf5(path: Path) -> Worksheet:
 
     with h5py.File(path, "r") as handle:
         dataset_name = next(
-            (k for k in handle.keys() if isinstance(handle[k], h5py.Dataset)), None
+            (k for k in handle if isinstance(handle[k], h5py.Dataset)), None
         )
         if dataset_name is None:
             raise ImportError_(f"no dataset found in {path.name}")

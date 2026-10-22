@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-
 
 def main() -> int:
     from graphmatrix.cli import main as cli_main

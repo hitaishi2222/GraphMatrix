@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from enum import Enum
-from typing import Any, Iterator, Sequence
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -148,16 +149,12 @@ class Column:
             self._data = np.concatenate([head, pad, tail])
         elif np.issubdtype(dtype, np.integer) or np.issubdtype(dtype, np.bool_):
             pad = np.full(count, np.nan)
-            self._data = np.concatenate(
-                [head.astype(float), pad, tail.astype(float)]
-            )
+            self._data = np.concatenate([head.astype(float), pad, tail.astype(float)])
         else:
             # String/object columns: use an empty object so blanks are visible
             # and can later be replaced by text or numbers.
             pad = np.full(count, "", dtype=object)
-            self._data = np.concatenate(
-                [head.astype(object), pad, tail.astype(object)]
-            )
+            self._data = np.concatenate([head.astype(object), pad, tail.astype(object)])
 
     # -- serialization -------------------------------------------------------
     def to_dict(self, *, include_data: bool = True) -> dict[str, Any]:
@@ -177,7 +174,7 @@ class Column:
         return payload
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "Column":
+    def from_dict(cls, payload: dict[str, Any]) -> Column:
         return cls(
             payload["name"],
             payload.get("col_type", ColumnType.Y),

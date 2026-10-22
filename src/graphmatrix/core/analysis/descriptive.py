@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 from scipy import stats
@@ -150,4 +150,4 @@ def summarize_columns(sheet, names: Sequence[str]) -> AnalysisResult:
     return result
 
 
-__all__ = ["summarize", "summarize_columns", "batch_summary"]
+__all__ = ["batch_summary", "summarize", "summarize_columns"]

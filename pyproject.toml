@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "graphmatrix"
-version = "0.0.1"
+dynamic = ["version"]
 description = "Cross-platform scientific data analysis and graphing GUI"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.4", "pyinstaller>=6.0"]
+dev = ["pytest>=7.4", "pyinstaller>=6.0", "ruff>=0.9", "mypy>=1.10"]
 hdf5 = ["h5py>=3.8"]
 mcp = ["fastmcp>=2.0"]
 plot3d = ["pyvista>=0.44", "pyvistaqt>=0.12"]
@@ -34,6 +34,9 @@ graphmatrix-mcp = "graphmatrix.mcp_server:main"
 [project.gui-scripts]
 graphmatrix-gui = "graphmatrix.__main__:main"
 
+[tool.hatch.version]
+path = "src/graphmatrix/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/graphmatrix"]
 
@@ -41,3 +44,36 @@ packages = ["src/graphmatrix"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-q"
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+# A ratchet, not the whole tree: these modules are type-clean today and must
+# stay that way. Widen `files` as each package is brought to zero errors
+# (`mypy src/graphmatrix` still reports the rest).
+files = [
+    "src/graphmatrix/log.py",
+    "src/graphmatrix/core/model",
+    "src/graphmatrix/core/commands.py",
+    "src/graphmatrix/core/plot_themes.py",
+]
+
+[tool.ruff]
+line-length = 88
+src = ["src", "tests"]
+extend-exclude = ["packaging"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "BLE", "SIM", "RUF", "S", "C4", "PIE"]
+ignore = [
+    "E501",    # the formatter owns code width; long strings and comments are fine
+    "RUF001",  # σ, ×, ± … are the domain's alphabet, not typos
+    "RUF002",
+    "RUF003",
+    "B027",    # backend ABCs have deliberate no-op defaults
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S104", "S102", "S110", "BLE001", "SIM105"]  # test helpers
+"**/__init__.py" = ["F401"]  # re-exports
+"src/graphmatrix/mcp_server.py" = ["S104"]  # --host 0.0.0.0 is the user's choice

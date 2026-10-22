@@ -64,7 +64,7 @@ def test_api_fit_regions_and_polynomial_delegate():
 
 
 def test_api_batch_stats_and_colour_plots():
-    from graphmatrix.core.model import ColumnType, Worksheet, Workbook
+    from graphmatrix.core.model import ColumnType, Workbook, Worksheet
 
     project = Project()
     api = GraphMatrixAPI(project)
@@ -79,7 +79,7 @@ def test_api_batch_stats_and_colour_plots():
     stats = api.batch_stats()
     assert stats.kind == "batch-stats"
 
-    graph = api.add_graph("G")
+    api.add_graph("G")
     spec = api.add_plot("G", "B/S", "X1", "Y1", z="Y1", cmap="plasma")
     assert spec.z == "Y1"
     assert spec.cmap == "plasma"
@@ -117,7 +117,7 @@ def test_macro_recorder_generates_runnable_script():
     fresh = Project()
     fresh_api = GraphMatrixAPI(fresh)
     namespace = {"api": fresh_api}
-    exec(compile(script, "<macro>", "exec"), namespace)  # noqa: S102 - test of generated code
+    exec(compile(script, "<macro>", "exec"), namespace)
     assert fresh.sheet("B/S").column("Y1") is not None
     np.testing.assert_allclose(fresh.sheet("B/S").column("Y1").data, [0.0, 1.0, 4.0])
 
@@ -140,7 +140,7 @@ def test_macro_replays_populated_workbook():
 
     fresh = Project()
     namespace = {"api": GraphMatrixAPI(fresh)}
-    exec(compile(recorder.script(), "<macro>", "exec"), namespace)  # noqa: S102
+    exec(compile(recorder.script(), "<macro>", "exec"), namespace)
     assert fresh.sheet("Imported/Sheet1").column("Y1") is not None
     np.testing.assert_allclose(
         fresh.sheet("Imported/Sheet1").column("Y1").data, [2.0, 3.0]

@@ -2,19 +2,14 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
 from graphmatrix.core.model import (
     Annotation,
     AxisScale,
-    ColumnType,
     Graph,
     PlotSpec,
     PlotStyle,
-    Project,
-    Workbook,
-    Worksheet,
 )
 from graphmatrix.core.templates import (
     apply_template,

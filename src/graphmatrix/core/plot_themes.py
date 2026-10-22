@@ -35,6 +35,8 @@ APP_CANVAS_THEMES: dict[str, tuple[str, str, float]] = {
     "classic-light": ("#ffffff", "#202124", 0.25),
     "modern-dark": ("#0e1015", "#dde1ea", 0.14),
     "modern-light": ("#ffffff", "#1b1e2b", 0.20),
+    "shadcn-dark": ("#0a0a0a", "#fafafa", 0.10),
+    "shadcn-light": ("#ffffff", "#0a0a0a", 0.10),
 }
 
 #: The application theme used when nothing else is specified.

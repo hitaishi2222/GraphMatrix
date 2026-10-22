@@ -9,14 +9,19 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
+from graphmatrix.log import get_logger
+
 from ..bands import band_baselines, layer_band_transform
 from ..journals import export_rcparams, figure_size
-from ..model import AxisScale, Graph, PlotStyle, Project, Z_STYLES, is_3d_style
+from ..model import Z_STYLES, AxisScale, Graph, PlotStyle, Project, is_3d_style
 from ..plot_themes import resolve_theme, series_color
 from ..plotting import auto_axis_labels, grid_xyz, resolve_layer
+
+log = get_logger(__name__)
 
 #: Plot-theme (canvas) colours live in ``core.plot_themes`` so the live canvas
 #: and this exporter cannot drift apart.
@@ -176,8 +181,8 @@ def _use_constrained_layout(fig, graph: Graph) -> None:
     gap_y = max(0.0, float(getattr(graph, "panel_gap_y", 12.0) or 0.0) / 100.0)
     try:
         fig.set_layout_engine("constrained", wspace=gap_x, hspace=gap_y)
-    except Exception:  # noqa: BLE001 - very old matplotlib: keep the default
-        pass
+    except Exception as exc:  # noqa: BLE001 - very old matplotlib
+        log.debug("constrained layout unavailable: %s", exc)
 
 
 def _share_y_for_twins(fig, axes, graph: Graph) -> None:
@@ -194,7 +199,8 @@ def _share_y_for_twins(fig, axes, graph: Graph) -> None:
     for ax in axes:
         try:
             bottom, top = ax.get_ylim()
-        except Exception:  # noqa: BLE001 - axes may not be scaled yet
+        except Exception as exc:  # noqa: BLE001 - axes may not be scaled yet
+            log.debug("no Y limits yet for an X-Twin panel: %s", exc)
             continue
         low = bottom if low is None else min(low, bottom)
         high = top if high is None else max(high, top)
@@ -203,7 +209,8 @@ def _share_y_for_twins(fig, axes, graph: Graph) -> None:
     for ax in axes:
         try:
             ax.set_ylim(low, high)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 - leave that panel alone
+            log.debug("could not share the Y range: %s", exc)
             continue
 
 
@@ -284,7 +291,9 @@ def _render_figure(
         heights: list[float] = []
         for index, layer in enumerate(graph.layers):
             values = (
-                np.concatenate([np.asarray(d.y, dtype=float) for d in resolved_layers[index]])
+                np.concatenate(
+                    [np.asarray(d.y, dtype=float) for d in resolved_layers[index]]
+                )
                 if resolved_layers[index]
                 else np.array([], dtype=float)
             )
@@ -317,7 +326,9 @@ def _render_figure(
         transform = layer_transform.get(panel_index)
         err_factor = layer_err_factor.get(panel_index, 1.0)
         series = resolved_layers[panel_index]
-        for plot_index, (spec, data) in enumerate(zip(layer.plots, series)):
+        for plot_index, (spec, data) in enumerate(
+            zip(layer.plots, series, strict=False)
+        ):
             # Every band of a stacked-line figure is another curve, so the
             # bands take the palette colours one after the other.
             color = spec.color or series_color(
@@ -364,7 +375,9 @@ def _render_figure(
         label_kwargs = {}
         if getattr(layer, "label_font_family", ""):
             label_kwargs["fontfamily"] = layer.label_font_family
-        label_kwargs["fontsize"] = (getattr(layer, "label_font_size", 12.0) or 12.0) * factor
+        label_kwargs["fontsize"] = (
+            getattr(layer, "label_font_size", 12.0) or 12.0
+        ) * factor
         if getattr(layer, "label_color", ""):
             label_kwargs["color"] = layer.label_color
 
@@ -391,10 +404,7 @@ def _render_figure(
 
         if layer.x_min is not None or layer.x_max is not None:
             ax_left.set_xlim(left=layer.x_min, right=layer.x_max)
-        if (
-            not stack_line
-            and (layer.y_min is not None or layer.y_max is not None)
-        ):
+        if not stack_line and (layer.y_min is not None or layer.y_max is not None):
             ax_left.set_ylim(bottom=layer.y_min, top=layer.y_max)
         view = (view_limits or {}).get(panel_index)
         if view is not None:
@@ -403,8 +413,8 @@ def _render_figure(
             try:
                 ax_left.set_xlim(view[0], view[1])
                 ax_left.set_ylim(view[2], view[3])
-            except Exception:  # noqa: BLE001 - bad limits: keep the auto range
-                pass
+            except Exception as exc:  # noqa: BLE001 - bad limits: keep the auto range
+                log.debug("ignored the on-screen limits: %s", exc)
 
         # Minor ticks + tick direction (publication polish).
         direction = getattr(layer, "tick_direction", "out") or "out"
@@ -438,11 +448,17 @@ def _render_figure(
                 position = position + base
             if ref.orientation == "v":
                 line = ax_left.axvline(
-                    position, color=ref.color, linewidth=ref.width * factor, linestyle=style
+                    position,
+                    color=ref.color,
+                    linewidth=ref.width * factor,
+                    linestyle=style,
                 )
             else:
                 line = ax_left.axhline(
-                    position, color=ref.color, linewidth=ref.width * factor, linestyle=style
+                    position,
+                    color=ref.color,
+                    linewidth=ref.width * factor,
+                    linestyle=style,
                 )
             if ref.label:
                 _label_reference_line(ax_left, ref, line)
@@ -482,7 +498,9 @@ def _render_figure(
         title_kwargs = {}
         if getattr(graph, "title_font_family", ""):
             title_kwargs["fontfamily"] = graph.title_font_family
-        title_kwargs["fontsize"] = (getattr(graph, "title_font_size", 14.0) or 14.0) * factor
+        title_kwargs["fontsize"] = (
+            getattr(graph, "title_font_size", 14.0) or 14.0
+        ) * factor
         if getattr(graph, "title_color", ""):
             title_kwargs["color"] = graph.title_color
         else:
@@ -537,7 +555,14 @@ def _draw(
             label=label,
         )
     elif style is PlotStyle.LINE:
-        ax.plot(x, y, color=color, linewidth=spec.line_width * factor, linestyle=ls, label=label)
+        ax.plot(
+            x,
+            y,
+            color=color,
+            linewidth=spec.line_width * factor,
+            linestyle=ls,
+            label=label,
+        )
     elif style is PlotStyle.LINE_SYMBOL:
         ax.plot(
             x,
@@ -553,7 +578,14 @@ def _draw(
         ax.bar(x, y, color=color, label=label)
     elif style is PlotStyle.AREA:
         ax.fill_between(x, y, alpha=0.3, color=color)
-        ax.plot(x, y, color=color, linewidth=spec.line_width * factor, linestyle=ls, label=label)
+        ax.plot(
+            x,
+            y,
+            color=color,
+            linewidth=spec.line_width * factor,
+            linestyle=ls,
+            label=label,
+        )
     elif style is PlotStyle.STEP:
         ax.step(
             x,
@@ -583,7 +615,7 @@ def _draw(
 def _label_reference_line(ax, ref, line) -> None:
     """Attach a small text label to a reference line at the top edge of the axes."""
     try:
-        xmin, xmax = ax.get_xlim()
+        _xmin, xmax = ax.get_xlim()
         ymin, ymax = ax.get_ylim()
     except Exception:  # noqa: BLE001 - axes may be pre-autoscale
         return
@@ -645,8 +677,8 @@ def render_xyz_mpl(
             bar = fig.colorbar(mapping, ax=ax, fraction=0.046, pad=0.03)
             if label_text:
                 bar.set_label(label_text)
-        except Exception:  # noqa: BLE001 - colourbar is decorative
-            pass
+        except Exception as exc:  # noqa: BLE001 - colourbar is decorative
+            log.debug("no colourbar for this mapping: %s", exc)
 
     if three_d and not hasattr(ax, "get_proj"):
         # A 3D series plotted on a 2D set of axes: fall back to a soft warning
@@ -726,4 +758,4 @@ def render_xyz_mpl(
         return
 
 
-__all__ = ["export_graph", "_FORMATS", "SUPPORTED_FORMATS", "render_xyz_mpl"]
+__all__ = ["SUPPORTED_FORMATS", "_FORMATS", "export_graph", "render_xyz_mpl"]

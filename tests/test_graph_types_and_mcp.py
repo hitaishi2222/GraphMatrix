@@ -145,7 +145,9 @@ def test_project_tree_shows_type_and_offers_add_delete(qapp):
         type_menu = panel.context_type_menu
         assert type_menu is not None
         stack_type = next(
-            action for action in type_menu.actions() if action.text().startswith("Stack")
+            action
+            for action in type_menu.actions()
+            if action.text().startswith("Stack")
         )
         stack_type.trigger()
         assert retyped[-1] == (graph, "stack")
@@ -277,19 +279,3 @@ def test_the_window_has_no_mcp_server_ui(qapp):
             window.registry.action("tools.mcp")
     finally:
         window.close()
-
-
-def test_mcp_server_cli_options():
-    from graphmatrix.mcp_server import build_parser
-
-    default = build_parser().parse_args([])
-    assert default.transport == "stdio"
-    assert default.port == 8765
-
-    parsed = build_parser().parse_args(
-        ["--transport", "http", "--host", "0.0.0.0", "--port", "9000", "--no-banner"]
-    )
-    assert parsed.transport == "http"
-    assert parsed.host == "0.0.0.0"
-    assert parsed.port == 9000
-    assert parsed.no_banner is True

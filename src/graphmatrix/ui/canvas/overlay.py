@@ -48,8 +48,18 @@ from graphmatrix.ui.icons import ui_icon
 FADE_DELAY_MS = 1200
 
 
+def _alpha(color: str, alpha: int) -> str:
+    """``"rgba(r,g,b,a)"`` for a palette token, for the checked-chip fill."""
+    c = QColor(color)
+    return f"rgba({c.red()},{c.green()},{c.blue()},{alpha})"
+
+
 def _chrome(dark: bool) -> dict[str, str]:
-    """The colours of the floating chrome, for the dark or the light theme."""
+    """The colours of the floating chrome, for the dark or the light theme.
+
+    The checked chip follows the preset's accent, so a monochrome theme does
+    not keep a blue highlight from the classic one.
+    """
     if dark:
         return {
             "bg": "rgba(20,21,25,215)",
@@ -57,7 +67,7 @@ def _chrome(dark: bool) -> dict[str, str]:
             "fg": "#d7dae0",
             "border": "rgba(255,255,255,28)",
             "hover": "rgba(255,255,255,30)",
-            "checked": "rgba(76,141,255,70)",
+            "checked": _alpha(theme.colors().get("accent", "#4c8dff"), 70),
         }
     return {
         "bg": "rgba(255,255,255,235)",
@@ -65,7 +75,7 @@ def _chrome(dark: bool) -> dict[str, str]:
         "fg": "#3a3f47",
         "border": "rgba(0,0,0,45)",
         "hover": "rgba(0,0,0,25)",
-        "checked": "rgba(47,111,235,45)",
+        "checked": _alpha(theme.colors().get("accent", "#2f6feb"), 45),
     }
 
 
@@ -181,7 +191,7 @@ class CanvasTools(QFrame):
     def set_zoom_level(self, factor: float) -> None:
         """Show how far the panel is zoomed in (``1.0`` = the data's own range)."""
         try:
-            percent = int(round(float(factor) * 100))
+            percent = round(float(factor) * 100)
         except (TypeError, ValueError):  # pragma: no cover - defensive
             percent = 100
         self._zoom_label.setText(f"{percent}%")
@@ -325,7 +335,7 @@ class CanvasOverlay(QWidget):
             self._fade_timer.start()
 
     # -- painting ------------------------------------------------------------
-    def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
+    def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         if self._panel_rect is not None:
@@ -338,9 +348,8 @@ class CanvasOverlay(QWidget):
             painter.drawRect(self._panel_rect.adjusted(1, 1, -2, -2))
         painter.end()
 
-
     # -- geometry ------------------------------------------------------------
-    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._layout_children()
 
@@ -350,7 +359,9 @@ class CanvasOverlay(QWidget):
             self._panel_label.adjustSize()
             self._panel_label.move(margin, margin)
         self._readout_label.adjustSize()
-        self._readout_label.move(margin, max(0, self.height() - self._readout_label.height() - margin))
+        self._readout_label.move(
+            margin, max(0, self.height() - self._readout_label.height() - margin)
+        )
 
     def _fade_in(self) -> None:
         self._fade_timer.stop()
@@ -360,9 +371,7 @@ class CanvasOverlay(QWidget):
         self._animation.setEndValue(1.0)
         self._animation.start()
         self._panel_label.setVisible(bool(self._panel_text))
-        self._readout_label.setVisible(
-            bool(self._readout_text) and self._hover_enabled
-        )
+        self._readout_label.setVisible(bool(self._readout_text) and self._hover_enabled)
 
     def _fade_out(self) -> None:
         if not self._user_visible:
@@ -374,16 +383,16 @@ class CanvasOverlay(QWidget):
         self._panel_label.hide()
         self._readout_label.hide()
 
-    def showEvent(self, event) -> None:  # noqa: N802 - Qt override
+    def showEvent(self, event) -> None:
         super().showEvent(event)
         self._layout_children()
 
-    def hideEvent(self, event) -> None:  # noqa: N802 - Qt override
+    def hideEvent(self, event) -> None:
         super().hideEvent(event)
         self._panel_label.hide()
         self._readout_label.hide()
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
+    def sizeHint(self) -> QSize:
         return QSize(self.width(), self.height())
 
 
@@ -400,7 +409,7 @@ class _ContainerWatcher(QObject):
         self._overlay = overlay
         self._tools = tools
 
-    def eventFilter(self, obj, event) -> bool:  # noqa: N802 - Qt override
+    def eventFilter(self, obj, event) -> bool:
         kind = event.type()
         if kind == QEvent.Type.Resize:
             self._overlay.setGeometry(obj.rect())

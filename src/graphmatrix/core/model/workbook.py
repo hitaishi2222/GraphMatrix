@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 from .worksheet import Worksheet
 
@@ -64,7 +65,7 @@ class Workbook:
         return {"name": self.name, "sheets": [s.to_dict() for s in self.sheets]}
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "Workbook":
+    def from_dict(cls, payload: dict[str, Any]) -> Workbook:
         book = cls(payload.get("name", "Book1"))
         for sheet_payload in payload.get("sheets", []):
             book.sheets.append(Worksheet.from_dict(sheet_payload))

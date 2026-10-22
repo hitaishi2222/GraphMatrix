@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from graphmatrix.ui import theme  # noqa: E402
+from graphmatrix.ui import theme
 
 _TOKEN_KEYS = {
     "window",
@@ -27,9 +27,16 @@ _TOKEN_KEYS = {
 }
 
 
-def test_presets_cover_the_four_variants():
+def test_presets_cover_the_six_variants():
     ids = [p.id for p in theme.presets()]
-    assert ids == ["classic-dark", "classic-light", "modern-dark", "modern-light"]
+    assert ids == [
+        "classic-dark",
+        "classic-light",
+        "modern-dark",
+        "modern-light",
+        "shadcn-dark",
+        "shadcn-light",
+    ]
 
 
 def test_every_preset_has_the_same_palette_tokens():
@@ -74,6 +81,18 @@ def test_modern_layer_differs_from_classic():
     assert len(modern) > len(classic)
     # The modern layer rounds corners more aggressively than the classic base.
     assert "border-radius: 9px" in modern
+
+
+def test_shadcn_presets_have_a_neutral_primary():
+    for preset_id in ("shadcn-dark", "shadcn-light"):
+        p = theme.PRESETS[preset_id]
+        assert p.style == "shadcn"
+        accent = p.palette["accent"][1:]
+        assert len({accent[i : i + 2] for i in (0, 2, 4)}) == 1, preset_id
+        qss = theme._stylesheet(p)
+        assert "shadcn design language" in qss
+        # The shadcn layer must not leave the classic 6px buttons in place.
+        assert "QPushButton { background: transparent; border-radius: 9px" in qss
 
 
 def test_state_helpers_track_the_active_preset():

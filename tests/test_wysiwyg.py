@@ -13,7 +13,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from graphmatrix.core.plot_themes import resolve_theme  # noqa: E402
+from graphmatrix.core.plot_themes import resolve_theme
 
 
 @pytest.fixture(scope="module")
@@ -75,7 +75,6 @@ def test_exporter_uses_the_shared_palette():
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-
     import numpy as np
 
     from graphmatrix.core.io.export import _render_figure

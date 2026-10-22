@@ -8,7 +8,7 @@ later be re-expanded (its sheets and columns are recorded as their own commands)
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from ..commands import Command, CommandStack
 

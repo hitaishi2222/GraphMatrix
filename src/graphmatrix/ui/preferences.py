@@ -171,7 +171,7 @@ class PreferencesDialog(QDialog):
         form = QFormLayout(page)
         self.decimals_combo = QComboBox()
         self.decimals_combo.addItem("General format", -1)
-        for value in range(0, 13):
+        for value in range(13):
             self.decimals_combo.addItem(f"{value} decimals", value)
         decimals = int(get("worksheet/new_column_decimals", -1))
         index = self.decimals_combo.findData(decimals)
@@ -236,9 +236,7 @@ class PreferencesDialog(QDialog):
     def _general_tab(self) -> QWidget:
         page = QWidget()
         form = QFormLayout(page)
-        self.warn_on_discard = QCheckBox(
-            "Ask before discarding unsaved changes"
-        )
+        self.warn_on_discard = QCheckBox("Ask before discarding unsaved changes")
         self.warn_on_discard.setChecked(bool(get("general/warn_on_discard", True)))
         form.addRow(self.warn_on_discard)
         return page

@@ -22,8 +22,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from graphmatrix.core.model import Project
 from graphmatrix.core.commands import CommandStack
+from graphmatrix.core.model import Project
 from graphmatrix.core.scripting.api import GraphMatrixAPI, make_namespace
 
 
@@ -109,7 +109,7 @@ class ConsoleView(QWidget):
         stdout = io.StringIO()
         try:
             with contextlib.redirect_stdout(stdout):
-                exec(compiled, self._interp.locals, self._interp.locals)
+                exec(compiled, self._interp.locals, self._interp.locals)  # noqa: S102
         except SystemExit:
             self._write("(SystemExit ignored)")
         except Exception:  # noqa: BLE001 - show the user what went wrong
@@ -122,7 +122,7 @@ class ConsoleView(QWidget):
         self._write(traceback.format_exc())
 
     # -- history -------------------------------------------------------------
-    def eventFilter(self, obj, event):  # noqa: N802 - Qt override
+    def eventFilter(self, obj, event):
         if obj is self.input and event.type() == event.Type.KeyPress:
             key = event.key()
             if key == Qt.Key.Key_Up and self._history:
@@ -144,7 +144,7 @@ class ConsoleView(QWidget):
         stdout = io.StringIO()
         try:
             with contextlib.redirect_stdout(stdout):
-                exec(
+                exec(  # noqa: S102 - the console is the feature
                     compile(source, "<macro>", "exec"),
                     self._interp.locals,
                     self._interp.locals,

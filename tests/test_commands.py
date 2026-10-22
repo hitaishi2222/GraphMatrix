@@ -7,13 +7,13 @@ from graphmatrix.core.commands import (
     AddWorkbookCommand,
     CommandStack,
     MacroCommand,
+    RemoveWorkbookCommand,
     RenameCommand,
     RenameWorkbookCommand,
     RenameWorksheetCommand,
     ReorderColumnsCommand,
-    RemoveWorkbookCommand,
-    SetCellValueCommand,
     SetCellsCommand,
+    SetCellValueCommand,
 )
 from graphmatrix.core.model import (
     Column,
@@ -168,7 +168,7 @@ def _project_with_graph():
 
 
 def test_rename_workbook_rewrites_plot_sources_and_undoes():
-    project, book, sheet, graph = _project_with_graph()
+    project, book, _sheet, graph = _project_with_graph()
     stack = CommandStack()
 
     stack.push(RenameWorkbookCommand(project, book, "Data"))
@@ -198,7 +198,7 @@ def test_rename_worksheet_rewrites_plot_sources_and_undoes():
 
 
 def test_rename_does_not_touch_unrelated_sources():
-    project, book, sheet, graph = _project_with_graph()
+    project, book, _sheet, graph = _project_with_graph()
     other = project.add_workbook(Workbook("Book10"))
     other.add_sheet(Worksheet("Sheet1"))
     graph.first_layer.add_plot(PlotSpec("Book10/Sheet1", "X1", "Y1"))

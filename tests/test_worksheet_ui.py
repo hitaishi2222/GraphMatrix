@@ -11,10 +11,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtWidgets import QApplication, QTableWidgetSelectionRange  # noqa: E402
+from PySide6.QtWidgets import QApplication, QTableWidgetSelectionRange
 
-from graphmatrix.core.commands import CommandStack  # noqa: E402
-from graphmatrix.core.model import ColumnType, Worksheet  # noqa: E402
+from graphmatrix.core.commands import CommandStack
+from graphmatrix.core.model import ColumnType, Worksheet
 
 
 @pytest.fixture(scope="module")
@@ -166,8 +166,7 @@ def test_main_window_sheet_actions_and_shortcuts(qapp):
         assert sheet.column_names == ["X1", "Y1"]
 
         assert (
-            window.registry.action("data.add_row").shortcut().toString()
-            == "Ctrl+Alt+N"
+            window.registry.action("data.add_row").shortcut().toString() == "Ctrl+Alt+N"
         )
         assert (
             window.registry.action("data.delete_columns").shortcut().toString()

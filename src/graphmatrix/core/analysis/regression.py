@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 from scipy import stats
@@ -39,9 +39,8 @@ def linear_fit(
     x, y = x[mask], y[mask]
     x, y = _window(x, y, x_min, x_max)
     result = AnalysisResult(kind="regression", title="Linear Regression")
-    if x_min is not None or x_max is not None:
-        if x_min is not None and x_max is not None and x_min > x_max:
-            x_min, x_max = x_max, x_min
+    if x_min is not None and x_max is not None and x_min > x_max:
+        x_min, x_max = x_max, x_min
     if x.size < 2:
         result.notes = "Need at least two points."
         return result
@@ -141,7 +140,8 @@ def multiple_regression(
     r2 = r_squared(y, y_fit)
     n_terms = X.shape[1]
     result.parameters = [
-        ParamRow(lbl, float(c), float(e)) for lbl, c, e in zip(labels, coeffs, errors)
+        ParamRow(lbl, float(c), float(e))
+        for lbl, c, e in zip(labels, coeffs, errors, strict=False)
     ]
     result.summary = {
         "R²": r2,
@@ -154,4 +154,4 @@ def multiple_regression(
     return result
 
 
-__all__ = ["linear_fit", "polynomial_fit", "multiple_regression"]
+__all__ = ["linear_fit", "multiple_regression", "polynomial_fit"]

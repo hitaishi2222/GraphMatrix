@@ -11,10 +11,11 @@ results recorded at the point they are produced.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from .commands import CommandStack
 
@@ -158,7 +159,7 @@ class ProvenanceLog:
         }
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "ProvenanceLog":
+    def from_dict(cls, payload: dict[str, Any]) -> ProvenanceLog:
         log = cls()
         for item in payload.get("entries", []):
             log.entries.append(ProvenanceEntry(**item))

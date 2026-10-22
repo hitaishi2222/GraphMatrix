@@ -19,8 +19,8 @@ from PySide6.QtWidgets import (
 )
 
 from graphmatrix.core.model import (
-    GRAPH_TYPES,
     GRAPH_TYPE_LABELS,
+    GRAPH_TYPES,
     Column,
     Graph,
     Project,
@@ -39,7 +39,7 @@ class _ProjectTree(QTreeWidget):
     """A tree that advertises a custom MIME payload for column drags."""
 
     def mimeTypes(self) -> list[str]:
-        return list(super().mimeTypes()) + [COLUMN_MIME]
+        return [*super().mimeTypes(), COLUMN_MIME]
 
     def mimeData(self, items):  # type: ignore[override]
         data = super().mimeData(items)
@@ -202,7 +202,7 @@ class ProjectPanel(QWidget):
         return None
 
     # -- internals -----------------------------------------------------------
-    def eventFilter(self, obj, event) -> bool:  # noqa: N802 - Qt override
+    def eventFilter(self, obj, event) -> bool:
         """Catch F2 in the tree.
 
         The tree view swallows the key (it tries to edit the item), so the

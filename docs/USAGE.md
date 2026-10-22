@@ -6,8 +6,15 @@
 PYTHONPATH=src python -m graphmatrix
 ```
 
-The window has a **Project Explorer** (left), a **Properties** inspector (right),
-a tabbed workspace (center), and a **Python Console** (bottom, hidden by default).
+The window has a **Project Explorer** (left), a **Properties** inspector (below it),
+a tabbed workspace (center), the **Graph Editor** (right, it appears with the first
+graph you open), and a **Python Console** (bottom, hidden by default). The status bar
+names the open object on its right.
+
+An empty project opens on the **Welcome** page: import or drop a data file, add the
+sample dataset, add an empty graph, or pick a **recent project** — the last five
+projects you opened or saved are listed there and under **File → Open Recent**, and
+entries whose file disappeared are dropped automatically.
 
 To **rename** the project, a workbook, a worksheet, or a graph, right-click it in the
 Project Explorer → **Rename…**, or select it and press **F2** (the Properties
@@ -336,7 +343,7 @@ x, y = result.curves["Digitized"]
 
 ## Appearance / themes
 
-**View → Theme** (or the **Theme** dropdown on the toolbar) switches between four
+**View → Theme** (or the **Theme** dropdown on the toolbar) switches between six
 presets. The choice is remembered between runs.
 
 | Preset                     | Colour scheme | Design                                              |
@@ -345,10 +352,14 @@ presets. The choice is remembered between runs.
 | **Classic Light**          | light         | neutral, square-ish                                 |
 | **Modern Dark**            | dark          | deeper surfaces, indigo accent, rounded and compact |
 | **Modern Light**           | light         | airy surfaces, indigo accent, rounded and compact   |
+| **shadcn Dark**            | dark          | flat neutral surfaces, near-white primary, 10px radii |
+| **shadcn Light**           | light         | flat neutral surfaces, near-black primary, 10px radii |
 
-The design language ("classic" vs "modern") and the colour scheme are independent,
-so the plot canvas, axes, legends, and annotations are recoloured to match whichever
-preset is active.
+The design language ("classic", "modern", or "shadcn") and the colour scheme are
+independent, so the plot canvas, axes, legends, and annotations are recoloured to
+match whichever preset is active. The shadcn presets are the shadcn/ui token set
+(`background`/`foreground`/`muted`/`border`/`primary`) and stay monochrome — the
+selected series keeps a legible ring in the canvas instead of a colour.
 
 ## Keyboard shortcuts
 
@@ -360,6 +371,7 @@ preset is active.
 | Save project as            | Ctrl+Shift+S             |
 | Import data                | Ctrl+I                   |
 | Close tab                  | Ctrl+W                   |
+| Next / previous tab        | Ctrl+Tab / Ctrl+Shift+Tab |
 | Copy / Cut / Paste (cells) | Ctrl+C / Ctrl+X / Ctrl+V |
 | Undo / Redo                | Ctrl+Z / Ctrl+Shift+Z    |
 | Rename selected item       | F2                       |
@@ -380,7 +392,7 @@ can be filtered as you type. On macOS the `Ctrl` keys are the Command key and
 
 | Tab         | Setting                                                     |
 | ----------- | ----------------------------------------------------------- |
-| Appearance  | Theme (the same four presets as View → Theme)                |
+| Appearance  | Theme (the same six presets as View → Theme)                 |
 | Worksheet   | Decimals of newly created columns                            |
 | Canvas      | Whether `Ctrl` + mouse wheel zooms the panel under the pointer |
 | Export      | Default file format, resolution (DPI) and size in millimetres |

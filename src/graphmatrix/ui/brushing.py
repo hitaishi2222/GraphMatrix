@@ -47,4 +47,4 @@ class BrushSelection(QObject):
             self.changed.emit(source, [])
 
 
-__all__ = ["BrushSelection", "BRUSH_COLOR"]
+__all__ = ["BRUSH_COLOR", "BrushSelection"]

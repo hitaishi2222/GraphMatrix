@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 from scipy.signal import find_peaks, peak_widths
@@ -44,7 +44,7 @@ def find_peaks_result(
         if _indices.size:
             indices = _indices
 
-    widths, _, left_ips, right_ips = peak_widths(y, indices, rel_height=0.5)
+    widths, _, _left_ips, _right_ips = peak_widths(y, indices, rel_height=0.5)
     if x.size > 1 and x.max() != x.min():
         scale = (x.max() - x.min()) / (x.size - 1)
         fwhm = widths * scale
