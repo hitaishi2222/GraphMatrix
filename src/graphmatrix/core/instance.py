@@ -31,6 +31,43 @@ def register(project_path: str | Path | None) -> None:
     _state_path().write_text(json.dumps(payload), encoding="utf-8")
 
 
+def _alive_on_windows(pid: int) -> bool:
+    """Whether ``pid`` is running, through OpenProcess (never os.kill)."""
+    import ctypes
+
+    kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    handle = kernel32.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
+    if not handle:
+        return False
+    try:
+        code = ctypes.c_ulong()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return False
+        return code.value == 259  # STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def process_alive(pid: int) -> bool:
+    """Is ``pid`` a running process?
+
+    ``os.kill(pid, 0)`` is not a portable probe: on Windows signal 0 is
+    ``CTRL_C_EVENT``, so it sends Ctrl+C to that process group instead of
+    asking whether anything is there.
+    """
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        return _alive_on_windows(pid)
+    try:
+        os.kill(pid, 0)
+    except PermissionError:
+        return True  # it exists, it is just not ours to signal
+    except OSError:
+        return False
+    return True
+
+
 def _read() -> dict[str, Any] | None:
     """The recorded payload, without checking whether its process is alive."""
     path = _state_path()
@@ -65,12 +102,10 @@ def get() -> dict[str, Any] | None:
     if data is None:
         return None
     pid = data["pid"]
-    try:
-        os.kill(pid, 0)  # is the recorded process still alive?
-    except OSError:
+    if not process_alive(pid):
         unregister(pid)
         return None
     return data
 
 
-__all__ = ["get", "register", "unregister"]
+__all__ = ["get", "process_alive", "register", "unregister"]

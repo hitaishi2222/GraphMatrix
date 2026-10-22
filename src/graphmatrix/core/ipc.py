@@ -33,6 +33,7 @@ from typing import Any
 from PySide6.QtCore import QObject
 from PySide6.QtNetwork import QLocalServer
 
+from graphmatrix.core.instance import process_alive
 from graphmatrix.log import get_logger
 
 log = get_logger(__name__)
@@ -92,12 +93,8 @@ def cleanup_state_dir() -> None:
         pid = int(match.group(1))
         if pid == os.getpid():
             continue
-        try:
-            os.kill(pid, 0)
-        except OSError:
+        if not process_alive(pid):
             _unlink(path)  # the owner is gone
-        except Exception as exc:  # noqa: BLE001 - permission problems
-            log.debug("kept a socket file we cannot check: %s", exc)
 
 
 def write_endpoint(pid: int | None = None, seq: int | None = None, **fields) -> str:

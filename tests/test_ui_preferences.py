@@ -16,6 +16,8 @@ pytest.importorskip("PySide6")
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QApplication
 
+from graphmatrix.ui.actions import key_sequence
+
 
 @pytest.fixture(scope="module")
 def app():
@@ -112,7 +114,7 @@ def test_zoom_shortcuts_are_registered(window):
     }
     for action_id, shortcut in expected.items():
         action = window.registry.action(action_id)
-        assert action.shortcut() == QKeySequence(shortcut), action_id
+        assert action.shortcut() == key_sequence(shortcut), action_id
 
 
 # -- keybindings -------------------------------------------------------------
@@ -134,10 +136,10 @@ def test_standard_shortcuts_are_present(window):
     }
     for action_id, key in standard.items():
         action = window.registry.action(action_id)
-        assert action.shortcut() == QKeySequence(key), action_id
+        assert action.shortcut() == key_sequence(key), action_id
     for action_id, shortcut in literal.items():
         action = window.registry.action(action_id)
-        assert action.shortcut() == QKeySequence(shortcut), action_id
+        assert action.shortcut() == key_sequence(shortcut), action_id
 
 
 def test_shortcuts_are_unique(window):

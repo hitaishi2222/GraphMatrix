@@ -11,11 +11,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QApplication, QTableWidgetSelectionRange
 
 from graphmatrix.core.commands import CommandStack
 from graphmatrix.core.model import ColumnType, Worksheet
+from graphmatrix.ui.actions import key_sequence
 
 
 @pytest.fixture(scope="module")
@@ -166,10 +166,10 @@ def test_main_window_sheet_actions_and_shortcuts(qapp):
         window.commands.undo()
         assert sheet.column_names == ["X1", "Y1"]
 
-        assert window.registry.action("data.add_row").shortcut() == QKeySequence(
+        assert window.registry.action("data.add_row").shortcut() == key_sequence(
             "Ctrl+Alt+N"
         )
-        assert window.registry.action("data.delete_columns").shortcut() == QKeySequence(
+        assert window.registry.action("data.delete_columns").shortcut() == key_sequence(
             "Ctrl+Alt+Shift+-"
         )
         menu = window._rows_cols_menu

@@ -45,3 +45,14 @@ def test_get_drops_a_dead_process_entry(state_dir):
     path.write_text(json.dumps({"pid": 2**31 - 1, "project": None}))
     assert instance.get() is None
     assert not path.exists()
+
+
+def test_process_alive_is_a_liveness_probe_not_a_signal():
+    """``os.kill(pid, 0)`` sends Ctrl+C on Windows; this helper must not."""
+    import os
+
+    from graphmatrix.core import instance
+
+    assert instance.process_alive(os.getpid())
+    assert not instance.process_alive(0)  # never signal pid 0 on any platform
+    assert not instance.process_alive(2**31 - 1)
